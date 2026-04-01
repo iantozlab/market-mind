@@ -1,16 +1,166 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { UnifiedNeuralBot } from '@/lib/neural-bot-engine';
+import type { LogEntry, BotMetrics } from '@/lib/neural-bot-engine';
+import NeuralStatusCard from '@/components/NeuralStatusCard';
+import MetricCard from '@/components/MetricCard';
+import TerminalLog from '@/components/TerminalLog';
+import { Button } from '@/components/ui/button';
 
-// IMPORTANT: Fully REPLACE this with your own code
-const PlaceholderIndex = () => {
-  // PLACEHOLDER: Replace this entire return statement with the user's app.
-  // The inline background color is intentionally not part of the design system.
+const NeuralBotDashboard: React.FC = () => {
+  const [isRunning, setIsRunning] = useState(false);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [metrics, setMetrics] = useState<BotMetrics>({
+    totalPnL: 0, dailyPnL: 0, winRate: 0, activePositions: 0,
+    anomalyScore: 0, botDetectionAccuracy: 0, tradesExecuted: 0, marketsMonitored: 0,
+  });
+  const [anomalyHistory, setAnomalyHistory] = useState<{ time: string; score: number; threshold: number }[]>([]);
+  const [pnlHistory, setPnlHistory] = useState<{ time: string; pnl: number }[]>([]);
+
+  const botRef = useRef<UnifiedNeuralBot | null>(null);
+
+  const updateState = useCallback(() => {
+    if (!botRef.current) return;
+    const m = botRef.current.getMetrics();
+    setLogs(botRef.current.getLogs());
+    setMetrics(m);
+    setAnomalyHistory(prev => {
+      const next = [...prev, { time: new Date().toLocaleTimeString(), score: m.anomalyScore * 100, threshold: 70 }];
+      return next.slice(-30);
+    });
+    setPnlHistory(prev => {
+      const next = [...prev, { time: new Date().toLocaleTimeString(), pnl: m.totalPnL }];
+      return next.slice(-30);
+    });
+  }, []);
+
+  const startBot = useCallback(() => {
+    const bot = new UnifiedNeuralBot(true);
+    bot.setOnUpdate(updateState);
+    botRef.current = bot;
+    bot.run();
+    setIsRunning(true);
+  }, [updateState]);
+
+  const stopBot = useCallback(() => {
+    botRef.current?.stop();
+    setIsRunning(false);
+  }, []);
+
+  useEffect(() => {
+    return () => { botRef.current?.stop(); };
+  }, []);
+
   return (
-    <div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: '#fcfbf8' }}>
-      <img data-lovable-blank-page-placeholder="REMOVE_THIS" src="/placeholder.svg" alt="Your app will live here!" />
+    <div className="min-h-screen bg-background p-4 md:p-6 space-y-6">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h1 className="font-display text-2xl md:text-3xl font-bold text-foreground text-glow tracking-tight">
+            Polymarket Neural Trading System
+          </h1>
+          <p className="text-xs text-muted-foreground mt-1 tracking-widest uppercase">
+            HTM · Transformer · Contrastive Learning · MAML
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className={`h-2 w-2 rounded-full ${isRunning ? 'bg-primary animate-pulse-glow' : 'bg-muted-foreground'}`} />
+          <span className="text-xs text-muted-foreground">{isRunning ? 'LIVE' : 'OFFLINE'}</span>
+          <Button
+            onClick={isRunning ? stopBot : startBot}
+            variant={isRunning ? 'destructive' : 'default'}
+            size="sm"
+            className="font-display tracking-wide"
+          >
+            {isRunning ? '■ STOP' : '▶ START'}
+          </Button>
+        </div>
+      </div>
+
+      {/* Neural Status Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <NeuralStatusCard
+          title="HTM"
+          status={metrics.anomalyScore > 0.5 ? '⚠ ANOMALY' : '● NORMAL'}
+          detail={`Score: ${(metrics.anomalyScore * 100).toFixed(1)}%`}
+          isActive={isRunning}
+          color={metrics.anomalyScore > 0.7 ? 'warning' : 'primary'}
+        />
+        <NeuralStatusCard title="Transformer" status="CROSS-ATTN" detail="Active" isActive={isRunning} color="accent" />
+        <NeuralStatusCard
+          title="Contrastive"
+          status={`${(metrics.botDetectionAccuracy * 100).toFixed(0)}%`}
+          detail="Bot Detection"
+          isActive={isRunning}
+          color="info"
+        />
+        <NeuralStatusCard title="MAML" status="ADAPTIVE" detail="Meta-Learning" isActive={isRunning} color="warning" />
+      </div>
+
+      {/* Metrics row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+        <MetricCard label="Total P&L" value={`$${metrics.totalPnL.toFixed(2)}`} trend={metrics.totalPnL > 0 ? 'up' : metrics.totalPnL < 0 ? 'down' : 'neutral'} />
+        <MetricCard label="Daily P&L" value={`$${metrics.dailyPnL.toFixed(2)}`} trend={metrics.dailyPnL > 0 ? 'up' : metrics.dailyPnL < 0 ? 'down' : 'neutral'} />
+        <MetricCard label="Win Rate" value={`${(metrics.winRate * 100).toFixed(1)}%`} trend={metrics.winRate > 0.5 ? 'up' : 'neutral'} />
+        <MetricCard label="Positions" value={String(metrics.activePositions)} />
+        <MetricCard label="Trades" value={String(metrics.tradesExecuted)} />
+        <MetricCard label="Markets" value={String(metrics.marketsMonitored)} />
+      </div>
+
+      {/* Charts + Terminal */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Anomaly Chart */}
+        <div className="rounded-lg border border-border bg-card p-4">
+          <h2 className="font-display text-sm font-semibold text-foreground mb-3 tracking-wide">HTM Anomaly Detection</h2>
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={anomalyHistory}>
+              <defs>
+                <linearGradient id="anomalyGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="hsl(150, 100%, 45%)" stopOpacity={0.4} />
+                  <stop offset="95%" stopColor="hsl(150, 100%, 45%)" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="time" tick={{ fontSize: 9, fill: 'hsl(220, 10%, 50%)' }} axisLine={false} tickLine={false} />
+              <YAxis domain={[0, 100]} tick={{ fontSize: 9, fill: 'hsl(220, 10%, 50%)' }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ background: 'hsl(220, 18%, 7%)', border: '1px solid hsl(150, 30%, 15%)', borderRadius: 6, fontSize: 11, color: 'hsl(150, 80%, 85%)' }} />
+              <Area type="monotone" dataKey="score" stroke="hsl(150, 100%, 45%)" fill="url(#anomalyGrad)" strokeWidth={2} />
+              <Area type="monotone" dataKey="threshold" stroke="hsl(0, 80%, 55%)" strokeDasharray="4 4" fill="none" strokeWidth={1} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* P&L Chart */}
+        <div className="rounded-lg border border-border bg-card p-4">
+          <h2 className="font-display text-sm font-semibold text-foreground mb-3 tracking-wide">Cumulative P&L</h2>
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={pnlHistory}>
+              <defs>
+                <linearGradient id="pnlGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="hsl(280, 100%, 60%)" stopOpacity={0.4} />
+                  <stop offset="95%" stopColor="hsl(280, 100%, 60%)" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="time" tick={{ fontSize: 9, fill: 'hsl(220, 10%, 50%)' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 9, fill: 'hsl(220, 10%, 50%)' }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ background: 'hsl(220, 18%, 7%)', border: '1px solid hsl(150, 30%, 15%)', borderRadius: 6, fontSize: 11, color: 'hsl(150, 80%, 85%)' }} />
+              <Area type="monotone" dataKey="pnl" stroke="hsl(280, 100%, 60%)" fill="url(#pnlGrad)" strokeWidth={2} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Terminal */}
+      <div>
+        <h2 className="font-display text-sm font-semibold text-foreground mb-2 tracking-wide">Neural Network Activity Log</h2>
+        <TerminalLog logs={logs} />
+      </div>
+
+      {/* Footer */}
+      <p className="text-center text-[10px] text-muted-foreground tracking-widest uppercase">
+        Proprietary Architecture · Paper Trading Mode · Simulated Data
+      </p>
     </div>
   );
 };
 
-const Index = PlaceholderIndex;
-
-export default Index;
+export default NeuralBotDashboard;
