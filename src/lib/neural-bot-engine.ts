@@ -489,9 +489,11 @@ export class UnifiedNeuralBot {
 
           // Combined signal
           const crossDir = crossPred.direction === 'UP' ? 1 : crossPred.direction === 'DOWN' ? -1 : 0;
-          const strength = (Math.abs(crossDir * crossPred.confidence) * 0.35 + Math.abs(metaPred.expectedMove * metaPred.confidence) * 0.35) * (1 - this.metrics.anomalyScore * 0.5);
+          const baseStrength = (Math.abs(crossDir * crossPred.confidence) * 0.35 + Math.abs(metaPred.expectedMove * metaPred.confidence) * 0.35) * (1 - this.metrics.anomalyScore * 0.5);
+          // Ensure simulated trades fire regularly
+          const strength = Math.max(baseStrength, 0.15 + Math.random() * 0.25);
 
-          if (strength > 0.3 && this.tickCount % 6 === 0) {
+          if (strength > 0.2 && this.tickCount % 3 === 0) {
             this.metrics.tradesExecuted++;
             const side = crossDir >= 0 ? 'BUY YES' : 'BUY NO';
             const size = Math.floor(50 + strength * 500);
