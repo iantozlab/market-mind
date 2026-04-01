@@ -329,6 +329,7 @@ export class UnifiedNeuralBot {
   // Simulated data for demo
   private simInterval: ReturnType<typeof setInterval> | null = null;
   private tickCount = 0;
+  private lastMarkets: Market[] = [];
 
   constructor(paperMode = true) {
     this.isPaperMode = paperMode;
