@@ -416,6 +416,7 @@ export class UnifiedNeuralBot {
 
       try {
         const markets = this.generateSimulatedMarkets();
+        this.lastMarkets = markets;
         this.metrics.marketsMonitored = markets.length;
 
         // Update order books and trades
