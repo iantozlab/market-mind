@@ -1,10 +1,12 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { UnifiedNeuralBot } from '@/lib/neural-bot-engine';
-import type { LogEntry, BotMetrics } from '@/lib/neural-bot-engine';
+import type { LogEntry, BotMetrics, Market } from '@/lib/neural-bot-engine';
 import NeuralStatusCard from '@/components/NeuralStatusCard';
 import MetricCard from '@/components/MetricCard';
 import TerminalLog from '@/components/TerminalLog';
+import MarketList from '@/components/MarketList';
+import MarketDetailPanel from '@/components/MarketDetailPanel';
 import { Button } from '@/components/ui/button';
 
 const NeuralBotDashboard: React.FC = () => {
@@ -16,6 +18,8 @@ const NeuralBotDashboard: React.FC = () => {
   });
   const [anomalyHistory, setAnomalyHistory] = useState<{ time: string; score: number; threshold: number }[]>([]);
   const [pnlHistory, setPnlHistory] = useState<{ time: string; pnl: number }[]>([]);
+  const [markets, setMarkets] = useState<Market[]>([]);
+  const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
 
   const botRef = useRef<UnifiedNeuralBot | null>(null);
 
@@ -24,6 +28,7 @@ const NeuralBotDashboard: React.FC = () => {
     const m = botRef.current.getMetrics();
     setLogs(botRef.current.getLogs());
     setMetrics(m);
+    setMarkets(botRef.current.getMarkets());
     setAnomalyHistory(prev => {
       const next = [...prev, { time: new Date().toLocaleTimeString(), score: m.anomalyScore * 100, threshold: 70 }];
       return next.slice(-30);
@@ -50,6 +55,10 @@ const NeuralBotDashboard: React.FC = () => {
   useEffect(() => {
     return () => { botRef.current?.stop(); };
   }, []);
+
+  // Get live data for selected market
+  const selectedOrderBook = selectedMarket && botRef.current ? botRef.current.getOrderBook(selectedMarket.id) : null;
+  const selectedTrades = selectedMarket && botRef.current ? botRef.current.getTrades(selectedMarket.id) : [];
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-6 space-y-6">
@@ -107,45 +116,53 @@ const NeuralBotDashboard: React.FC = () => {
         <MetricCard label="Markets" value={String(metrics.marketsMonitored)} />
       </div>
 
-      {/* Charts + Terminal */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Anomaly Chart */}
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="font-display text-sm font-semibold text-foreground mb-3 tracking-wide">HTM Anomaly Detection</h2>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={anomalyHistory}>
-              <defs>
-                <linearGradient id="anomalyGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="hsl(150, 100%, 45%)" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="hsl(150, 100%, 45%)" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <XAxis dataKey="time" tick={{ fontSize: 9, fill: 'hsl(220, 10%, 50%)' }} axisLine={false} tickLine={false} />
-              <YAxis domain={[0, 100]} tick={{ fontSize: 9, fill: 'hsl(220, 10%, 50%)' }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ background: 'hsl(220, 18%, 7%)', border: '1px solid hsl(150, 30%, 15%)', borderRadius: 6, fontSize: 11, color: 'hsl(150, 80%, 85%)' }} />
-              <Area type="monotone" dataKey="score" stroke="hsl(150, 100%, 45%)" fill="url(#anomalyGrad)" strokeWidth={2} />
-              <Area type="monotone" dataKey="threshold" stroke="hsl(0, 80%, 55%)" strokeDasharray="4 4" fill="none" strokeWidth={1} />
-            </AreaChart>
-          </ResponsiveContainer>
+      {/* Charts + Markets */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Charts column */}
+        <div className="lg:col-span-2 space-y-4">
+          {/* Anomaly Chart */}
+          <div className="rounded-lg border border-border bg-card p-4">
+            <h2 className="font-display text-sm font-semibold text-foreground mb-3 tracking-wide">HTM Anomaly Detection</h2>
+            <ResponsiveContainer width="100%" height={180}>
+              <AreaChart data={anomalyHistory}>
+                <defs>
+                  <linearGradient id="anomalyGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(150, 100%, 45%)" stopOpacity={0.4} />
+                    <stop offset="95%" stopColor="hsl(150, 100%, 45%)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="time" tick={{ fontSize: 9, fill: 'hsl(220, 10%, 50%)' }} axisLine={false} tickLine={false} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 9, fill: 'hsl(220, 10%, 50%)' }} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={{ background: 'hsl(220, 18%, 7%)', border: '1px solid hsl(150, 30%, 15%)', borderRadius: 6, fontSize: 11, color: 'hsl(150, 80%, 85%)' }} />
+                <Area type="monotone" dataKey="score" stroke="hsl(150, 100%, 45%)" fill="url(#anomalyGrad)" strokeWidth={2} />
+                <Area type="monotone" dataKey="threshold" stroke="hsl(0, 80%, 55%)" strokeDasharray="4 4" fill="none" strokeWidth={1} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* P&L Chart */}
+          <div className="rounded-lg border border-border bg-card p-4">
+            <h2 className="font-display text-sm font-semibold text-foreground mb-3 tracking-wide">Cumulative P&L</h2>
+            <ResponsiveContainer width="100%" height={180}>
+              <AreaChart data={pnlHistory}>
+                <defs>
+                  <linearGradient id="pnlGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(280, 100%, 60%)" stopOpacity={0.4} />
+                    <stop offset="95%" stopColor="hsl(280, 100%, 60%)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="time" tick={{ fontSize: 9, fill: 'hsl(220, 10%, 50%)' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 9, fill: 'hsl(220, 10%, 50%)' }} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={{ background: 'hsl(220, 18%, 7%)', border: '1px solid hsl(150, 30%, 15%)', borderRadius: 6, fontSize: 11, color: 'hsl(150, 80%, 85%)' }} />
+                <Area type="monotone" dataKey="pnl" stroke="hsl(280, 100%, 60%)" fill="url(#pnlGrad)" strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
         </div>
 
-        {/* P&L Chart */}
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="font-display text-sm font-semibold text-foreground mb-3 tracking-wide">Cumulative P&L</h2>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={pnlHistory}>
-              <defs>
-                <linearGradient id="pnlGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="hsl(280, 100%, 60%)" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="hsl(280, 100%, 60%)" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <XAxis dataKey="time" tick={{ fontSize: 9, fill: 'hsl(220, 10%, 50%)' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 9, fill: 'hsl(220, 10%, 50%)' }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ background: 'hsl(220, 18%, 7%)', border: '1px solid hsl(150, 30%, 15%)', borderRadius: 6, fontSize: 11, color: 'hsl(150, 80%, 85%)' }} />
-              <Area type="monotone" dataKey="pnl" stroke="hsl(280, 100%, 60%)" fill="url(#pnlGrad)" strokeWidth={2} />
-            </AreaChart>
-          </ResponsiveContainer>
+        {/* Markets column */}
+        <div>
+          <MarketList markets={markets} onSelect={setSelectedMarket} />
         </div>
       </div>
 
@@ -159,6 +176,15 @@ const NeuralBotDashboard: React.FC = () => {
       <p className="text-center text-[10px] text-muted-foreground tracking-widest uppercase">
         Proprietary Architecture · Paper Trading Mode · Simulated Data
       </p>
+
+      {/* Market Detail Panel */}
+      <MarketDetailPanel
+        market={selectedMarket}
+        orderBook={selectedOrderBook}
+        trades={selectedTrades}
+        open={!!selectedMarket}
+        onClose={() => setSelectedMarket(null)}
+      />
     </div>
   );
 };

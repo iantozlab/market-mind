@@ -329,6 +329,7 @@ export class UnifiedNeuralBot {
   // Simulated data for demo
   private simInterval: ReturnType<typeof setInterval> | null = null;
   private tickCount = 0;
+  private lastMarkets: Market[] = [];
 
   constructor(paperMode = true) {
     this.isPaperMode = paperMode;
@@ -415,6 +416,7 @@ export class UnifiedNeuralBot {
 
       try {
         const markets = this.generateSimulatedMarkets();
+        this.lastMarkets = markets;
         this.metrics.marketsMonitored = markets.length;
 
         // Update order books and trades
@@ -527,4 +529,7 @@ export class UnifiedNeuralBot {
   getLogs(): LogEntry[] { return this.logEntries; }
   getMetrics(): BotMetrics { return { ...this.metrics }; }
   getIsRunning(): boolean { return this.isRunning; }
+  getMarkets(): Market[] { return this.lastMarkets; }
+  getOrderBook(marketId: string): OrderBook | null { return this.orderBooks.get(marketId) || null; }
+  getTrades(marketId: string): Trade[] { return this.recentTrades.get(marketId) || []; }
 }
