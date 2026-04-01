@@ -527,4 +527,7 @@ export class UnifiedNeuralBot {
   getLogs(): LogEntry[] { return this.logEntries; }
   getMetrics(): BotMetrics { return { ...this.metrics }; }
   getIsRunning(): boolean { return this.isRunning; }
+  getMarkets(): Market[] { return this.lastMarkets; }
+  getOrderBook(marketId: string): OrderBook | null { return this.orderBooks.get(marketId) || null; }
+  getTrades(marketId: string): Trade[] { return this.recentTrades.get(marketId) || []; }
 }
