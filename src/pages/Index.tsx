@@ -15,6 +15,7 @@ const NeuralBotDashboard: React.FC = () => {
   const [metrics, setMetrics] = useState<BotMetrics>({
     totalPnL: 0, dailyPnL: 0, winRate: 0, activePositions: 0,
     anomalyScore: 0, botDetectionAccuracy: 0, tradesExecuted: 0, marketsMonitored: 0,
+    sharpeRatio: 0, maxDrawdown: 0, lastGasSpike: 0,
   });
   const [anomalyHistory, setAnomalyHistory] = useState<{ time: string; score: number; threshold: number }[]>([]);
   const [pnlHistory, setPnlHistory] = useState<{ time: string; pnl: number }[]>([]);
@@ -56,9 +57,14 @@ const NeuralBotDashboard: React.FC = () => {
     return () => { botRef.current?.stop(); };
   }, []);
 
-  // Get live data for selected market
   const selectedOrderBook = selectedMarket && botRef.current ? botRef.current.getOrderBook(selectedMarket.id) : null;
   const selectedTrades = selectedMarket && botRef.current ? botRef.current.getTrades(selectedMarket.id) : [];
+
+  const strategyLabels = [
+    'HTM Anomaly', 'Transformer', 'Contrastive', 'MAML',
+    'Gas Shadow', 'ZK Exploit', 'Liquidity Vortex', '47s Window',
+    'Consensus Failure', 'Bot Exhaustion', 'Whale Inactivity', 'Anti-Detection',
+  ];
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-6 space-y-6">
@@ -69,7 +75,7 @@ const NeuralBotDashboard: React.FC = () => {
             Polymarket Neural Trading System
           </h1>
           <p className="text-xs text-muted-foreground mt-1 tracking-widest uppercase">
-            HTM · Transformer · Contrastive Learning · MAML
+            HTM · Transformer · Contrastive · MAML · 12 Exploit Strategies · 50k Gen Evolution
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -95,7 +101,7 @@ const NeuralBotDashboard: React.FC = () => {
           isActive={isRunning}
           color={metrics.anomalyScore > 0.7 ? 'warning' : 'primary'}
         />
-        <NeuralStatusCard title="Transformer" status="CROSS-ATTN" detail="Active" isActive={isRunning} color="accent" />
+        <NeuralStatusCard title="Transformer" status="CROSS-ATTN" detail="8 Evolved Heads" isActive={isRunning} color="accent" />
         <NeuralStatusCard
           title="Contrastive"
           status={`${(metrics.botDetectionAccuracy * 100).toFixed(0)}%`}
@@ -107,13 +113,35 @@ const NeuralBotDashboard: React.FC = () => {
       </div>
 
       {/* Metrics row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
         <MetricCard label="Total P&L" value={`$${metrics.totalPnL.toFixed(2)}`} trend={metrics.totalPnL > 0 ? 'up' : metrics.totalPnL < 0 ? 'down' : 'neutral'} />
         <MetricCard label="Daily P&L" value={`$${metrics.dailyPnL.toFixed(2)}`} trend={metrics.dailyPnL > 0 ? 'up' : metrics.dailyPnL < 0 ? 'down' : 'neutral'} />
         <MetricCard label="Win Rate" value={`${(metrics.winRate * 100).toFixed(1)}%`} trend={metrics.winRate > 0.5 ? 'up' : 'neutral'} />
         <MetricCard label="Positions" value={String(metrics.activePositions)} />
         <MetricCard label="Trades" value={String(metrics.tradesExecuted)} />
         <MetricCard label="Markets" value={String(metrics.marketsMonitored)} />
+        <MetricCard label="Sharpe" value={metrics.sharpeRatio.toFixed(2)} trend={metrics.sharpeRatio > 1 ? 'up' : metrics.sharpeRatio < 0 ? 'down' : 'neutral'} />
+        <MetricCard label="Max DD" value={`${(metrics.maxDrawdown * 100).toFixed(1)}%`} trend={metrics.maxDrawdown > 0.1 ? 'down' : 'neutral'} />
+      </div>
+
+      {/* Active Strategies */}
+      <div className="rounded-lg border border-border bg-card p-4">
+        <h2 className="font-display text-sm font-semibold text-foreground mb-3 tracking-wide">Active Strategies</h2>
+        <div className="flex flex-wrap gap-2">
+          {strategyLabels.map((label) => (
+            <span
+              key={label}
+              className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-display tracking-wide transition-all duration-300 ${
+                isRunning
+                  ? 'border-primary/30 bg-primary/10 text-primary'
+                  : 'border-border bg-muted/30 text-muted-foreground'
+              }`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${isRunning ? 'bg-primary animate-pulse' : 'bg-muted-foreground'}`} />
+              {label}
+            </span>
+          ))}
+        </div>
       </div>
 
       {/* Charts + Markets */}
@@ -174,7 +202,7 @@ const NeuralBotDashboard: React.FC = () => {
 
       {/* Footer */}
       <p className="text-center text-[10px] text-muted-foreground tracking-widest uppercase">
-        Proprietary Architecture · Paper Trading Mode · Simulated Data
+        Exclusive Architecture · Evolved Parameters (50k Gen) · 12 Exploit Strategies · Anti-Detection Active · Paper Trading Mode
       </p>
 
       {/* Market Detail Panel */}
