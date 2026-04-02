@@ -7,6 +7,7 @@ const typeColors: Record<LogEntry['type'], string> = {
   trade: 'text-primary text-glow',
   anomaly: 'text-accent text-glow-accent',
   error: 'text-destructive',
+  strategy: 'text-info',
 };
 
 interface TerminalLogProps {
