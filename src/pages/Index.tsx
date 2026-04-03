@@ -215,6 +215,9 @@ const NeuralBotDashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* Positions Tracker */}
+      <PositionsTracker positions={positions} />
+
       {/* Terminal */}
       <div>
         <h2 className="font-display text-sm font-semibold text-foreground mb-2 tracking-wide">Neural Network Activity Log</h2>
