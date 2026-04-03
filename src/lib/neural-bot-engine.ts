@@ -891,6 +891,7 @@ export class UnifiedNeuralBot {
 
           if (strength > 0.2 && this.tickCount % 3 === 0) {
             this.metrics.tradesExecuted++;
+            const positionSide: 'LONG' | 'SHORT' = direction >= 0 ? 'LONG' : 'SHORT';
             const side = direction >= 0 ? 'BUY YES' : 'BUY NO';
             const rawSize = Math.floor(50 + strength * 500);
             const size = this.applyAntiDetection(rawSize);
@@ -906,10 +907,44 @@ export class UnifiedNeuralBot {
 
             if (pnl > 0) this.metrics.winRate = this.metrics.winRate * 0.95 + 0.05;
             else this.metrics.winRate = this.metrics.winRate * 0.95;
+
+            // Track position
+            const posId = `pos-${market.id}-${positionSide}`;
+            if (this.positions.has(posId)) {
+              // Update existing position
+              const existing = this.positions.get(posId)!;
+              existing.currentPrice = market.outcomePrices[0];
+              existing.unrealizedPnL = (existing.currentPrice - existing.entryPrice) * existing.size * (existing.side === 'LONG' ? 1 : -1);
+              // Randomly close positions to cycle
+              if (Math.random() < 0.15) this.positions.delete(posId);
+            } else if (this.positions.size < 8) {
+              // Open new position
+              this.positions.set(posId, {
+                id: posId,
+                marketId: market.id,
+                marketQuestion: market.question,
+                outcome: positionSide === 'LONG' ? 'Yes' : 'No',
+                side: positionSide,
+                entryPrice: market.outcomePrices[0],
+                currentPrice: market.outcomePrices[0],
+                size,
+                unrealizedPnL: 0,
+                entryTime: Date.now(),
+                source,
+              });
+            }
+          }
+
+          // Update current prices on existing positions for this market
+          for (const pos of this.positions.values()) {
+            if (pos.marketId === market.id) {
+              pos.currentPrice = market.outcomePrices[0] + (Math.random() - 0.5) * 0.02;
+              pos.unrealizedPnL = (pos.currentPrice - pos.entryPrice) * pos.size * (pos.side === 'LONG' ? 1 : -1);
+            }
           }
         }
 
-        this.metrics.activePositions = Math.floor(3 + Math.random() * 5);
+        this.metrics.activePositions = this.positions.size;
         this.metrics.botDetectionAccuracy = Math.min(this.botProfiles.size / (addrTrades.size + 1), 1);
 
         // Sharpe ratio (simplified)
