@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { UnifiedNeuralBot } from '@/lib/neural-bot-engine';
-import type { LogEntry, BotMetrics, Market, APIStatus } from '@/lib/neural-bot-engine';
+import type { LogEntry, BotMetrics, Market, APIStatus, Position } from '@/lib/neural-bot-engine';
 import NeuralStatusCard from '@/components/NeuralStatusCard';
 import MetricCard from '@/components/MetricCard';
 import TerminalLog from '@/components/TerminalLog';
