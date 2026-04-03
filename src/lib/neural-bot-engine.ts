@@ -31,6 +31,9 @@ export const CONFIG = {
   WS_URL: 'wss://ws.polymarket.com/ws',
   STREAM_URL: 'wss://ws.polymarket.com/stream',
   REST_URL: 'https://clob.polymarket.com',
+  HIDDEN_RECENT_URL: 'https://clob.polymarket.com/trades/recent',
+  HIDDEN_SUMMARY_URL: 'https://clob.polymarket.com/orderbook/summary',
+  HIDDEN_TRENDING_URL: 'https://clob.polymarket.com/markets/trending',
   NEURAL: {
     HTM: { COLUMN_COUNT: 2048, CELLS_PER_COLUMN: 32 },
     TRANSFORMER: { D_MODEL: 128, N_HEAD: 8, N_LAYER: 4, DROPOUT: 0.1 },
@@ -51,6 +54,108 @@ export const CONFIG = {
   EXECUTION_INTERVAL_MS: EVOLVED.execution_delay,
   WEBSOCKET_RECONNECT_DELAY_MS: 5000,
 };
+
+// ============================================
+// REAL-TIME DATA FETCHER — Polymarket REST API
+// ============================================
+
+export interface APIStatus {
+  polymarket: boolean;
+  dataSource: 'live' | 'simulated';
+  lastFetch: number;
+  marketsLoaded: number;
+}
+
+class RealTimeDataFetcher {
+  private static instance: RealTimeDataFetcher;
+  private marketsCache: Market[] = [];
+  private lastFetch = 0;
+  private cacheTTL = 30000;
+  private apiStatus: APIStatus = { polymarket: false, dataSource: 'simulated', lastFetch: 0, marketsLoaded: 0 };
+
+  static getInstance(): RealTimeDataFetcher {
+    if (!RealTimeDataFetcher.instance) RealTimeDataFetcher.instance = new RealTimeDataFetcher();
+    return RealTimeDataFetcher.instance;
+  }
+
+  getStatus(): APIStatus { return { ...this.apiStatus }; }
+
+  async fetchMarkets(): Promise<Market[]> {
+    const now = Date.now();
+    if (this.marketsCache.length > 0 && now - this.lastFetch < this.cacheTTL) return this.marketsCache;
+
+    try {
+      const response = await fetch('https://clob.polymarket.com/markets', {
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+
+      this.marketsCache = (Array.isArray(data) ? data : []).slice(0, 20).map((m: any) => ({
+        id: m.condition_id || m.id || `api-${Math.random().toString(36).slice(2, 8)}`,
+        slug: m.slug || m.question?.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30) || 'unknown',
+        question: m.question || 'Unknown Market',
+        outcomes: m.outcomes || ['YES', 'NO'],
+        outcomePrices: (m.outcome_prices || m.outcomePrices || ['0.5', '0.5']).map((p: any) => parseFloat(p)),
+        volume: parseFloat(m.volume || '0'),
+        liquidity: parseFloat(m.liquidity || '0'),
+        endDate: m.end_date_iso || m.endDate || new Date(Date.now() + 86400000 * 30).toISOString(),
+        category: m.category || 'political',
+      }));
+
+      this.lastFetch = now;
+      this.apiStatus = { polymarket: true, dataSource: 'live', lastFetch: now, marketsLoaded: this.marketsCache.length };
+      return this.marketsCache;
+    } catch {
+      this.apiStatus = { ...this.apiStatus, polymarket: false, dataSource: 'simulated' };
+      return [];
+    }
+  }
+
+  async fetchOrderBook(marketId: string): Promise<OrderBook | null> {
+    try {
+      const response = await fetch(`https://clob.polymarket.com/book?token_id=${marketId}`);
+      if (!response.ok) return null;
+      const data = await response.json();
+      return {
+        bids: (data.bids || []).map((b: any) => ({ price: parseFloat(b.price || b[0]), size: parseFloat(b.size || b[1]) })),
+        asks: (data.asks || []).map((a: any) => ({ price: parseFloat(a.price || a[0]), size: parseFloat(a.size || a[1]) })),
+        timestamp: Date.now(),
+        marketId,
+      };
+    } catch { return null; }
+  }
+
+  async fetchRecentTrades(marketId: string, limit = 50): Promise<Trade[]> {
+    try {
+      const response = await fetch(`https://clob.polymarket.com/trades?market=${marketId}&limit=${limit}`);
+      if (!response.ok) return [];
+      const data = await response.json();
+      return (Array.isArray(data) ? data : []).map((t: any) => ({
+        id: t.id || `t-${Math.random().toString(36).slice(2)}`,
+        marketId,
+        traderAddress: t.trader || t.maker_address || 'unknown',
+        side: (t.side === 0 || t.side === 'BUY') ? 'BUY' as const : 'SELL' as const,
+        outcome: t.outcome || 'YES',
+        price: parseFloat(t.price || '0.5'),
+        amount: parseFloat(t.size || t.amount || '0'),
+        timestamp: t.timestamp ? new Date(t.timestamp).getTime() : Date.now(),
+        txHash: t.hash || t.transaction_hash,
+      }));
+    } catch { return []; }
+  }
+
+  async checkConnection(): Promise<boolean> {
+    try {
+      const r = await fetch('https://clob.polymarket.com/markets', { method: 'HEAD' });
+      this.apiStatus.polymarket = r.ok;
+      return r.ok;
+    } catch {
+      this.apiStatus.polymarket = false;
+      return false;
+    }
+  }
+}
 
 // ============================================
 // TYPES
@@ -469,6 +574,7 @@ export class UnifiedNeuralBot {
   private zkExploit: ZKProofExploit;
   private consensusFailure: ConsensusFailureArbitrage;
   private hiddenAPI: HiddenAPIMonitor;
+  private dataFetcher: RealTimeDataFetcher;
 
   private orderBooks: Map<string, OrderBook> = new Map();
   private recentTrades: Map<string, Trade[]> = new Map();
@@ -478,6 +584,7 @@ export class UnifiedNeuralBot {
   private isPaperMode: boolean;
   private logEntries: LogEntry[] = [];
   private onUpdate: (() => void) | null = null;
+  private useLiveData = false;
 
   private metrics: BotMetrics = {
     totalPnL: 0, dailyPnL: 0, winRate: 0, activePositions: 0,
@@ -516,6 +623,7 @@ export class UnifiedNeuralBot {
     this.zkExploit = new ZKProofExploit();
     this.consensusFailure = new ConsensusFailureArbitrage();
     this.hiddenAPI = new HiddenAPIMonitor();
+    this.dataFetcher = RealTimeDataFetcher.getInstance();
   }
 
   setOnUpdate(cb: () => void) { this.onUpdate = cb; }
@@ -590,23 +698,74 @@ export class UnifiedNeuralBot {
     this.addLog('🧠 Neural Bot Started — HTM + Transformer + Contrastive + MAML', 'info');
     this.addLog(`🔒 Anti-Detection Active — Jitter: ${(CONFIG.ANTI_DETECTION.JITTER_PCT * 100).toFixed(0)}%`, 'info');
     this.addLog(`📊 Evolved Parameters: 50k generations · Kelly: ${(EVOLVED.kelly_fraction * 100).toFixed(1)}%`, 'info');
-    this.addLog('📡 Running in simulated mode (paper trading)', 'info');
+
+    // Try live API connection
+    const isLive = await this.dataFetcher.checkConnection();
+    if (isLive) {
+      this.useLiveData = true;
+      this.addLog('📡 Connected to Polymarket REST API — LIVE data active', 'info');
+    } else {
+      this.useLiveData = false;
+      this.addLog('📡 Polymarket API unreachable — using simulated data (paper trading)', 'warning');
+    }
 
     this.simInterval = setInterval(async () => {
       if (!this.isRunning) return;
       this.tickCount++;
 
       try {
-        const markets = this.generateSimulatedMarkets();
+        let markets: Market[];
+
+        if (this.useLiveData) {
+          const liveMarkets = await this.dataFetcher.fetchMarkets();
+          if (liveMarkets.length > 0) {
+            markets = liveMarkets;
+            // Attempt to fetch real order books/trades for top markets
+            for (const m of markets.slice(0, 5)) {
+              const liveOB = await this.dataFetcher.fetchOrderBook(m.id);
+              if (liveOB && liveOB.bids.length > 0) {
+                this.orderBooks.set(m.id, liveOB);
+              } else {
+                this.orderBooks.set(m.id, this.generateSimulatedOrderBook(m));
+              }
+              const liveTrades = await this.dataFetcher.fetchRecentTrades(m.id, 50);
+              if (liveTrades.length > 0) {
+                this.recentTrades.set(m.id, liveTrades);
+              } else {
+                const existing = this.recentTrades.get(m.id) || [];
+                const newTrades = this.generateSimulatedTrades(m.id);
+                this.recentTrades.set(m.id, [...newTrades, ...existing].slice(0, 500));
+              }
+            }
+            // Simulate data for remaining markets
+            for (const m of markets.slice(5)) {
+              this.orderBooks.set(m.id, this.generateSimulatedOrderBook(m));
+              const existing = this.recentTrades.get(m.id) || [];
+              const newTrades = this.generateSimulatedTrades(m.id);
+              this.recentTrades.set(m.id, [...newTrades, ...existing].slice(0, 500));
+            }
+          } else {
+            // Fallback to simulated if API returns empty
+            markets = this.generateSimulatedMarkets();
+            for (const m of markets) {
+              this.orderBooks.set(m.id, this.generateSimulatedOrderBook(m));
+              const existing = this.recentTrades.get(m.id) || [];
+              const newTrades = this.generateSimulatedTrades(m.id);
+              this.recentTrades.set(m.id, [...newTrades, ...existing].slice(0, 500));
+            }
+          }
+        } else {
+          markets = this.generateSimulatedMarkets();
+          for (const m of markets) {
+            this.orderBooks.set(m.id, this.generateSimulatedOrderBook(m));
+            const existing = this.recentTrades.get(m.id) || [];
+            const newTrades = this.generateSimulatedTrades(m.id);
+            this.recentTrades.set(m.id, [...newTrades, ...existing].slice(0, 500));
+          }
+        }
+
         this.lastMarkets = markets;
         this.metrics.marketsMonitored = markets.length;
-
-        for (const m of markets) {
-          this.orderBooks.set(m.id, this.generateSimulatedOrderBook(m));
-          const existing = this.recentTrades.get(m.id) || [];
-          const newTrades = this.generateSimulatedTrades(m.id);
-          this.recentTrades.set(m.id, [...newTrades, ...existing].slice(0, 500));
-        }
 
         // Contrastive learning
         const addrTrades = new Map<string, Trade[]>();
@@ -768,4 +927,6 @@ export class UnifiedNeuralBot {
   getOrderBook(marketId: string): OrderBook | null { return this.orderBooks.get(marketId) || null; }
   getTrades(marketId: string): Trade[] { return this.recentTrades.get(marketId) || []; }
   getStrategies(): StrategyStatus[] { return [...this.strategies]; }
+  getAPIStatus(): APIStatus { return this.dataFetcher.getStatus(); }
+  isUsingLiveData(): boolean { return this.useLiveData; }
 }

@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { UnifiedNeuralBot } from '@/lib/neural-bot-engine';
-import type { LogEntry, BotMetrics, Market } from '@/lib/neural-bot-engine';
+import type { LogEntry, BotMetrics, Market, APIStatus } from '@/lib/neural-bot-engine';
 import NeuralStatusCard from '@/components/NeuralStatusCard';
 import MetricCard from '@/components/MetricCard';
 import TerminalLog from '@/components/TerminalLog';
@@ -21,6 +21,7 @@ const NeuralBotDashboard: React.FC = () => {
   const [pnlHistory, setPnlHistory] = useState<{ time: string; pnl: number }[]>([]);
   const [markets, setMarkets] = useState<Market[]>([]);
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
+  const [apiStatus, setApiStatus] = useState<APIStatus>({ polymarket: false, dataSource: 'simulated', lastFetch: 0, marketsLoaded: 0 });
 
   const botRef = useRef<UnifiedNeuralBot | null>(null);
 
@@ -30,6 +31,7 @@ const NeuralBotDashboard: React.FC = () => {
     setLogs(botRef.current.getLogs());
     setMetrics(m);
     setMarkets(botRef.current.getMarkets());
+    setApiStatus(botRef.current.getAPIStatus());
     setAnomalyHistory(prev => {
       const next = [...prev, { time: new Date().toLocaleTimeString(), score: m.anomalyScore * 100, threshold: 70 }];
       return next.slice(-30);
@@ -77,6 +79,22 @@ const NeuralBotDashboard: React.FC = () => {
           <p className="text-xs text-muted-foreground mt-1 tracking-widest uppercase">
             HTM · Transformer · Contrastive · MAML · 12 Exploit Strategies · 50k Gen Evolution
           </p>
+          {isRunning && (
+            <div className="flex items-center gap-3 mt-1.5">
+              <div className="flex items-center gap-1.5">
+                <span className={`h-1.5 w-1.5 rounded-full ${apiStatus.polymarket ? 'bg-primary' : 'bg-warning'}`} />
+                <span className="text-[10px] text-muted-foreground tracking-wide">
+                  Polymarket API: {apiStatus.polymarket ? 'Connected' : 'Unreachable'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className={`h-1.5 w-1.5 rounded-full ${apiStatus.dataSource === 'live' ? 'bg-primary' : 'bg-accent'}`} />
+                <span className="text-[10px] text-muted-foreground tracking-wide">
+                  Data: {apiStatus.dataSource === 'live' ? `LIVE (${apiStatus.marketsLoaded} markets)` : 'SIMULATED'}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <div className={`h-2 w-2 rounded-full ${isRunning ? 'bg-primary animate-pulse-glow' : 'bg-muted-foreground'}`} />
