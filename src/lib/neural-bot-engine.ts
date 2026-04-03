@@ -927,4 +927,6 @@ export class UnifiedNeuralBot {
   getOrderBook(marketId: string): OrderBook | null { return this.orderBooks.get(marketId) || null; }
   getTrades(marketId: string): Trade[] { return this.recentTrades.get(marketId) || []; }
   getStrategies(): StrategyStatus[] { return [...this.strategies]; }
+  getAPIStatus(): APIStatus { return this.dataFetcher.getStatus(); }
+  isUsingLiveData(): boolean { return this.useLiveData; }
 }
