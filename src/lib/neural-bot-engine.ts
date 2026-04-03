@@ -979,4 +979,5 @@ export class UnifiedNeuralBot {
   getStrategies(): StrategyStatus[] { return [...this.strategies]; }
   getAPIStatus(): APIStatus { return this.dataFetcher.getStatus(); }
   isUsingLiveData(): boolean { return this.useLiveData; }
+  getPositions(): Position[] { return Array.from(this.positions.values()); }
 }
