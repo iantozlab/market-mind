@@ -79,6 +79,22 @@ const NeuralBotDashboard: React.FC = () => {
           <p className="text-xs text-muted-foreground mt-1 tracking-widest uppercase">
             HTM · Transformer · Contrastive · MAML · 12 Exploit Strategies · 50k Gen Evolution
           </p>
+          {isRunning && (
+            <div className="flex items-center gap-3 mt-1.5">
+              <div className="flex items-center gap-1.5">
+                <span className={`h-1.5 w-1.5 rounded-full ${apiStatus.polymarket ? 'bg-primary' : 'bg-warning'}`} />
+                <span className="text-[10px] text-muted-foreground tracking-wide">
+                  Polymarket API: {apiStatus.polymarket ? 'Connected' : 'Unreachable'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className={`h-1.5 w-1.5 rounded-full ${apiStatus.dataSource === 'live' ? 'bg-primary' : 'bg-accent'}`} />
+                <span className="text-[10px] text-muted-foreground tracking-wide">
+                  Data: {apiStatus.dataSource === 'live' ? `LIVE (${apiStatus.marketsLoaded} markets)` : 'SIMULATED'}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <div className={`h-2 w-2 rounded-full ${isRunning ? 'bg-primary animate-pulse-glow' : 'bg-muted-foreground'}`} />
