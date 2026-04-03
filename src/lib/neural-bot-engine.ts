@@ -593,6 +593,7 @@ export class UnifiedNeuralBot {
   private orderBooks: Map<string, OrderBook> = new Map();
   private recentTrades: Map<string, Trade[]> = new Map();
   private botProfiles: Map<string, BotProfile> = new Map();
+  private positions: Map<string, Position> = new Map();
 
   private isRunning = false;
   private isPaperMode: boolean;
