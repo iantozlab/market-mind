@@ -167,6 +167,20 @@ export interface Trade { id: string; marketId: string; traderAddress: string; si
 export interface Market { id: string; slug: string; question: string; outcomes: string[]; outcomePrices: number[]; volume: number; liquidity: number; endDate: string; category?: string; }
 export interface BotProfile { address: string; confidence: number; type: string; averageOrderSize: number; typicalSpacing: number; activeHours: number[]; reactionTime: number; signature?: string | null; }
 
+export interface Position {
+  id: string;
+  marketId: string;
+  marketQuestion: string;
+  outcome: string;
+  side: 'LONG' | 'SHORT';
+  entryPrice: number;
+  currentPrice: number;
+  size: number;
+  unrealizedPnL: number;
+  entryTime: number;
+  source: string;
+}
+
 export interface BotMetrics {
   totalPnL: number;
   dailyPnL: number;
