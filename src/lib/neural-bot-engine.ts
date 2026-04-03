@@ -574,6 +574,7 @@ export class UnifiedNeuralBot {
   private zkExploit: ZKProofExploit;
   private consensusFailure: ConsensusFailureArbitrage;
   private hiddenAPI: HiddenAPIMonitor;
+  private dataFetcher: RealTimeDataFetcher;
 
   private orderBooks: Map<string, OrderBook> = new Map();
   private recentTrades: Map<string, Trade[]> = new Map();
@@ -583,6 +584,7 @@ export class UnifiedNeuralBot {
   private isPaperMode: boolean;
   private logEntries: LogEntry[] = [];
   private onUpdate: (() => void) | null = null;
+  private useLiveData = false;
 
   private metrics: BotMetrics = {
     totalPnL: 0, dailyPnL: 0, winRate: 0, activePositions: 0,
@@ -621,6 +623,7 @@ export class UnifiedNeuralBot {
     this.zkExploit = new ZKProofExploit();
     this.consensusFailure = new ConsensusFailureArbitrage();
     this.hiddenAPI = new HiddenAPIMonitor();
+    this.dataFetcher = RealTimeDataFetcher.getInstance();
   }
 
   setOnUpdate(cb: () => void) { this.onUpdate = cb; }
