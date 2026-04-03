@@ -31,6 +31,7 @@ const NeuralBotDashboard: React.FC = () => {
     setLogs(botRef.current.getLogs());
     setMetrics(m);
     setMarkets(botRef.current.getMarkets());
+    setApiStatus(botRef.current.getAPIStatus());
     setAnomalyHistory(prev => {
       const next = [...prev, { time: new Date().toLocaleTimeString(), score: m.anomalyScore * 100, threshold: 70 }];
       return next.slice(-30);
