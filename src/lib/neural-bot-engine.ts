@@ -698,22 +698,74 @@ export class UnifiedNeuralBot {
     this.addLog('🧠 Neural Bot Started — HTM + Transformer + Contrastive + MAML', 'info');
     this.addLog(`🔒 Anti-Detection Active — Jitter: ${(CONFIG.ANTI_DETECTION.JITTER_PCT * 100).toFixed(0)}%`, 'info');
     this.addLog(`📊 Evolved Parameters: 50k generations · Kelly: ${(EVOLVED.kelly_fraction * 100).toFixed(1)}%`, 'info');
-    this.addLog('📡 Running in simulated mode (paper trading)', 'info');
+
+    // Try live API connection
+    const isLive = await this.dataFetcher.checkConnection();
+    if (isLive) {
+      this.useLiveData = true;
+      this.addLog('📡 Connected to Polymarket REST API — LIVE data active', 'info');
+    } else {
+      this.useLiveData = false;
+      this.addLog('📡 Polymarket API unreachable — using simulated data (paper trading)', 'warning');
+    }
 
     this.simInterval = setInterval(async () => {
       if (!this.isRunning) return;
       this.tickCount++;
 
       try {
-        const markets = this.generateSimulatedMarkets();
+        let markets: Market[];
+
+        if (this.useLiveData) {
+          const liveMarkets = await this.dataFetcher.fetchMarkets();
+          if (liveMarkets.length > 0) {
+            markets = liveMarkets;
+            // Attempt to fetch real order books/trades for top markets
+            for (const m of markets.slice(0, 5)) {
+              const liveOB = await this.dataFetcher.fetchOrderBook(m.id);
+              if (liveOB && liveOB.bids.length > 0) {
+                this.orderBooks.set(m.id, liveOB);
+              } else {
+                this.orderBooks.set(m.id, this.generateSimulatedOrderBook(m));
+              }
+              const liveTrades = await this.dataFetcher.fetchRecentTrades(m.id, 50);
+              if (liveTrades.length > 0) {
+                this.recentTrades.set(m.id, liveTrades);
+              } else {
+                const existing = this.recentTrades.get(m.id) || [];
+                const newTrades = this.generateSimulatedTrades(m.id);
+                this.recentTrades.set(m.id, [...newTrades, ...existing].slice(0, 500));
+              }
+            }
+            // Simulate data for remaining markets
+            for (const m of markets.slice(5)) {
+              this.orderBooks.set(m.id, this.generateSimulatedOrderBook(m));
+              const existing = this.recentTrades.get(m.id) || [];
+              const newTrades = this.generateSimulatedTrades(m.id);
+              this.recentTrades.set(m.id, [...newTrades, ...existing].slice(0, 500));
+            }
+          } else {
+            // Fallback to simulated if API returns empty
+            markets = this.generateSimulatedMarkets();
+            for (const m of markets) {
+              this.orderBooks.set(m.id, this.generateSimulatedOrderBook(m));
+              const existing = this.recentTrades.get(m.id) || [];
+              const newTrades = this.generateSimulatedTrades(m.id);
+              this.recentTrades.set(m.id, [...newTrades, ...existing].slice(0, 500));
+            }
+          }
+        } else {
+          markets = this.generateSimulatedMarkets();
+          for (const m of markets) {
+            this.orderBooks.set(m.id, this.generateSimulatedOrderBook(m));
+            const existing = this.recentTrades.get(m.id) || [];
+            const newTrades = this.generateSimulatedTrades(m.id);
+            this.recentTrades.set(m.id, [...newTrades, ...existing].slice(0, 500));
+          }
+        }
+
         this.lastMarkets = markets;
         this.metrics.marketsMonitored = markets.length;
-
-        for (const m of markets) {
-          this.orderBooks.set(m.id, this.generateSimulatedOrderBook(m));
-          const existing = this.recentTrades.get(m.id) || [];
-          const newTrades = this.generateSimulatedTrades(m.id);
-          this.recentTrades.set(m.id, [...newTrades, ...existing].slice(0, 500));
         }
 
         // Contrastive learning
