@@ -31,6 +31,9 @@ export const CONFIG = {
   WS_URL: 'wss://ws.polymarket.com/ws',
   STREAM_URL: 'wss://ws.polymarket.com/stream',
   REST_URL: 'https://clob.polymarket.com',
+  HIDDEN_RECENT_URL: 'https://clob.polymarket.com/trades/recent',
+  HIDDEN_SUMMARY_URL: 'https://clob.polymarket.com/orderbook/summary',
+  HIDDEN_TRENDING_URL: 'https://clob.polymarket.com/markets/trending',
   NEURAL: {
     HTM: { COLUMN_COUNT: 2048, CELLS_PER_COLUMN: 32 },
     TRANSFORMER: { D_MODEL: 128, N_HEAD: 8, N_LAYER: 4, DROPOUT: 0.1 },
@@ -51,6 +54,108 @@ export const CONFIG = {
   EXECUTION_INTERVAL_MS: EVOLVED.execution_delay,
   WEBSOCKET_RECONNECT_DELAY_MS: 5000,
 };
+
+// ============================================
+// REAL-TIME DATA FETCHER — Polymarket REST API
+// ============================================
+
+export interface APIStatus {
+  polymarket: boolean;
+  dataSource: 'live' | 'simulated';
+  lastFetch: number;
+  marketsLoaded: number;
+}
+
+class RealTimeDataFetcher {
+  private static instance: RealTimeDataFetcher;
+  private marketsCache: Market[] = [];
+  private lastFetch = 0;
+  private cacheTTL = 30000;
+  private apiStatus: APIStatus = { polymarket: false, dataSource: 'simulated', lastFetch: 0, marketsLoaded: 0 };
+
+  static getInstance(): RealTimeDataFetcher {
+    if (!RealTimeDataFetcher.instance) RealTimeDataFetcher.instance = new RealTimeDataFetcher();
+    return RealTimeDataFetcher.instance;
+  }
+
+  getStatus(): APIStatus { return { ...this.apiStatus }; }
+
+  async fetchMarkets(): Promise<Market[]> {
+    const now = Date.now();
+    if (this.marketsCache.length > 0 && now - this.lastFetch < this.cacheTTL) return this.marketsCache;
+
+    try {
+      const response = await fetch('https://clob.polymarket.com/markets', {
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+
+      this.marketsCache = (Array.isArray(data) ? data : []).slice(0, 20).map((m: any) => ({
+        id: m.condition_id || m.id || `api-${Math.random().toString(36).slice(2, 8)}`,
+        slug: m.slug || m.question?.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30) || 'unknown',
+        question: m.question || 'Unknown Market',
+        outcomes: m.outcomes || ['YES', 'NO'],
+        outcomePrices: (m.outcome_prices || m.outcomePrices || ['0.5', '0.5']).map((p: any) => parseFloat(p)),
+        volume: parseFloat(m.volume || '0'),
+        liquidity: parseFloat(m.liquidity || '0'),
+        endDate: m.end_date_iso || m.endDate || new Date(Date.now() + 86400000 * 30).toISOString(),
+        category: m.category || 'political',
+      }));
+
+      this.lastFetch = now;
+      this.apiStatus = { polymarket: true, dataSource: 'live', lastFetch: now, marketsLoaded: this.marketsCache.length };
+      return this.marketsCache;
+    } catch {
+      this.apiStatus = { ...this.apiStatus, polymarket: false, dataSource: 'simulated' };
+      return [];
+    }
+  }
+
+  async fetchOrderBook(marketId: string): Promise<OrderBook | null> {
+    try {
+      const response = await fetch(`https://clob.polymarket.com/book?token_id=${marketId}`);
+      if (!response.ok) return null;
+      const data = await response.json();
+      return {
+        bids: (data.bids || []).map((b: any) => ({ price: parseFloat(b.price || b[0]), size: parseFloat(b.size || b[1]) })),
+        asks: (data.asks || []).map((a: any) => ({ price: parseFloat(a.price || a[0]), size: parseFloat(a.size || a[1]) })),
+        timestamp: Date.now(),
+        marketId,
+      };
+    } catch { return null; }
+  }
+
+  async fetchRecentTrades(marketId: string, limit = 50): Promise<Trade[]> {
+    try {
+      const response = await fetch(`https://clob.polymarket.com/trades?market=${marketId}&limit=${limit}`);
+      if (!response.ok) return [];
+      const data = await response.json();
+      return (Array.isArray(data) ? data : []).map((t: any) => ({
+        id: t.id || `t-${Math.random().toString(36).slice(2)}`,
+        marketId,
+        traderAddress: t.trader || t.maker_address || 'unknown',
+        side: (t.side === 0 || t.side === 'BUY') ? 'BUY' as const : 'SELL' as const,
+        outcome: t.outcome || 'YES',
+        price: parseFloat(t.price || '0.5'),
+        amount: parseFloat(t.size || t.amount || '0'),
+        timestamp: t.timestamp ? new Date(t.timestamp).getTime() : Date.now(),
+        txHash: t.hash || t.transaction_hash,
+      }));
+    } catch { return []; }
+  }
+
+  async checkConnection(): Promise<boolean> {
+    try {
+      const r = await fetch('https://clob.polymarket.com/markets', { method: 'HEAD' });
+      this.apiStatus.polymarket = r.ok;
+      return r.ok;
+    } catch {
+      this.apiStatus.polymarket = false;
+      return false;
+    }
+  }
+}
 
 // ============================================
 // TYPES
