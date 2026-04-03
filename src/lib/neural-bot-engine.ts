@@ -766,7 +766,6 @@ export class UnifiedNeuralBot {
 
         this.lastMarkets = markets;
         this.metrics.marketsMonitored = markets.length;
-        }
 
         // Contrastive learning
         const addrTrades = new Map<string, Trade[]>();
