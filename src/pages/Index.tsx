@@ -7,6 +7,7 @@ import MetricCard from '@/components/MetricCard';
 import TerminalLog from '@/components/TerminalLog';
 import MarketList from '@/components/MarketList';
 import MarketDetailPanel from '@/components/MarketDetailPanel';
+import PositionsTracker from '@/components/PositionsTracker';
 import { Button } from '@/components/ui/button';
 
 const NeuralBotDashboard: React.FC = () => {
