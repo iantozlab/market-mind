@@ -1,12 +1,13 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { UnifiedNeuralBot } from '@/lib/neural-bot-engine';
-import type { LogEntry, BotMetrics, Market, APIStatus } from '@/lib/neural-bot-engine';
+import type { LogEntry, BotMetrics, Market, APIStatus, Position } from '@/lib/neural-bot-engine';
 import NeuralStatusCard from '@/components/NeuralStatusCard';
 import MetricCard from '@/components/MetricCard';
 import TerminalLog from '@/components/TerminalLog';
 import MarketList from '@/components/MarketList';
 import MarketDetailPanel from '@/components/MarketDetailPanel';
+import PositionsTracker from '@/components/PositionsTracker';
 import { Button } from '@/components/ui/button';
 
 const NeuralBotDashboard: React.FC = () => {
@@ -22,6 +23,7 @@ const NeuralBotDashboard: React.FC = () => {
   const [markets, setMarkets] = useState<Market[]>([]);
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
   const [apiStatus, setApiStatus] = useState<APIStatus>({ polymarket: false, dataSource: 'simulated', lastFetch: 0, marketsLoaded: 0 });
+  const [positions, setPositions] = useState<Position[]>([]);
 
   const botRef = useRef<UnifiedNeuralBot | null>(null);
 
@@ -32,6 +34,7 @@ const NeuralBotDashboard: React.FC = () => {
     setMetrics(m);
     setMarkets(botRef.current.getMarkets());
     setApiStatus(botRef.current.getAPIStatus());
+    setPositions(botRef.current.getPositions());
     setAnomalyHistory(prev => {
       const next = [...prev, { time: new Date().toLocaleTimeString(), score: m.anomalyScore * 100, threshold: 70 }];
       return next.slice(-30);
@@ -211,6 +214,9 @@ const NeuralBotDashboard: React.FC = () => {
           <MarketList markets={markets} onSelect={setSelectedMarket} />
         </div>
       </div>
+
+      {/* Positions Tracker */}
+      <PositionsTracker positions={positions} />
 
       {/* Terminal */}
       <div>
