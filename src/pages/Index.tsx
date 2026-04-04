@@ -21,7 +21,7 @@ const NeuralBotDashboard: React.FC = () => {
   const [pnlHistory, setPnlHistory] = useState<{ time: string; pnl: number }[]>([]);
   const [markets, setMarkets] = useState<Market[]>([]);
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
-  const [apiStatus, setApiStatus] = useState<APIStatus>({ polymarket: false, dataSource: 'simulated', lastFetch: 0, marketsLoaded: 0 });
+  const [apiStatus, setApiStatus] = useState<APIStatus>({ polymarket: false, polygon: false, dataSource: 'simulated', lastFetch: 0, marketsLoaded: 0 });
 
   const botRef = useRef<UnifiedNeuralBot | null>(null);
 

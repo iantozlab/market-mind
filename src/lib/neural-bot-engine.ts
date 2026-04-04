@@ -153,7 +153,7 @@ class RealTimeDataFetcher {
       }));
 
       this.lastFetch = now;
-      this.apiStatus = { polymarket: true, dataSource: 'live', lastFetch: now, marketsLoaded: this.marketsCache.length };
+      this.apiStatus = { polymarket: true, polygon: false, dataSource: 'live', lastFetch: now, marketsLoaded: this.marketsCache.length };
       return this.marketsCache;
     } catch {
       this.apiStatus = { ...this.apiStatus, polymarket: false, dataSource: 'simulated', polygon: false };
