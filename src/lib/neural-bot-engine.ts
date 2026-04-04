@@ -116,7 +116,7 @@ class RealTimeDataFetcher {
   private marketsCache: Market[] = [];
   private lastFetch = 0;
   private cacheTTL = 30000;
-  private apiStatus: APIStatus = { polymarket: false, dataSource: 'simulated', lastFetch: 0, marketsLoaded: 0 };
+  private apiStatus: APIStatus = { polymarket: false, polygon: false, dataSource: 'simulated', lastFetch: 0, marketsLoaded: 0 };
 
   static getInstance(): RealTimeDataFetcher {
     if (!RealTimeDataFetcher.instance) RealTimeDataFetcher.instance = new RealTimeDataFetcher();
