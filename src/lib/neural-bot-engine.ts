@@ -105,6 +105,7 @@ export const CONFIG = {
 
 export interface APIStatus {
   polymarket: boolean;
+  polygon: boolean;
   dataSource: 'live' | 'simulated';
   lastFetch: number;
   marketsLoaded: number;
