@@ -1,4 +1,42 @@
 // ============================================
+// ENVIRONMENT VARIABLES (Lovable Secrets / Vite env)
+// ============================================
+
+export const ENV = {
+  POLYMARKET_API_KEY: (import.meta as any).env?.VITE_POLYMARKET_API_KEY || '',
+  POLYGON_RPC_URL: (import.meta as any).env?.VITE_POLYGON_RPC_URL || 'https://polygon-rpc.com',
+  BLOCKNATIVE_API_KEY: (import.meta as any).env?.VITE_BLOCKNATIVE_API_KEY || '',
+  BOT_MODE: ((import.meta as any).env?.VITE_BOT_MODE || 'PAPER') as 'PAPER' | 'LIVE',
+  INITIAL_CAPITAL: parseFloat((import.meta as any).env?.VITE_INITIAL_CAPITAL || '10000'),
+  MAX_DAILY_LOSS: parseFloat((import.meta as any).env?.VITE_MAX_DAILY_LOSS || '187'),
+  MAX_DRAWDOWN: parseFloat((import.meta as any).env?.VITE_MAX_DRAWDOWN || '0.142'),
+  LOG_LEVEL: (import.meta as any).env?.VITE_LOG_LEVEL || 'info',
+};
+
+export const validateEnv = (): { valid: boolean; missing: string[] } => {
+  const missing: string[] = [];
+  if (!ENV.POLYMARKET_API_KEY) missing.push('VITE_POLYMARKET_API_KEY');
+  if (!ENV.POLYGON_RPC_URL || ENV.POLYGON_RPC_URL === 'https://polygon-rpc.com') missing.push('VITE_POLYGON_RPC_URL');
+  return { valid: missing.length === 0, missing };
+};
+
+export interface EnvStatus {
+  polymarketApiKey: boolean;
+  polygonRpc: boolean;
+  blocknativeApiKey: boolean;
+  botMode: 'PAPER' | 'LIVE';
+  initialCapital: number;
+}
+
+export const getEnvStatus = (): EnvStatus => ({
+  polymarketApiKey: !!ENV.POLYMARKET_API_KEY,
+  polygonRpc: !!ENV.POLYGON_RPC_URL && ENV.POLYGON_RPC_URL !== 'https://polygon-rpc.com',
+  blocknativeApiKey: !!ENV.BLOCKNATIVE_API_KEY,
+  botMode: ENV.BOT_MODE,
+  initialCapital: ENV.INITIAL_CAPITAL,
+});
+
+// ============================================
 // EVOLVED PARAMETERS - 50,000 GENERATIONS
 // ============================================
 
@@ -34,6 +72,11 @@ export const CONFIG = {
   HIDDEN_RECENT_URL: 'https://clob.polymarket.com/trades/recent',
   HIDDEN_SUMMARY_URL: 'https://clob.polymarket.com/orderbook/summary',
   HIDDEN_TRENDING_URL: 'https://clob.polymarket.com/markets/trending',
+  POLYMARKET_API_KEY: ENV.POLYMARKET_API_KEY,
+  POLYGON_RPC_URL: ENV.POLYGON_RPC_URL,
+  BLOCKNATIVE_API_KEY: ENV.BLOCKNATIVE_API_KEY,
+  BOT_MODE: ENV.BOT_MODE,
+  INITIAL_CAPITAL: ENV.INITIAL_CAPITAL,
   NEURAL: {
     HTM: { COLUMN_COUNT: 2048, CELLS_PER_COLUMN: 32 },
     TRANSFORMER: { D_MODEL: 128, N_HEAD: 8, N_LAYER: 4, DROPOUT: 0.1 },
@@ -47,11 +90,12 @@ export const CONFIG = {
     WHALE_INACTIVITY: { MIN_INACTIVE_DAYS: 1, MAX_INACTIVE_DAYS: 2, MIN_VOLUME: 5000 },
     LIQUIDITY_VORTEX: { PHASE2_START_HOURS: 48, PHASE2_END_HOURS: 24, TARGET_SPREAD: 0.045 },
     ZK_EXPLOIT: { WAIT_MS: 1800, TARGET_PREMIUM: 0.005 },
-    CONSENSUS_FAILURE: { DIVERGENCE_THRESHOLD: 0.08 },
+    CONSENSUS_FAILURE: { DIVERGENCE_THRESHOLD: 0.08, JUMP_TIMES: [9.53, 14.0, 16.25, 20.0] },
   },
-  RISK: { MAX_DAILY_LOSS: EVOLVED.daily_loss_limit, MAX_DRAWDOWN: EVOLVED.max_drawdown, KELLY_FRACTION: EVOLVED.kelly_fraction, MAX_POSITION_PCT: 0.10 },
+  RISK: { MAX_DAILY_LOSS: ENV.MAX_DAILY_LOSS, MAX_DRAWDOWN: ENV.MAX_DRAWDOWN, KELLY_FRACTION: EVOLVED.kelly_fraction, MAX_POSITION_PCT: 0.10 },
   ANTI_DETECTION: { JITTER_PCT: 0.07, SIZE_MIN: 47, SIZE_MAX: 142, GAS_MIN: 31, GAS_MAX: 78, FALSE_SIGNAL_RATE: 0.015 },
   EXECUTION_INTERVAL_MS: EVOLVED.execution_delay,
+  CANCEL_REPLACE_TIMEOUT_MS: EVOLVED.cancel_replace_timeout,
   WEBSOCKET_RECONNECT_DELAY_MS: 5000,
 };
 
