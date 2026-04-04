@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { UnifiedNeuralBot } from '@/lib/neural-bot-engine';
-import type { LogEntry, BotMetrics, Market, APIStatus } from '@/lib/neural-bot-engine';
+import { UnifiedNeuralBot, getEnvStatus, ENV, CONFIG } from '@/lib/neural-bot-engine';
+import type { LogEntry, BotMetrics, Market, APIStatus, EnvStatus } from '@/lib/neural-bot-engine';
 import NeuralStatusCard from '@/components/NeuralStatusCard';
 import MetricCard from '@/components/MetricCard';
 import TerminalLog from '@/components/TerminalLog';
@@ -21,7 +21,7 @@ const NeuralBotDashboard: React.FC = () => {
   const [pnlHistory, setPnlHistory] = useState<{ time: string; pnl: number }[]>([]);
   const [markets, setMarkets] = useState<Market[]>([]);
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
-  const [apiStatus, setApiStatus] = useState<APIStatus>({ polymarket: false, dataSource: 'simulated', lastFetch: 0, marketsLoaded: 0 });
+  const [apiStatus, setApiStatus] = useState<APIStatus>({ polymarket: false, polygon: false, dataSource: 'simulated', lastFetch: 0, marketsLoaded: 0 });
 
   const botRef = useRef<UnifiedNeuralBot | null>(null);
 
@@ -80,7 +80,7 @@ const NeuralBotDashboard: React.FC = () => {
             HTM · Transformer · Contrastive · MAML · 12 Exploit Strategies · 50k Gen Evolution
           </p>
           {isRunning && (
-            <div className="flex items-center gap-3 mt-1.5">
+            <div className="flex flex-wrap items-center gap-3 mt-1.5">
               <div className="flex items-center gap-1.5">
                 <span className={`h-1.5 w-1.5 rounded-full ${apiStatus.polymarket ? 'bg-primary' : 'bg-warning'}`} />
                 <span className="text-[10px] text-muted-foreground tracking-wide">
@@ -91,6 +91,18 @@ const NeuralBotDashboard: React.FC = () => {
                 <span className={`h-1.5 w-1.5 rounded-full ${apiStatus.dataSource === 'live' ? 'bg-primary' : 'bg-accent'}`} />
                 <span className="text-[10px] text-muted-foreground tracking-wide">
                   Data: {apiStatus.dataSource === 'live' ? `LIVE (${apiStatus.marketsLoaded} markets)` : 'SIMULATED'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className={`h-1.5 w-1.5 rounded-full ${getEnvStatus().polymarketApiKey ? 'bg-primary' : 'bg-destructive'}`} />
+                <span className="text-[10px] text-muted-foreground tracking-wide">
+                  API Key: {getEnvStatus().polymarketApiKey ? 'Configured' : 'Missing'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+                <span className="text-[10px] text-muted-foreground tracking-wide">
+                  Mode: {CONFIG.BOT_MODE} · Capital: ${CONFIG.INITIAL_CAPITAL.toLocaleString()}
                 </span>
               </div>
             </div>

@@ -1,4 +1,42 @@
 // ============================================
+// ENVIRONMENT VARIABLES (Lovable Secrets / Vite env)
+// ============================================
+
+export const ENV = {
+  POLYMARKET_API_KEY: (import.meta as any).env?.VITE_POLYMARKET_API_KEY || '',
+  POLYGON_RPC_URL: (import.meta as any).env?.VITE_POLYGON_RPC_URL || 'https://polygon-rpc.com',
+  BLOCKNATIVE_API_KEY: (import.meta as any).env?.VITE_BLOCKNATIVE_API_KEY || '',
+  BOT_MODE: ((import.meta as any).env?.VITE_BOT_MODE || 'PAPER') as 'PAPER' | 'LIVE',
+  INITIAL_CAPITAL: parseFloat((import.meta as any).env?.VITE_INITIAL_CAPITAL || '10000'),
+  MAX_DAILY_LOSS: parseFloat((import.meta as any).env?.VITE_MAX_DAILY_LOSS || '187'),
+  MAX_DRAWDOWN: parseFloat((import.meta as any).env?.VITE_MAX_DRAWDOWN || '0.142'),
+  LOG_LEVEL: (import.meta as any).env?.VITE_LOG_LEVEL || 'info',
+};
+
+export const validateEnv = (): { valid: boolean; missing: string[] } => {
+  const missing: string[] = [];
+  if (!ENV.POLYMARKET_API_KEY) missing.push('VITE_POLYMARKET_API_KEY');
+  if (!ENV.POLYGON_RPC_URL || ENV.POLYGON_RPC_URL === 'https://polygon-rpc.com') missing.push('VITE_POLYGON_RPC_URL');
+  return { valid: missing.length === 0, missing };
+};
+
+export interface EnvStatus {
+  polymarketApiKey: boolean;
+  polygonRpc: boolean;
+  blocknativeApiKey: boolean;
+  botMode: 'PAPER' | 'LIVE';
+  initialCapital: number;
+}
+
+export const getEnvStatus = (): EnvStatus => ({
+  polymarketApiKey: !!ENV.POLYMARKET_API_KEY,
+  polygonRpc: !!ENV.POLYGON_RPC_URL && ENV.POLYGON_RPC_URL !== 'https://polygon-rpc.com',
+  blocknativeApiKey: !!ENV.BLOCKNATIVE_API_KEY,
+  botMode: ENV.BOT_MODE,
+  initialCapital: ENV.INITIAL_CAPITAL,
+});
+
+// ============================================
 // EVOLVED PARAMETERS - 50,000 GENERATIONS
 // ============================================
 
@@ -34,6 +72,11 @@ export const CONFIG = {
   HIDDEN_RECENT_URL: 'https://clob.polymarket.com/trades/recent',
   HIDDEN_SUMMARY_URL: 'https://clob.polymarket.com/orderbook/summary',
   HIDDEN_TRENDING_URL: 'https://clob.polymarket.com/markets/trending',
+  POLYMARKET_API_KEY: ENV.POLYMARKET_API_KEY,
+  POLYGON_RPC_URL: ENV.POLYGON_RPC_URL,
+  BLOCKNATIVE_API_KEY: ENV.BLOCKNATIVE_API_KEY,
+  BOT_MODE: ENV.BOT_MODE,
+  INITIAL_CAPITAL: ENV.INITIAL_CAPITAL,
   NEURAL: {
     HTM: { COLUMN_COUNT: 2048, CELLS_PER_COLUMN: 32 },
     TRANSFORMER: { D_MODEL: 128, N_HEAD: 8, N_LAYER: 4, DROPOUT: 0.1 },
@@ -47,11 +90,12 @@ export const CONFIG = {
     WHALE_INACTIVITY: { MIN_INACTIVE_DAYS: 1, MAX_INACTIVE_DAYS: 2, MIN_VOLUME: 5000 },
     LIQUIDITY_VORTEX: { PHASE2_START_HOURS: 48, PHASE2_END_HOURS: 24, TARGET_SPREAD: 0.045 },
     ZK_EXPLOIT: { WAIT_MS: 1800, TARGET_PREMIUM: 0.005 },
-    CONSENSUS_FAILURE: { DIVERGENCE_THRESHOLD: 0.08 },
+    CONSENSUS_FAILURE: { DIVERGENCE_THRESHOLD: 0.08, JUMP_TIMES: [9.53, 14.0, 16.25, 20.0] },
   },
-  RISK: { MAX_DAILY_LOSS: EVOLVED.daily_loss_limit, MAX_DRAWDOWN: EVOLVED.max_drawdown, KELLY_FRACTION: EVOLVED.kelly_fraction, MAX_POSITION_PCT: 0.10 },
+  RISK: { MAX_DAILY_LOSS: ENV.MAX_DAILY_LOSS, MAX_DRAWDOWN: ENV.MAX_DRAWDOWN, KELLY_FRACTION: EVOLVED.kelly_fraction, MAX_POSITION_PCT: 0.10 },
   ANTI_DETECTION: { JITTER_PCT: 0.07, SIZE_MIN: 47, SIZE_MAX: 142, GAS_MIN: 31, GAS_MAX: 78, FALSE_SIGNAL_RATE: 0.015 },
   EXECUTION_INTERVAL_MS: EVOLVED.execution_delay,
+  CANCEL_REPLACE_TIMEOUT_MS: EVOLVED.cancel_replace_timeout,
   WEBSOCKET_RECONNECT_DELAY_MS: 5000,
 };
 
@@ -61,6 +105,7 @@ export const CONFIG = {
 
 export interface APIStatus {
   polymarket: boolean;
+  polygon: boolean;
   dataSource: 'live' | 'simulated';
   lastFetch: number;
   marketsLoaded: number;
@@ -71,7 +116,7 @@ class RealTimeDataFetcher {
   private marketsCache: Market[] = [];
   private lastFetch = 0;
   private cacheTTL = 30000;
-  private apiStatus: APIStatus = { polymarket: false, dataSource: 'simulated', lastFetch: 0, marketsLoaded: 0 };
+  private apiStatus: APIStatus = { polymarket: false, polygon: false, dataSource: 'simulated', lastFetch: 0, marketsLoaded: 0 };
 
   static getInstance(): RealTimeDataFetcher {
     if (!RealTimeDataFetcher.instance) RealTimeDataFetcher.instance = new RealTimeDataFetcher();
@@ -86,7 +131,11 @@ class RealTimeDataFetcher {
 
     try {
       const response = await fetch('https://clob.polymarket.com/markets', {
-        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          ...(CONFIG.POLYMARKET_API_KEY && { 'Authorization': `Bearer ${CONFIG.POLYMARKET_API_KEY}` }),
+        },
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
@@ -104,10 +153,10 @@ class RealTimeDataFetcher {
       }));
 
       this.lastFetch = now;
-      this.apiStatus = { polymarket: true, dataSource: 'live', lastFetch: now, marketsLoaded: this.marketsCache.length };
+      this.apiStatus = { polymarket: true, polygon: false, dataSource: 'live', lastFetch: now, marketsLoaded: this.marketsCache.length };
       return this.marketsCache;
     } catch {
-      this.apiStatus = { ...this.apiStatus, polymarket: false, dataSource: 'simulated' };
+      this.apiStatus = { ...this.apiStatus, polymarket: false, dataSource: 'simulated', polygon: false };
       return [];
     }
   }
@@ -696,8 +745,17 @@ export class UnifiedNeuralBot {
   async run() {
     this.isRunning = true;
     this.addLog('🧠 Neural Bot Started — HTM + Transformer + Contrastive + MAML', 'info');
+    this.addLog(`📊 Mode: ${CONFIG.BOT_MODE} · Capital: $${CONFIG.INITIAL_CAPITAL.toLocaleString()} · Risk: ${(CONFIG.RISK.MAX_DRAWDOWN * 100).toFixed(1)}% max DD`, 'info');
     this.addLog(`🔒 Anti-Detection Active — Jitter: ${(CONFIG.ANTI_DETECTION.JITTER_PCT * 100).toFixed(0)}%`, 'info');
     this.addLog(`📊 Evolved Parameters: 50k generations · Kelly: ${(EVOLVED.kelly_fraction * 100).toFixed(1)}%`, 'info');
+
+    // Validate env
+    const envCheck = validateEnv();
+    if (!envCheck.valid) {
+      this.addLog(`⚠️ Missing env vars: ${envCheck.missing.join(', ')} — using simulated data`, 'warning');
+    } else {
+      this.addLog('🔑 API keys loaded from environment', 'info');
+    }
 
     // Try live API connection
     const isLive = await this.dataFetcher.checkConnection();
@@ -880,7 +938,8 @@ export class UnifiedNeuralBot {
             const rawSize = Math.floor(50 + strength * 500);
             const size = this.applyAntiDetection(rawSize);
             const source = crossPred.confidence > metaPred.confidence ? 'transformer' : 'meta';
-            this.addLog(`🎯 TRADE: ${market.question.slice(0, 30)}... ${side} ${size} shares @ ${market.outcomePrices[0].toFixed(3)} [${source}]`, 'trade');
+            const modeTag = CONFIG.BOT_MODE === 'PAPER' ? '📄' : '🔴';
+            this.addLog(`${modeTag} ${CONFIG.BOT_MODE} TRADE: ${market.question.slice(0, 30)}... ${side} ${size} shares @ ${market.outcomePrices[0].toFixed(3)} [${source}]`, 'trade');
 
             const pnl = (Math.random() - 0.45) * size * 0.05;
             this.metrics.totalPnL += pnl;
