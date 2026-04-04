@@ -131,7 +131,11 @@ class RealTimeDataFetcher {
 
     try {
       const response = await fetch('https://clob.polymarket.com/markets', {
-        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          ...(CONFIG.POLYMARKET_API_KEY && { 'Authorization': `Bearer ${CONFIG.POLYMARKET_API_KEY}` }),
+        },
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
