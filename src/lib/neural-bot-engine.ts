@@ -938,7 +938,8 @@ export class UnifiedNeuralBot {
             const rawSize = Math.floor(50 + strength * 500);
             const size = this.applyAntiDetection(rawSize);
             const source = crossPred.confidence > metaPred.confidence ? 'transformer' : 'meta';
-            this.addLog(`🎯 TRADE: ${market.question.slice(0, 30)}... ${side} ${size} shares @ ${market.outcomePrices[0].toFixed(3)} [${source}]`, 'trade');
+            const modeTag = CONFIG.BOT_MODE === 'PAPER' ? '📄' : '🔴';
+            this.addLog(`${modeTag} ${CONFIG.BOT_MODE} TRADE: ${market.question.slice(0, 30)}... ${side} ${size} shares @ ${market.outcomePrices[0].toFixed(3)} [${source}]`, 'trade');
 
             const pnl = (Math.random() - 0.45) * size * 0.05;
             this.metrics.totalPnL += pnl;
