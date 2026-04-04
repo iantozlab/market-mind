@@ -745,8 +745,17 @@ export class UnifiedNeuralBot {
   async run() {
     this.isRunning = true;
     this.addLog('🧠 Neural Bot Started — HTM + Transformer + Contrastive + MAML', 'info');
+    this.addLog(`📊 Mode: ${CONFIG.BOT_MODE} · Capital: $${CONFIG.INITIAL_CAPITAL.toLocaleString()} · Risk: ${(CONFIG.RISK.MAX_DRAWDOWN * 100).toFixed(1)}% max DD`, 'info');
     this.addLog(`🔒 Anti-Detection Active — Jitter: ${(CONFIG.ANTI_DETECTION.JITTER_PCT * 100).toFixed(0)}%`, 'info');
     this.addLog(`📊 Evolved Parameters: 50k generations · Kelly: ${(EVOLVED.kelly_fraction * 100).toFixed(1)}%`, 'info');
+
+    // Validate env
+    const envCheck = validateEnv();
+    if (!envCheck.valid) {
+      this.addLog(`⚠️ Missing env vars: ${envCheck.missing.join(', ')} — using simulated data`, 'warning');
+    } else {
+      this.addLog('🔑 API keys loaded from environment', 'info');
+    }
 
     // Try live API connection
     const isLive = await this.dataFetcher.checkConnection();
