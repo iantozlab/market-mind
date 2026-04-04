@@ -80,7 +80,7 @@ const NeuralBotDashboard: React.FC = () => {
             HTM · Transformer · Contrastive · MAML · 12 Exploit Strategies · 50k Gen Evolution
           </p>
           {isRunning && (
-            <div className="flex items-center gap-3 mt-1.5">
+            <div className="flex flex-wrap items-center gap-3 mt-1.5">
               <div className="flex items-center gap-1.5">
                 <span className={`h-1.5 w-1.5 rounded-full ${apiStatus.polymarket ? 'bg-primary' : 'bg-warning'}`} />
                 <span className="text-[10px] text-muted-foreground tracking-wide">
@@ -91,6 +91,18 @@ const NeuralBotDashboard: React.FC = () => {
                 <span className={`h-1.5 w-1.5 rounded-full ${apiStatus.dataSource === 'live' ? 'bg-primary' : 'bg-accent'}`} />
                 <span className="text-[10px] text-muted-foreground tracking-wide">
                   Data: {apiStatus.dataSource === 'live' ? `LIVE (${apiStatus.marketsLoaded} markets)` : 'SIMULATED'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className={`h-1.5 w-1.5 rounded-full ${getEnvStatus().polymarketApiKey ? 'bg-primary' : 'bg-destructive'}`} />
+                <span className="text-[10px] text-muted-foreground tracking-wide">
+                  API Key: {getEnvStatus().polymarketApiKey ? 'Configured' : 'Missing'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+                <span className="text-[10px] text-muted-foreground tracking-wide">
+                  Mode: {CONFIG.BOT_MODE} · Capital: ${CONFIG.INITIAL_CAPITAL.toLocaleString()}
                 </span>
               </div>
             </div>
