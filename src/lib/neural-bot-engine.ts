@@ -1,9 +1,11 @@
+import { supabase } from '@/integrations/supabase/client';
+
 // ============================================
 // ENVIRONMENT VARIABLES (Lovable Secrets / Vite env)
 // ============================================
 
 export const ENV = {
-  POLYMARKET_API_KEY: (import.meta as any).env?.VITE_POLYMARKET_API_KEY || '',
+  POLYMARKET_API_KEY: '(server-side)', // Key is now securely stored server-side
   POLYGON_RPC_URL: (import.meta as any).env?.VITE_POLYGON_RPC_URL || 'https://polygon-rpc.com',
   BLOCKNATIVE_API_KEY: (import.meta as any).env?.VITE_BLOCKNATIVE_API_KEY || '',
   BOT_MODE: ((import.meta as any).env?.VITE_BOT_MODE || 'PAPER') as 'PAPER' | 'LIVE',
@@ -12,6 +14,21 @@ export const ENV = {
   MAX_DRAWDOWN: parseFloat((import.meta as any).env?.VITE_MAX_DRAWDOWN || '0.142'),
   LOG_LEVEL: (import.meta as any).env?.VITE_LOG_LEVEL || 'info',
 };
+
+// Secure proxy helper — all Polymarket API calls route through Edge Function
+async function proxyFetch(endpoint: string, params?: string, method: 'GET' | 'HEAD' = 'GET'): Promise<Response> {
+  const searchParams = new URLSearchParams({ endpoint });
+  if (params) searchParams.set('params', params);
+
+  const { data, error } = await supabase.functions.invoke('polymarket-proxy', {
+    method: 'POST',
+    body: { endpoint, params: params || '', method },
+  });
+
+  // supabase.functions.invoke returns parsed JSON, wrap it back as Response-like
+  if (error) throw new Error(error.message || 'Proxy error');
+  return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+}
 
 export const validateEnv = (): { valid: boolean; missing: string[] } => {
   const missing: string[] = [];
