@@ -20,9 +20,12 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const url = new URL(req.url);
-    const endpoint = url.searchParams.get('endpoint');
-    const params = url.searchParams.get('params') || '';
+    const body = await req.json();
+    const { endpoint, params, method: upstreamMethod } = body as {
+      endpoint: string;
+      params?: string;
+      method?: string;
+    };
 
     if (!endpoint) {
       return new Response(JSON.stringify({ error: 'Missing endpoint parameter' }), {
@@ -31,7 +34,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Validate endpoint against allowlist
     const isAllowed = ALLOWED_PATHS.some(p => endpoint.startsWith(p));
     if (!isAllowed) {
       return new Response(JSON.stringify({ error: 'Endpoint not allowed' }), {
@@ -51,10 +53,10 @@ Deno.serve(async (req) => {
       headers['Authorization'] = `Bearer ${apiKey}`;
     }
 
-    const method = req.method === 'HEAD' ? 'HEAD' : 'GET';
-    const response = await fetch(targetUrl, { method, headers });
+    const fetchMethod = upstreamMethod === 'HEAD' ? 'HEAD' : 'GET';
+    const response = await fetch(targetUrl, { method: fetchMethod, headers });
 
-    if (method === 'HEAD') {
+    if (fetchMethod === 'HEAD') {
       return new Response(null, {
         status: response.ok ? 200 : response.status,
         headers: corsHeaders,
