@@ -89,7 +89,7 @@ export const CONFIG = {
   HIDDEN_RECENT_URL: 'https://clob.polymarket.com/trades/recent',
   HIDDEN_SUMMARY_URL: 'https://clob.polymarket.com/orderbook/summary',
   HIDDEN_TRENDING_URL: 'https://clob.polymarket.com/markets/trending',
-  POLYMARKET_API_KEY: ENV.POLYMARKET_API_KEY,
+  POLYMARKET_API_KEY: '(server-side)', // Securely proxied via Edge Function
   POLYGON_RPC_URL: ENV.POLYGON_RPC_URL,
   BLOCKNATIVE_API_KEY: ENV.BLOCKNATIVE_API_KEY,
   BOT_MODE: ENV.BOT_MODE,
