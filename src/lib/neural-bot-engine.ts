@@ -151,7 +151,8 @@ class RealTimeDataFetcher {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
 
-      this.marketsCache = (Array.isArray(data) ? data : []).slice(0, 20).map((m: any) => ({
+      const marketsList = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
+      this.marketsCache = marketsList.slice(0, 20).map((m: any) => ({
         id: m.condition_id || m.id || `api-${Math.random().toString(36).slice(2, 8)}`,
         slug: m.slug || m.question?.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30) || 'unknown',
         question: m.question || 'Unknown Market',
