@@ -188,7 +188,7 @@ class RealTimeDataFetcher {
 
   async fetchRecentTrades(marketId: string, limit = 50): Promise<Trade[]> {
     try {
-      const response = await fetch(`https://clob.polymarket.com/trades?market=${marketId}&limit=${limit}`);
+      const response = await proxyFetch('/trades', `market=${marketId}&limit=${limit}`);
       if (!response.ok) return [];
       const data = await response.json();
       return (Array.isArray(data) ? data : []).map((t: any) => ({
