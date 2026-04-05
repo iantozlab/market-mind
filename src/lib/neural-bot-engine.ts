@@ -1,9 +1,11 @@
+import { supabase } from '@/integrations/supabase/client';
+
 // ============================================
 // ENVIRONMENT VARIABLES (Lovable Secrets / Vite env)
 // ============================================
 
 export const ENV = {
-  POLYMARKET_API_KEY: (import.meta as any).env?.VITE_POLYMARKET_API_KEY || '',
+  POLYMARKET_API_KEY: '(server-side)', // Key is now securely stored server-side
   POLYGON_RPC_URL: (import.meta as any).env?.VITE_POLYGON_RPC_URL || 'https://polygon-rpc.com',
   BLOCKNATIVE_API_KEY: (import.meta as any).env?.VITE_BLOCKNATIVE_API_KEY || '',
   BOT_MODE: ((import.meta as any).env?.VITE_BOT_MODE || 'PAPER') as 'PAPER' | 'LIVE',
@@ -13,9 +15,24 @@ export const ENV = {
   LOG_LEVEL: (import.meta as any).env?.VITE_LOG_LEVEL || 'info',
 };
 
+// Secure proxy helper — all Polymarket API calls route through Edge Function
+async function proxyFetch(endpoint: string, params?: string, method: 'GET' | 'HEAD' = 'GET'): Promise<Response> {
+  const searchParams = new URLSearchParams({ endpoint });
+  if (params) searchParams.set('params', params);
+
+  const { data, error } = await supabase.functions.invoke('polymarket-proxy', {
+    method: 'POST',
+    body: { endpoint, params: params || '', method },
+  });
+
+  // supabase.functions.invoke returns parsed JSON, wrap it back as Response-like
+  if (error) throw new Error(error.message || 'Proxy error');
+  return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+}
+
 export const validateEnv = (): { valid: boolean; missing: string[] } => {
   const missing: string[] = [];
-  if (!ENV.POLYMARKET_API_KEY) missing.push('VITE_POLYMARKET_API_KEY');
+  // API key is now server-side, no longer needed client-side
   if (!ENV.POLYGON_RPC_URL || ENV.POLYGON_RPC_URL === 'https://polygon-rpc.com') missing.push('VITE_POLYGON_RPC_URL');
   return { valid: missing.length === 0, missing };
 };
@@ -29,7 +46,7 @@ export interface EnvStatus {
 }
 
 export const getEnvStatus = (): EnvStatus => ({
-  polymarketApiKey: !!ENV.POLYMARKET_API_KEY,
+  polymarketApiKey: true, // Key is securely stored server-side via Edge Function
   polygonRpc: !!ENV.POLYGON_RPC_URL && ENV.POLYGON_RPC_URL !== 'https://polygon-rpc.com',
   blocknativeApiKey: !!ENV.BLOCKNATIVE_API_KEY,
   botMode: ENV.BOT_MODE,
@@ -72,7 +89,7 @@ export const CONFIG = {
   HIDDEN_RECENT_URL: 'https://clob.polymarket.com/trades/recent',
   HIDDEN_SUMMARY_URL: 'https://clob.polymarket.com/orderbook/summary',
   HIDDEN_TRENDING_URL: 'https://clob.polymarket.com/markets/trending',
-  POLYMARKET_API_KEY: ENV.POLYMARKET_API_KEY,
+  POLYMARKET_API_KEY: '(server-side)', // Securely proxied via Edge Function
   POLYGON_RPC_URL: ENV.POLYGON_RPC_URL,
   BLOCKNATIVE_API_KEY: ENV.BLOCKNATIVE_API_KEY,
   BOT_MODE: ENV.BOT_MODE,
@@ -130,13 +147,7 @@ class RealTimeDataFetcher {
     if (this.marketsCache.length > 0 && now - this.lastFetch < this.cacheTTL) return this.marketsCache;
 
     try {
-      const response = await fetch('https://clob.polymarket.com/markets', {
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          ...(CONFIG.POLYMARKET_API_KEY && { 'Authorization': `Bearer ${CONFIG.POLYMARKET_API_KEY}` }),
-        },
-      });
+      const response = await proxyFetch('/markets');
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
 
@@ -163,7 +174,7 @@ class RealTimeDataFetcher {
 
   async fetchOrderBook(marketId: string): Promise<OrderBook | null> {
     try {
-      const response = await fetch(`https://clob.polymarket.com/book?token_id=${marketId}`);
+      const response = await proxyFetch('/book', `token_id=${marketId}`);
       if (!response.ok) return null;
       const data = await response.json();
       return {
@@ -177,7 +188,7 @@ class RealTimeDataFetcher {
 
   async fetchRecentTrades(marketId: string, limit = 50): Promise<Trade[]> {
     try {
-      const response = await fetch(`https://clob.polymarket.com/trades?market=${marketId}&limit=${limit}`);
+      const response = await proxyFetch('/trades', `market=${marketId}&limit=${limit}`);
       if (!response.ok) return [];
       const data = await response.json();
       return (Array.isArray(data) ? data : []).map((t: any) => ({
@@ -196,9 +207,9 @@ class RealTimeDataFetcher {
 
   async checkConnection(): Promise<boolean> {
     try {
-      const r = await fetch('https://clob.polymarket.com/markets', { method: 'HEAD' });
-      this.apiStatus.polymarket = r.ok;
-      return r.ok;
+      const response = await proxyFetch('/markets');
+      this.apiStatus.polymarket = response.ok;
+      return response.ok;
     } catch {
       this.apiStatus.polymarket = false;
       return false;
