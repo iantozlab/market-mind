@@ -209,7 +209,7 @@ class RealTimeDataFetcher {
     try {
       const response = await proxyFetch('/markets');
       this.apiStatus.polymarket = response.ok;
-      return r.ok;
+      return response.ok;
     } catch {
       this.apiStatus.polymarket = false;
       return false;
