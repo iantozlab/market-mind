@@ -207,8 +207,8 @@ class RealTimeDataFetcher {
 
   async checkConnection(): Promise<boolean> {
     try {
-      const r = await fetch('https://clob.polymarket.com/markets', { method: 'HEAD' });
-      this.apiStatus.polymarket = r.ok;
+      const response = await proxyFetch('/markets');
+      this.apiStatus.polymarket = response.ok;
       return r.ok;
     } catch {
       this.apiStatus.polymarket = false;
