@@ -59,8 +59,8 @@ export interface EnvStatus {
 
 export const getEnvStatus = (): EnvStatus => ({
   polymarketApiKey: true, // Key is securely stored server-side via Edge Function
-  polygonRpc: !!ENV.POLYGON_RPC_URL && ENV.POLYGON_RPC_URL !== 'https://polygon-rpc.com',
-  blocknativeApiKey: !!ENV.BLOCKNATIVE_API_KEY,
+  polygonRpc: !!ENV.POLYGON_RPC_URL && ENV.POLYGON_RPC_URL !== '(server-side)',
+  blocknativeApiKey: !!ENV.BLOCKNATIVE_API_KEY && ENV.BLOCKNATIVE_API_KEY !== '(server-side)',
   botMode: ENV.BOT_MODE,
   initialCapital: ENV.INITIAL_CAPITAL,
 });
