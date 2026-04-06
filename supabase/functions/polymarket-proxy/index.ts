@@ -12,6 +12,7 @@ const ALLOWED_PATHS = [
   '/trades/recent',
   '/orderbook/summary',
   '/markets/trending',
+  '/__config', // internal: return server-side config to client
 ];
 
 Deno.serve(async (req) => {
@@ -30,6 +31,19 @@ Deno.serve(async (req) => {
     if (!endpoint) {
       return new Response(JSON.stringify({ error: 'Missing endpoint parameter' }), {
         status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Special internal endpoint: return server-side config
+    if (endpoint === '/__config') {
+      const config = {
+        polygonRpcUrl: Deno.env.get('POLYGON_RPC_URL') || '',
+        blocknativeApiKey: Deno.env.get('BLOCKNATIVE_API_KEY') || '',
+        polymarketApiKey: !!Deno.env.get('POLYMARKET_API_KEY'),
+      };
+      return new Response(JSON.stringify(config), {
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }

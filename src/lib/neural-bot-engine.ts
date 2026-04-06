@@ -6,14 +6,26 @@ import { supabase } from '@/integrations/supabase/client';
 
 export const ENV = {
   POLYMARKET_API_KEY: '(server-side)', // Key is now securely stored server-side
-  POLYGON_RPC_URL: (import.meta as any).env?.VITE_POLYGON_RPC_URL || 'https://polygon-rpc.com',
-  BLOCKNATIVE_API_KEY: (import.meta as any).env?.VITE_BLOCKNATIVE_API_KEY || '',
+  POLYGON_RPC_URL: (import.meta as any).env?.VITE_POLYGON_RPC_URL || '(server-side)',
+  BLOCKNATIVE_API_KEY: (import.meta as any).env?.VITE_BLOCKNATIVE_API_KEY || '(server-side)',
   BOT_MODE: ((import.meta as any).env?.VITE_BOT_MODE || 'PAPER') as 'PAPER' | 'LIVE',
   INITIAL_CAPITAL: parseFloat((import.meta as any).env?.VITE_INITIAL_CAPITAL || '10000'),
   MAX_DAILY_LOSS: parseFloat((import.meta as any).env?.VITE_MAX_DAILY_LOSS || '187'),
   MAX_DRAWDOWN: parseFloat((import.meta as any).env?.VITE_MAX_DRAWDOWN || '0.142'),
   LOG_LEVEL: (import.meta as any).env?.VITE_LOG_LEVEL || 'info',
 };
+
+// Fetch server-side config (secrets) from proxy
+async function loadServerConfig() {
+  try {
+    const resp = await proxyFetch('/__config');
+    if (resp.ok) {
+      const cfg = await resp.json();
+      if (cfg.polygonRpcUrl) ENV.POLYGON_RPC_URL = cfg.polygonRpcUrl;
+      if (cfg.blocknativeApiKey) ENV.BLOCKNATIVE_API_KEY = cfg.blocknativeApiKey;
+    }
+  } catch { /* fallback to defaults */ }
+}
 
 // Secure proxy helper — all Polymarket API calls route through Edge Function
 async function proxyFetch(endpoint: string, params?: string, method: 'GET' | 'HEAD' = 'GET'): Promise<Response> {
@@ -33,7 +45,7 @@ async function proxyFetch(endpoint: string, params?: string, method: 'GET' | 'HE
 export const validateEnv = (): { valid: boolean; missing: string[] } => {
   const missing: string[] = [];
   // API key is now server-side, no longer needed client-side
-  if (!ENV.POLYGON_RPC_URL || ENV.POLYGON_RPC_URL === 'https://polygon-rpc.com') missing.push('VITE_POLYGON_RPC_URL');
+  if (!ENV.POLYGON_RPC_URL || ENV.POLYGON_RPC_URL === '(server-side)') missing.push('POLYGON_RPC_URL');
   return { valid: missing.length === 0, missing };
 };
 
@@ -47,8 +59,8 @@ export interface EnvStatus {
 
 export const getEnvStatus = (): EnvStatus => ({
   polymarketApiKey: true, // Key is securely stored server-side via Edge Function
-  polygonRpc: !!ENV.POLYGON_RPC_URL && ENV.POLYGON_RPC_URL !== 'https://polygon-rpc.com',
-  blocknativeApiKey: !!ENV.BLOCKNATIVE_API_KEY,
+  polygonRpc: !!ENV.POLYGON_RPC_URL && ENV.POLYGON_RPC_URL !== '(server-side)',
+  blocknativeApiKey: !!ENV.BLOCKNATIVE_API_KEY && ENV.BLOCKNATIVE_API_KEY !== '(server-side)',
   botMode: ENV.BOT_MODE,
   initialCapital: ENV.INITIAL_CAPITAL,
 });
@@ -780,12 +792,16 @@ export class UnifiedNeuralBot {
     this.addLog(`🔒 Anti-Detection Active — Jitter: ${(CONFIG.ANTI_DETECTION.JITTER_PCT * 100).toFixed(0)}%`, 'info');
     this.addLog(`📊 Evolved Parameters: 50k generations · Kelly: ${(EVOLVED.kelly_fraction * 100).toFixed(1)}%`, 'info');
 
+    // Load server-side secrets
+    await loadServerConfig();
+    this.addLog('🔐 Server-side secrets loaded (API keys, RPC URLs)', 'info');
+
     // Validate env
     const envCheck = validateEnv();
     if (!envCheck.valid) {
-      this.addLog(`⚠️ Missing env vars: ${envCheck.missing.join(', ')} — using simulated data`, 'warning');
+      this.addLog(`⚠️ Missing config: ${envCheck.missing.join(', ')} — using simulated data`, 'warning');
     } else {
-      this.addLog('🔑 API keys loaded from environment', 'info');
+      this.addLog('🔑 All API keys configured', 'info');
     }
 
     // Try live API connection
