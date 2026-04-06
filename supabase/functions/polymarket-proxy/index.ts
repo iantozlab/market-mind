@@ -12,6 +12,7 @@ const ALLOWED_PATHS = [
   '/trades/recent',
   '/orderbook/summary',
   '/markets/trending',
+  '/__config', // internal: return server-side config to client
 ];
 
 Deno.serve(async (req) => {
