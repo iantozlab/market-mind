@@ -45,7 +45,7 @@ async function proxyFetch(endpoint: string, params?: string, method: 'GET' | 'HE
 export const validateEnv = (): { valid: boolean; missing: string[] } => {
   const missing: string[] = [];
   // API key is now server-side, no longer needed client-side
-  if (!ENV.POLYGON_RPC_URL || ENV.POLYGON_RPC_URL === 'https://polygon-rpc.com') missing.push('VITE_POLYGON_RPC_URL');
+  if (!ENV.POLYGON_RPC_URL || ENV.POLYGON_RPC_URL === '(server-side)') missing.push('POLYGON_RPC_URL');
   return { valid: missing.length === 0, missing };
 };
 
