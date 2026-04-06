@@ -35,6 +35,19 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Special internal endpoint: return server-side config
+    if (endpoint === '/__config') {
+      const config = {
+        polygonRpcUrl: Deno.env.get('POLYGON_RPC_URL') || '',
+        blocknativeApiKey: Deno.env.get('BLOCKNATIVE_API_KEY') || '',
+        polymarketApiKey: !!Deno.env.get('POLYMARKET_API_KEY'),
+      };
+      return new Response(JSON.stringify(config), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const isAllowed = ALLOWED_PATHS.some(p => endpoint.startsWith(p));
     if (!isAllowed) {
       return new Response(JSON.stringify({ error: 'Endpoint not allowed' }), {
