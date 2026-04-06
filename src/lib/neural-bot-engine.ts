@@ -792,12 +792,16 @@ export class UnifiedNeuralBot {
     this.addLog(`🔒 Anti-Detection Active — Jitter: ${(CONFIG.ANTI_DETECTION.JITTER_PCT * 100).toFixed(0)}%`, 'info');
     this.addLog(`📊 Evolved Parameters: 50k generations · Kelly: ${(EVOLVED.kelly_fraction * 100).toFixed(1)}%`, 'info');
 
+    // Load server-side secrets
+    await loadServerConfig();
+    this.addLog('🔐 Server-side secrets loaded (API keys, RPC URLs)', 'info');
+
     // Validate env
     const envCheck = validateEnv();
     if (!envCheck.valid) {
-      this.addLog(`⚠️ Missing env vars: ${envCheck.missing.join(', ')} — using simulated data`, 'warning');
+      this.addLog(`⚠️ Missing config: ${envCheck.missing.join(', ')} — using simulated data`, 'warning');
     } else {
-      this.addLog('🔑 API keys loaded from environment', 'info');
+      this.addLog('🔑 All API keys configured', 'info');
     }
 
     // Try live API connection
