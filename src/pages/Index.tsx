@@ -90,7 +90,7 @@ const NeuralBotDashboard: React.FC = () => {
               <div className="flex items-center gap-1.5">
                 <span className={`h-1.5 w-1.5 rounded-full ${apiStatus.dataSource === 'live' ? 'bg-primary' : 'bg-accent'}`} />
                 <span className="text-[10px] text-muted-foreground tracking-wide">
-                  Data: {apiStatus.dataSource === 'live' ? `LIVE (${apiStatus.marketsLoaded} markets)` : 'SIMULATED'}
+                  Data: {apiStatus.dataSource === 'live' ? `LIVE (${metrics.marketsMonitored} markets)` : 'SIMULATED'}
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
