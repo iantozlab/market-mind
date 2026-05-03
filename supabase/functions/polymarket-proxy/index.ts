@@ -3,16 +3,19 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const POLYMARKET_BASE = 'https://clob.polymarket.com';
+const CLOB_BASE = 'https://clob.polymarket.com';
+const GAMMA_BASE = 'https://gamma-api.polymarket.com';
 
 const ALLOWED_PATHS = [
   '/markets',
+  '/gamma/markets', // Gamma API: supports active=true filtering
+  '/gamma/events',
   '/book',
   '/trades',
   '/trades/recent',
   '/orderbook/summary',
   '/markets/trending',
-  '/__config', // internal: return server-side config to client
+  '/__config',
 ];
 
 Deno.serve(async (req) => {
