@@ -702,6 +702,7 @@ export class UnifiedNeuralBot {
     { name: 'bot_exhaustion', active: true, label: 'Bot Exhaustion' },
     { name: 'whale_inactivity', active: true, label: 'Whale Inactivity' },
     { name: 'anti_detection', active: true, label: 'Anti-Detection' },
+    { name: 'phantom_harvester', active: true, label: 'Phantom Harvester' },
   ];
 
   private simInterval: ReturnType<typeof setInterval> | null = null;
