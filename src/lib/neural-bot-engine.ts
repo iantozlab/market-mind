@@ -242,7 +242,7 @@ class RealTimeDataFetcher {
 
   async checkConnection(): Promise<boolean> {
     try {
-      const response = await proxyFetch('/markets');
+      const response = await proxyFetch('/gamma/markets', 'limit=1&active=true');
       this.apiStatus.polymarket = response.ok;
       return response.ok;
     } catch {
