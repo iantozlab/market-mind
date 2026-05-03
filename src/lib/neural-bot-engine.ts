@@ -879,6 +879,35 @@ export class UnifiedNeuralBot {
         this.lastMarkets = markets;
         this.metrics.marketsMonitored = markets.length;
 
+        // === PHANTOM LIQUIDITY HARVESTER ===
+        try {
+          const candidates = this.phantom.scan(markets);
+          const cfg = this.phantom.getStats();
+          if (candidates.length > 0 && this.tickCount % 5 === 0) {
+            this.addLog(`👻 PHANTOM: ${candidates.length} dead-zone markets · Tier ${cfg.tier} (${cfg.tierName}) · Cap $${cfg.capital.toFixed(0)}`, 'strategy');
+          }
+          // Deploy ghost liquidity to top phantom markets
+          for (const pm of candidates.slice(0, 3)) {
+            const mid = (markets.find(x => x.id === pm.id)?.outcomePrices[0]) ?? 0.5;
+            const deployed = this.phantom.deploy(pm, mid);
+            if (deployed && this.tickCount % 4 === 0) {
+              this.addLog(`👻 GHOST DEPLOY: ${pm.slug.slice(0, 24)} DMI ${pm.dmiScore.toFixed(0)} bid ${deployed.bidPrice.toFixed(3)} ask ${deployed.askPrice.toFixed(3)} $${deployed.bidSize.toFixed(0)}`, 'trade');
+            }
+          }
+          // Tick fills
+          const { profit, events } = this.phantom.tick();
+          if (profit !== 0) {
+            this.metrics.totalPnL += profit;
+            this.metrics.dailyPnL += profit;
+            this.metrics.tradesExecuted += events.length;
+          }
+          for (const ev of events) {
+            this.addLog(`✅ PHANTOM FILL: ${ev.slug.slice(0, 24)} +$${ev.profitRealized.toFixed(2)} (${ev.status})`, 'trade');
+          }
+        } catch (e) {
+          // never let strategy errors kill the loop
+        }
+
         // Contrastive learning
         const addrTrades = new Map<string, Trade[]>();
         for (const trades of this.recentTrades.values()) {
