@@ -722,6 +722,7 @@ export class UnifiedNeuralBot {
     this.consensusFailure = new ConsensusFailureArbitrage();
     this.hiddenAPI = new HiddenAPIMonitor();
     this.dataFetcher = RealTimeDataFetcher.getInstance();
+    this.phantom = new PhantomLiquidityHarvester(CONFIG.INITIAL_CAPITAL);
   }
 
   setOnUpdate(cb: () => void) { this.onUpdate = cb; }
