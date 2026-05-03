@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { PhantomLiquidityHarvester } from './phantom-liquidity-harvester';
 
 // ============================================
 // ENVIRONMENT VARIABLES (Lovable Secrets / Vite env)
