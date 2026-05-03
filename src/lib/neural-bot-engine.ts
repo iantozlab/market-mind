@@ -1071,4 +1071,6 @@ export class UnifiedNeuralBot {
   getStrategies(): StrategyStatus[] { return [...this.strategies]; }
   getAPIStatus(): APIStatus { return this.dataFetcher.getStatus(); }
   isUsingLiveData(): boolean { return this.useLiveData; }
+  getPhantomStats() { return this.phantom.getStats(); }
+  getPhantomActive() { return this.phantom.getActive(); }
 }
