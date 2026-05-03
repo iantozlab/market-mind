@@ -60,18 +60,29 @@ Deno.serve(async (req) => {
     }
 
     const apiKey = Deno.env.get('POLYMARKET_API_KEY') || '';
-    const targetUrl = `${POLYMARKET_BASE}${endpoint}${params ? '?' + params : ''}`;
+    const isGamma = endpoint.startsWith('/gamma/');
+    const upstreamPath = isGamma ? endpoint.replace('/gamma', '') : endpoint;
+    const base = isGamma ? GAMMA_BASE : CLOB_BASE;
+    const targetUrl = `${base}${upstreamPath}${params ? '?' + params : ''}`;
 
     const headers: Record<string, string> = {
       'Accept': 'application/json',
       'Content-Type': 'application/json',
     };
-    if (apiKey) {
+    if (apiKey && !isGamma) {
       headers['Authorization'] = `Bearer ${apiKey}`;
     }
 
     const fetchMethod = upstreamMethod === 'HEAD' ? 'HEAD' : 'GET';
-    const response = await fetch(targetUrl, { method: fetchMethod, headers });
+    // 8s upstream timeout to avoid hanging the client
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    let response: Response;
+    try {
+      response = await fetch(targetUrl, { method: fetchMethod, headers, signal: ctrl.signal });
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (fetchMethod === 'HEAD') {
       return new Response(null, {
