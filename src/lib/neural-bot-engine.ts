@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { PhantomLiquidityHarvester } from './phantom-liquidity-harvester';
 
 // ============================================
 // ENVIRONMENT VARIABLES (Lovable Secrets / Vite env)
@@ -160,40 +161,43 @@ class RealTimeDataFetcher {
 
     try {
       const allMarkets: any[] = [];
-      let nextCursor: string | undefined = undefined;
-      const MAX_PAGES = 20; // safety limit (~1200 markets)
+      const PAGE_SIZE = 200;
+      const MAX_PAGES = 8;
 
       for (let page = 0; page < MAX_PAGES; page++) {
-        const params = nextCursor ? `next_cursor=${nextCursor}&limit=100` : 'limit=100';
-        const response = await proxyFetch('/markets', params);
+        const offset = page * PAGE_SIZE;
+        const params = `active=true&closed=false&limit=${PAGE_SIZE}&offset=${offset}&order=volume24hr&ascending=false`;
+        const response = await proxyFetch('/gamma/markets', params);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
-
-        const marketsList = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
-        allMarkets.push(...marketsList);
-
-        // Polymarket uses next_cursor for pagination
-        nextCursor = data?.next_cursor;
-        if (!nextCursor || marketsList.length < 100) break;
+        const list = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
+        if (list.length === 0) break;
+        allMarkets.push(...list);
+        if (list.length < PAGE_SIZE) break;
       }
 
       this.marketsCache = allMarkets
-        .filter((m: any) => {
-          const volume = parseFloat(m.volume || '0');
-          return volume > 0; // only tradeable markets with volume
+        .map((m: any) => {
+          const parseArr = (v: any, fallback: any) => {
+            try { return typeof v === 'string' ? JSON.parse(v) : (v || fallback); }
+            catch { return fallback; }
+          };
+          const prices = parseArr(m.outcomePrices, ['0.5', '0.5']).map((x: any) => parseFloat(x));
+          const outs = parseArr(m.outcomes, ['YES', 'NO']);
+          return {
+            id: m.conditionId || m.id || `api-${Math.random().toString(36).slice(2, 8)}`,
+            slug: m.slug || 'unknown',
+            question: m.question || 'Unknown Market',
+            outcomes: outs,
+            outcomePrices: prices,
+            volume: parseFloat(m.volume || m.volume24hr || '0'),
+            liquidity: parseFloat(m.liquidity || '0'),
+            endDate: m.endDate || new Date(Date.now() + 86400000 * 30).toISOString(),
+            category: m.category || 'political',
+          };
         })
-        .map((m: any) => ({
-          id: m.condition_id || m.id || `api-${Math.random().toString(36).slice(2, 8)}`,
-          slug: m.slug || m.question?.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30) || 'unknown',
-          question: m.question || 'Unknown Market',
-          outcomes: m.outcomes || ['YES', 'NO'],
-          outcomePrices: (m.outcome_prices || m.outcomePrices || ['0.5', '0.5']).map((p: any) => parseFloat(p)),
-          volume: parseFloat(m.volume || '0'),
-          liquidity: parseFloat(m.liquidity || '0'),
-          endDate: m.end_date_iso || m.endDate || new Date(Date.now() + 86400000 * 30).toISOString(),
-          category: m.category || 'political',
-        }))
-        .sort((a, b) => b.volume - a.volume); // highest volume first
+        .filter((m: Market) => m.volume > 0 || m.liquidity > 0)
+        .sort((a, b) => b.volume - a.volume);
 
       this.lastFetch = now;
       this.apiStatus = { polymarket: true, polygon: false, dataSource: 'live', lastFetch: now, marketsLoaded: this.marketsCache.length };
@@ -239,7 +243,7 @@ class RealTimeDataFetcher {
 
   async checkConnection(): Promise<boolean> {
     try {
-      const response = await proxyFetch('/markets');
+      const response = await proxyFetch('/gamma/markets', 'limit=1&active=true');
       this.apiStatus.polymarket = response.ok;
       return response.ok;
     } catch {
@@ -667,6 +671,7 @@ export class UnifiedNeuralBot {
   private consensusFailure: ConsensusFailureArbitrage;
   private hiddenAPI: HiddenAPIMonitor;
   private dataFetcher: RealTimeDataFetcher;
+  private phantom: PhantomLiquidityHarvester;
 
   private orderBooks: Map<string, OrderBook> = new Map();
   private recentTrades: Map<string, Trade[]> = new Map();
@@ -697,6 +702,7 @@ export class UnifiedNeuralBot {
     { name: 'bot_exhaustion', active: true, label: 'Bot Exhaustion' },
     { name: 'whale_inactivity', active: true, label: 'Whale Inactivity' },
     { name: 'anti_detection', active: true, label: 'Anti-Detection' },
+    { name: 'phantom_harvester', active: true, label: 'Phantom Harvester' },
   ];
 
   private simInterval: ReturnType<typeof setInterval> | null = null;
@@ -716,6 +722,7 @@ export class UnifiedNeuralBot {
     this.consensusFailure = new ConsensusFailureArbitrage();
     this.hiddenAPI = new HiddenAPIMonitor();
     this.dataFetcher = RealTimeDataFetcher.getInstance();
+    this.phantom = new PhantomLiquidityHarvester(CONFIG.INITIAL_CAPITAL);
   }
 
   setOnUpdate(cb: () => void) { this.onUpdate = cb; }
@@ -871,6 +878,35 @@ export class UnifiedNeuralBot {
 
         this.lastMarkets = markets;
         this.metrics.marketsMonitored = markets.length;
+
+        // === PHANTOM LIQUIDITY HARVESTER ===
+        try {
+          const candidates = this.phantom.scan(markets);
+          const cfg = this.phantom.getStats();
+          if (candidates.length > 0 && this.tickCount % 5 === 0) {
+            this.addLog(`👻 PHANTOM: ${candidates.length} dead-zone markets · Tier ${cfg.tier} (${cfg.tierName}) · Cap $${cfg.capital.toFixed(0)}`, 'strategy');
+          }
+          // Deploy ghost liquidity to top phantom markets
+          for (const pm of candidates.slice(0, 3)) {
+            const mid = (markets.find(x => x.id === pm.id)?.outcomePrices[0]) ?? 0.5;
+            const deployed = this.phantom.deploy(pm, mid);
+            if (deployed && this.tickCount % 4 === 0) {
+              this.addLog(`👻 GHOST DEPLOY: ${pm.slug.slice(0, 24)} DMI ${pm.dmiScore.toFixed(0)} bid ${deployed.bidPrice.toFixed(3)} ask ${deployed.askPrice.toFixed(3)} $${deployed.bidSize.toFixed(0)}`, 'trade');
+            }
+          }
+          // Tick fills
+          const { profit, events } = this.phantom.tick();
+          if (profit !== 0) {
+            this.metrics.totalPnL += profit;
+            this.metrics.dailyPnL += profit;
+            this.metrics.tradesExecuted += events.length;
+          }
+          for (const ev of events) {
+            this.addLog(`✅ PHANTOM FILL: ${ev.slug.slice(0, 24)} +$${ev.profitRealized.toFixed(2)} (${ev.status})`, 'trade');
+          }
+        } catch (e) {
+          // never let strategy errors kill the loop
+        }
 
         // Contrastive learning
         const addrTrades = new Map<string, Trade[]>();
@@ -1035,4 +1071,6 @@ export class UnifiedNeuralBot {
   getStrategies(): StrategyStatus[] { return [...this.strategies]; }
   getAPIStatus(): APIStatus { return this.dataFetcher.getStatus(); }
   isUsingLiveData(): boolean { return this.useLiveData; }
+  getPhantomStats() { return this.phantom.getStats(); }
+  getPhantomActive() { return this.phantom.getActive(); }
 }

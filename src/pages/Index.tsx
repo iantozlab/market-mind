@@ -66,6 +66,7 @@ const NeuralBotDashboard: React.FC = () => {
     'HTM Anomaly', 'Transformer', 'Contrastive', 'MAML',
     'Gas Shadow', 'ZK Exploit', 'Liquidity Vortex', '47s Window',
     'Consensus Failure', 'Bot Exhaustion', 'Whale Inactivity', 'Anti-Detection',
+    'Phantom Harvester',
   ];
 
   return (
