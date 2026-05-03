@@ -30,17 +30,19 @@ async function loadServerConfig() {
 
 // Secure proxy helper — all Polymarket API calls route through Edge Function
 async function proxyFetch(endpoint: string, params?: string, method: 'GET' | 'HEAD' = 'GET'): Promise<Response> {
-  const searchParams = new URLSearchParams({ endpoint });
-  if (params) searchParams.set('params', params);
-
-  const { data, error } = await supabase.functions.invoke('polymarket-proxy', {
-    method: 'POST',
-    body: { endpoint, params: params || '', method },
-  });
-
-  // supabase.functions.invoke returns parsed JSON, wrap it back as Response-like
-  if (error) throw new Error(error.message || 'Proxy error');
-  return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  try {
+    const { data, error } = await supabase.functions.invoke('polymarket-proxy', {
+      method: 'POST',
+      body: { endpoint, params: params || '', method },
+    });
+    if (error) {
+      // Upstream non-2xx (e.g. 404 no orderbook) — return a non-ok Response instead of throwing
+      return new Response(JSON.stringify({ error: error.message }), { status: 502, headers: { 'Content-Type': 'application/json' } });
+    }
+    return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch {
+    return new Response(JSON.stringify({ error: 'proxy failure' }), { status: 502, headers: { 'Content-Type': 'application/json' } });
+  }
 }
 
 export const validateEnv = (): { valid: boolean; missing: string[] } => {

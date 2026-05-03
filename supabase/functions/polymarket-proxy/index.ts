@@ -59,19 +59,16 @@ Deno.serve(async (req) => {
       });
     }
 
-    const apiKey = Deno.env.get('POLYMARKET_API_KEY') || '';
     const isGamma = endpoint.startsWith('/gamma/');
     const upstreamPath = isGamma ? endpoint.replace('/gamma', '') : endpoint;
     const base = isGamma ? GAMMA_BASE : CLOB_BASE;
     const targetUrl = `${base}${upstreamPath}${params ? '?' + params : ''}`;
 
+    // Public CLOB and Gamma endpoints do not require an API key.
+    // Sending a Bearer token causes 401 if the key isn't a valid CLOB L2 credential.
     const headers: Record<string, string> = {
       'Accept': 'application/json',
-      'Content-Type': 'application/json',
     };
-    if (apiKey && !isGamma) {
-      headers['Authorization'] = `Bearer ${apiKey}`;
-    }
 
     const fetchMethod = upstreamMethod === 'HEAD' ? 'HEAD' : 'GET';
     // 8s upstream timeout to avoid hanging the client
