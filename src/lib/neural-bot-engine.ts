@@ -39,7 +39,13 @@ async function proxyFetch(endpoint: string, params?: string, method: 'GET' | 'HE
       // Upstream non-2xx (e.g. 404 no orderbook) — return a non-ok Response instead of throwing
       return new Response(JSON.stringify({ error: error.message }), { status: 502, headers: { 'Content-Type': 'application/json' } });
     }
-    return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    if (data && typeof data === 'object' && 'ok' in data && 'status' in data) {
+      return new Response((data as any).body || '', {
+        status: (data as any).ok ? 200 : Number((data as any).status || 502),
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    return new Response(typeof data === 'string' ? data : JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch {
     return new Response(JSON.stringify({ error: 'proxy failure' }), { status: 502, headers: { 'Content-Type': 'application/json' } });
   }
@@ -186,6 +192,7 @@ class RealTimeDataFetcher {
           };
           const prices = parseArr(m.outcomePrices, ['0.5', '0.5']).map((x: any) => parseFloat(x));
           const outs = parseArr(m.outcomes, ['YES', 'NO']);
+          const tokenIds = parseArr(m.clobTokenIds || m.clob_token_ids, []);
           return {
             id: m.conditionId || m.id || `api-${Math.random().toString(36).slice(2, 8)}`,
             slug: m.slug || 'unknown',
@@ -196,6 +203,7 @@ class RealTimeDataFetcher {
             liquidity: parseFloat(m.liquidity || '0'),
             endDate: m.endDate || new Date(Date.now() + 86400000 * 30).toISOString(),
             category: m.category || 'political',
+            tokenIds: Array.isArray(tokenIds) ? tokenIds.map(String).filter(Boolean) : [],
           };
         })
         .filter((m: Market) => m.volume > 0 || m.liquidity > 0)
@@ -222,6 +230,12 @@ class RealTimeDataFetcher {
         marketId,
       };
     } catch { return null; }
+  }
+
+  async fetchMarketOrderBook(market: Market): Promise<OrderBook | null> {
+    const tokenId = market.tokenIds?.[0];
+    if (!tokenId) return null;
+    return this.fetchOrderBook(tokenId);
   }
 
   async fetchRecentTrades(marketId: string, limit = 50): Promise<Trade[]> {
@@ -262,7 +276,7 @@ class RealTimeDataFetcher {
 export interface OrderBookLevel { price: number; size: number; }
 export interface OrderBook { bids: OrderBookLevel[]; asks: OrderBookLevel[]; timestamp: number; marketId: string; }
 export interface Trade { id: string; marketId: string; traderAddress: string; side: 'BUY' | 'SELL'; outcome: string; price: number; amount: number; timestamp: number; txHash?: string; gasPrice?: number; }
-export interface Market { id: string; slug: string; question: string; outcomes: string[]; outcomePrices: number[]; volume: number; liquidity: number; endDate: string; category?: string; }
+export interface Market { id: string; slug: string; question: string; outcomes: string[]; outcomePrices: number[]; volume: number; liquidity: number; endDate: string; category?: string; tokenIds?: string[]; }
 export interface BotProfile { address: string; confidence: number; type: string; averageOrderSize: number; typicalSpacing: number; activeHours: number[]; reactionTime: number; signature?: string | null; }
 
 export interface BotMetrics {
@@ -836,7 +850,7 @@ export class UnifiedNeuralBot {
             markets = liveMarkets;
             // Attempt to fetch real order books/trades for top markets
             for (const m of markets.slice(0, 5)) {
-              const liveOB = await this.dataFetcher.fetchOrderBook(m.id);
+              const liveOB = await this.dataFetcher.fetchMarketOrderBook(m);
               if (liveOB && liveOB.bids.length > 0) {
                 this.orderBooks.set(m.id, liveOB);
               } else {
