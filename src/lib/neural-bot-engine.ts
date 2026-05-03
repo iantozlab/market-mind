@@ -192,6 +192,7 @@ class RealTimeDataFetcher {
           };
           const prices = parseArr(m.outcomePrices, ['0.5', '0.5']).map((x: any) => parseFloat(x));
           const outs = parseArr(m.outcomes, ['YES', 'NO']);
+          const tokenIds = parseArr(m.clobTokenIds || m.clob_token_ids, []);
           return {
             id: m.conditionId || m.id || `api-${Math.random().toString(36).slice(2, 8)}`,
             slug: m.slug || 'unknown',
@@ -202,6 +203,7 @@ class RealTimeDataFetcher {
             liquidity: parseFloat(m.liquidity || '0'),
             endDate: m.endDate || new Date(Date.now() + 86400000 * 30).toISOString(),
             category: m.category || 'political',
+            tokenIds: Array.isArray(tokenIds) ? tokenIds.map(String).filter(Boolean) : [],
           };
         })
         .filter((m: Market) => m.volume > 0 || m.liquidity > 0)
@@ -228,6 +230,12 @@ class RealTimeDataFetcher {
         marketId,
       };
     } catch { return null; }
+  }
+
+  async fetchMarketOrderBook(market: Market): Promise<OrderBook | null> {
+    const tokenId = market.tokenIds?.[0];
+    if (!tokenId) return null;
+    return this.fetchOrderBook(tokenId);
   }
 
   async fetchRecentTrades(marketId: string, limit = 50): Promise<Trade[]> {
