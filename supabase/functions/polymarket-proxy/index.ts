@@ -82,15 +82,19 @@ Deno.serve(async (req) => {
     }
 
     if (fetchMethod === 'HEAD') {
-      return new Response(null, {
-        status: response.ok ? 200 : response.status,
-        headers: corsHeaders,
+      return new Response(JSON.stringify({ ok: response.ok, status: response.status }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     const data = await response.text();
-    return new Response(data, {
+    return new Response(JSON.stringify({
+      ok: response.ok,
       status: response.status,
+      body: data,
+    }), {
+      status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
