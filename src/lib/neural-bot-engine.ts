@@ -39,7 +39,13 @@ async function proxyFetch(endpoint: string, params?: string, method: 'GET' | 'HE
       // Upstream non-2xx (e.g. 404 no orderbook) — return a non-ok Response instead of throwing
       return new Response(JSON.stringify({ error: error.message }), { status: 502, headers: { 'Content-Type': 'application/json' } });
     }
-    return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    if (data && typeof data === 'object' && 'ok' in data && 'status' in data) {
+      return new Response((data as any).body || '', {
+        status: (data as any).ok ? 200 : Number((data as any).status || 502),
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    return new Response(typeof data === 'string' ? data : JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch {
     return new Response(JSON.stringify({ error: 'proxy failure' }), { status: 502, headers: { 'Content-Type': 'application/json' } });
   }
@@ -262,7 +268,7 @@ class RealTimeDataFetcher {
 export interface OrderBookLevel { price: number; size: number; }
 export interface OrderBook { bids: OrderBookLevel[]; asks: OrderBookLevel[]; timestamp: number; marketId: string; }
 export interface Trade { id: string; marketId: string; traderAddress: string; side: 'BUY' | 'SELL'; outcome: string; price: number; amount: number; timestamp: number; txHash?: string; gasPrice?: number; }
-export interface Market { id: string; slug: string; question: string; outcomes: string[]; outcomePrices: number[]; volume: number; liquidity: number; endDate: string; category?: string; }
+export interface Market { id: string; slug: string; question: string; outcomes: string[]; outcomePrices: number[]; volume: number; liquidity: number; endDate: string; category?: string; tokenIds?: string[]; }
 export interface BotProfile { address: string; confidence: number; type: string; averageOrderSize: number; typicalSpacing: number; activeHours: number[]; reactionTime: number; signature?: string | null; }
 
 export interface BotMetrics {
