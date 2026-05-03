@@ -671,6 +671,7 @@ export class UnifiedNeuralBot {
   private consensusFailure: ConsensusFailureArbitrage;
   private hiddenAPI: HiddenAPIMonitor;
   private dataFetcher: RealTimeDataFetcher;
+  private phantom: PhantomLiquidityHarvester;
 
   private orderBooks: Map<string, OrderBook> = new Map();
   private recentTrades: Map<string, Trade[]> = new Map();
