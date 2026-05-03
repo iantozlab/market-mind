@@ -850,7 +850,7 @@ export class UnifiedNeuralBot {
             markets = liveMarkets;
             // Attempt to fetch real order books/trades for top markets
             for (const m of markets.slice(0, 5)) {
-              const liveOB = await this.dataFetcher.fetchOrderBook(m.id);
+              const liveOB = await this.dataFetcher.fetchMarketOrderBook(m);
               if (liveOB && liveOB.bids.length > 0) {
                 this.orderBooks.set(m.id, liveOB);
               } else {
