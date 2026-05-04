@@ -229,6 +229,9 @@ const NeuralBotDashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* Psychology Health */}
+      <PsychologyHealthPanel rows={psychologyHealth} isRunning={isRunning} />
+
       {/* Terminal */}
       <div>
         <h2 className="font-display text-sm font-semibold text-foreground mb-2 tracking-wide">Neural Network Activity Log</h2>
