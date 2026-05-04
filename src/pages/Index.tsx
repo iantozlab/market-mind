@@ -34,6 +34,8 @@ const NeuralBotDashboard: React.FC = () => {
     setMetrics(m);
     setMarkets(botRef.current.getMarkets());
     setApiStatus(botRef.current.getAPIStatus());
+    const health = botRef.current.getPsychologyHealth();
+    setPsychologyHealth(Array.from(health.entries()).map(([name, d]) => ({ name, ...d })));
     setAnomalyHistory(prev => {
       const next = [...prev, { time: new Date().toLocaleTimeString(), score: m.anomalyScore * 100, threshold: 70 }];
       return next.slice(-30);
