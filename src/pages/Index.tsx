@@ -7,6 +7,7 @@ import MetricCard from '@/components/MetricCard';
 import TerminalLog from '@/components/TerminalLog';
 import MarketList from '@/components/MarketList';
 import MarketDetailPanel from '@/components/MarketDetailPanel';
+import PsychologyHealthPanel, { type PsychologyHealthRow } from '@/components/PsychologyHealthPanel';
 import { Button } from '@/components/ui/button';
 
 const NeuralBotDashboard: React.FC = () => {
@@ -22,6 +23,7 @@ const NeuralBotDashboard: React.FC = () => {
   const [markets, setMarkets] = useState<Market[]>([]);
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
   const [apiStatus, setApiStatus] = useState<APIStatus>({ polymarket: false, polygon: false, dataSource: 'simulated', lastFetch: 0, marketsLoaded: 0 });
+  const [psychologyHealth, setPsychologyHealth] = useState<PsychologyHealthRow[]>([]);
 
   const botRef = useRef<UnifiedNeuralBot | null>(null);
 
@@ -32,6 +34,8 @@ const NeuralBotDashboard: React.FC = () => {
     setMetrics(m);
     setMarkets(botRef.current.getMarkets());
     setApiStatus(botRef.current.getAPIStatus());
+    const health = botRef.current.getPsychologyHealth();
+    setPsychologyHealth(Array.from(health.entries()).map(([name, d]) => ({ name, ...d })));
     setAnomalyHistory(prev => {
       const next = [...prev, { time: new Date().toLocaleTimeString(), score: m.anomalyScore * 100, threshold: 70 }];
       return next.slice(-30);
@@ -224,6 +228,9 @@ const NeuralBotDashboard: React.FC = () => {
           <MarketList markets={markets} onSelect={setSelectedMarket} />
         </div>
       </div>
+
+      {/* Psychology Health */}
+      <PsychologyHealthPanel rows={psychologyHealth} isRunning={isRunning} />
 
       {/* Terminal */}
       <div>
