@@ -689,6 +689,7 @@ export class UnifiedNeuralBot {
   private hiddenAPI: HiddenAPIMonitor;
   private dataFetcher: RealTimeDataFetcher;
   private phantom: PhantomLiquidityHarvester;
+  private psychology: MarketPsychologyEngine;
 
   private orderBooks: Map<string, OrderBook> = new Map();
   private recentTrades: Map<string, Trade[]> = new Map();
