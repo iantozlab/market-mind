@@ -721,6 +721,10 @@ export class UnifiedNeuralBot {
     { name: 'whale_inactivity', active: true, label: 'Whale Inactivity' },
     { name: 'anti_detection', active: true, label: 'Anti-Detection' },
     { name: 'phantom_harvester', active: true, label: 'Phantom Harvester' },
+    { name: 'whale_wreckage', active: true, label: 'Whale Wreckage' },
+    { name: 'convergence_fade', active: true, label: 'Convergence Fade' },
+    { name: 'governance_attack', active: true, label: 'Governance Attack' },
+    { name: 'temporal_decay', active: true, label: 'Temporal Decay' },
   ];
 
   private simInterval: ReturnType<typeof setInterval> | null = null;
