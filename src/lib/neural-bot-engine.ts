@@ -747,7 +747,7 @@ export class UnifiedNeuralBot {
     this.phantom = new PhantomLiquidityHarvester(CONFIG.INITIAL_CAPITAL);
     this.psychology = new MarketPsychologyEngine();
     this.psychology.on('strategy_deprecated', ({ strategyName, winRate }) => {
-      this.addLog(`⚠ STRATEGY DEPRECATED: ${strategyName} (WR ${(winRate * 100).toFixed(1)}%)`, 'system');
+      this.addLog(`⚠ STRATEGY DEPRECATED: ${strategyName} (WR ${(winRate * 100).toFixed(1)}%)`, 'warning');
     });
   }
 
