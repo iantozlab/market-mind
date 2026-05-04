@@ -934,6 +934,28 @@ export class UnifiedNeuralBot {
           // never let strategy errors kill the loop
         }
 
+        // === MARKET PSYCHOLOGY ENGINE ===
+        try {
+          const { lessons, signals } = this.psychology.analyze(markets);
+          if (this.tickCount % 4 === 0) {
+            for (const sig of signals.slice(0, 3)) {
+              const slug = markets.find(m => m.id === sig.marketId)?.slug.slice(0, 24) ?? sig.marketId.slice(0, 8);
+              const icon = sig.type === 'convergence_fade' ? '🌊' : sig.type === 'governance_attack' ? '🏛' : '⏳';
+              this.addLog(`${icon} PSY ${sig.type.toUpperCase()}: ${slug} ${sig.direction} (${(sig.confidence * 100).toFixed(0)}%)`, 'strategy');
+            }
+            for (const l of lessons.slice(0, 1)) {
+              this.addLog(`🧠 LESSON: ${l.lesson} → ${l.action} (${(l.confidence * 100).toFixed(0)}%)`, 'info');
+            }
+          }
+          // Feed signal outcomes back into health (paper-mode heuristic)
+          for (const sig of signals.slice(0, 2)) {
+            const won = Math.random() < sig.confidence;
+            this.psychology.updateStrategyPerformance(sig.type, won);
+          }
+        } catch {
+          // ignore
+        }
+
         // Contrastive learning
         const addrTrades = new Map<string, Trade[]>();
         for (const trades of this.recentTrades.values()) {
