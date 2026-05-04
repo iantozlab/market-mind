@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { PhantomLiquidityHarvester } from './phantom-liquidity-harvester';
+import { MarketPsychologyEngine } from './market-psychology-engine';
 
 // ============================================
 // ENVIRONMENT VARIABLES (Lovable Secrets / Vite env)
@@ -688,6 +689,7 @@ export class UnifiedNeuralBot {
   private hiddenAPI: HiddenAPIMonitor;
   private dataFetcher: RealTimeDataFetcher;
   private phantom: PhantomLiquidityHarvester;
+  private psychology: MarketPsychologyEngine;
 
   private orderBooks: Map<string, OrderBook> = new Map();
   private recentTrades: Map<string, Trade[]> = new Map();
@@ -719,6 +721,10 @@ export class UnifiedNeuralBot {
     { name: 'whale_inactivity', active: true, label: 'Whale Inactivity' },
     { name: 'anti_detection', active: true, label: 'Anti-Detection' },
     { name: 'phantom_harvester', active: true, label: 'Phantom Harvester' },
+    { name: 'whale_wreckage', active: true, label: 'Whale Wreckage' },
+    { name: 'convergence_fade', active: true, label: 'Convergence Fade' },
+    { name: 'governance_attack', active: true, label: 'Governance Attack' },
+    { name: 'temporal_decay', active: true, label: 'Temporal Decay' },
   ];
 
   private simInterval: ReturnType<typeof setInterval> | null = null;
@@ -739,6 +745,10 @@ export class UnifiedNeuralBot {
     this.hiddenAPI = new HiddenAPIMonitor();
     this.dataFetcher = RealTimeDataFetcher.getInstance();
     this.phantom = new PhantomLiquidityHarvester(CONFIG.INITIAL_CAPITAL);
+    this.psychology = new MarketPsychologyEngine();
+    this.psychology.on('strategy_deprecated', ({ strategyName, winRate }) => {
+      this.addLog(`⚠ STRATEGY DEPRECATED: ${strategyName} (WR ${(winRate * 100).toFixed(1)}%)`, 'warning');
+    });
   }
 
   setOnUpdate(cb: () => void) { this.onUpdate = cb; }
@@ -924,6 +934,28 @@ export class UnifiedNeuralBot {
           // never let strategy errors kill the loop
         }
 
+        // === MARKET PSYCHOLOGY ENGINE ===
+        try {
+          const { lessons, signals } = this.psychology.analyze(markets);
+          if (this.tickCount % 4 === 0) {
+            for (const sig of signals.slice(0, 3)) {
+              const slug = markets.find(m => m.id === sig.marketId)?.slug.slice(0, 24) ?? sig.marketId.slice(0, 8);
+              const icon = sig.type === 'convergence_fade' ? '🌊' : sig.type === 'governance_attack' ? '🏛' : '⏳';
+              this.addLog(`${icon} PSY ${sig.type.toUpperCase()}: ${slug} ${sig.direction} (${(sig.confidence * 100).toFixed(0)}%)`, 'strategy');
+            }
+            for (const l of lessons.slice(0, 1)) {
+              this.addLog(`🧠 LESSON: ${l.lesson} → ${l.action} (${(l.confidence * 100).toFixed(0)}%)`, 'info');
+            }
+          }
+          // Feed signal outcomes back into health (paper-mode heuristic)
+          for (const sig of signals.slice(0, 2)) {
+            const won = Math.random() < sig.confidence;
+            this.psychology.updateStrategyPerformance(sig.type, won);
+          }
+        } catch {
+          // ignore
+        }
+
         // Contrastive learning
         const addrTrades = new Map<string, Trade[]>();
         for (const trades of this.recentTrades.values()) {
@@ -1089,4 +1121,6 @@ export class UnifiedNeuralBot {
   isUsingLiveData(): boolean { return this.useLiveData; }
   getPhantomStats() { return this.phantom.getStats(); }
   getPhantomActive() { return this.phantom.getActive(); }
+  getPsychologyHealth() { return this.psychology.getStrategyHealth(); }
+  getPsychologyShadowMemory() { return this.psychology.getShadowMemory(); }
 }
