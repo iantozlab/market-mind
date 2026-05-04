@@ -23,6 +23,7 @@ const NeuralBotDashboard: React.FC = () => {
   const [markets, setMarkets] = useState<Market[]>([]);
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
   const [apiStatus, setApiStatus] = useState<APIStatus>({ polymarket: false, polygon: false, dataSource: 'simulated', lastFetch: 0, marketsLoaded: 0 });
+  const [psychologyHealth, setPsychologyHealth] = useState<PsychologyHealthRow[]>([]);
 
   const botRef = useRef<UnifiedNeuralBot | null>(null);
 
