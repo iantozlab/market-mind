@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { PhantomLiquidityHarvester } from './phantom-liquidity-harvester';
+import { MarketPsychologyEngine } from './market-psychology-engine';
 
 // ============================================
 // ENVIRONMENT VARIABLES (Lovable Secrets / Vite env)
