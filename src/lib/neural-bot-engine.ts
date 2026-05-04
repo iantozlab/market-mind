@@ -1121,4 +1121,6 @@ export class UnifiedNeuralBot {
   isUsingLiveData(): boolean { return this.useLiveData; }
   getPhantomStats() { return this.phantom.getStats(); }
   getPhantomActive() { return this.phantom.getActive(); }
+  getPsychologyHealth() { return this.psychology.getStrategyHealth(); }
+  getPsychologyShadowMemory() { return this.psychology.getShadowMemory(); }
 }
