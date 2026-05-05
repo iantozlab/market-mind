@@ -14,7 +14,33 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      psychology_snapshots: {
+        Row: {
+          created_at: string
+          id: string
+          is_healthy: boolean
+          strategy_name: string
+          trades: number
+          win_rate: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_healthy: boolean
+          strategy_name: string
+          trades: number
+          win_rate: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_healthy?: boolean
+          strategy_name?: string
+          trades?: number
+          win_rate?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
