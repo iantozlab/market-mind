@@ -8,6 +8,8 @@ import TerminalLog from '@/components/TerminalLog';
 import MarketList from '@/components/MarketList';
 import MarketDetailPanel from '@/components/MarketDetailPanel';
 import PsychologyHealthPanel, { type PsychologyHealthRow } from '@/components/PsychologyHealthPanel';
+import RiskDashboardPanel from '@/components/RiskDashboardPanel';
+import BacktestPanel from '@/components/BacktestPanel';
 import { Button } from '@/components/ui/button';
 
 const NeuralBotDashboard: React.FC = () => {
@@ -229,8 +231,24 @@ const NeuralBotDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Psychology Health */}
-      <PsychologyHealthPanel rows={psychologyHealth} isRunning={isRunning} />
+      {/* Risk + Psychology Health */}
+      <RiskDashboardPanel
+        metrics={metrics}
+        initialCapital={CONFIG.INITIAL_CAPITAL}
+        maxDrawdownLimit={0.20}
+        dailyLossLimit={ENV.MAX_DAILY_LOSS}
+        isRunning={isRunning}
+        onEmergencyStop={stopBot}
+      />
+      <PsychologyHealthPanel
+        rows={psychologyHealth}
+        isRunning={isRunning}
+        getRecentTrades={(name) => botRef.current?.getPsychologyRecentTrades(name) ?? []}
+        onThresholdChange={(t) => botRef.current?.setPsychologyThreshold(t)}
+      />
+
+      {/* Backtest */}
+      <BacktestPanel />
 
       {/* Terminal */}
       <div>
