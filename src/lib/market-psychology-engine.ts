@@ -273,24 +273,28 @@ export class MarketPsychologyEngine {
     return { lessons, signals };
   }
 
-  updateStrategyPerformance(name: string, won: boolean) {
+  updateStrategyPerformance(name: string, won: boolean, pnl = 0) {
     const s = this.strategyHealth.get(name);
     if (!s) return;
     const trades = s.trades + 1;
     const winRate = (s.winRate * s.trades + (won ? 1 : 0)) / trades;
     this.strategyHealth.set(name, { winRate, trades, lastUpdate: Date.now() });
-    if (winRate < this.DEPRECATION_THRESHOLD && trades > 20) {
+    const arr = this.recentTrades.get(name) ?? [];
+    arr.unshift({ ts: Date.now(), won, pnl });
+    this.recentTrades.set(name, arr.slice(0, 50));
+    if (winRate < this.deprecationThreshold && trades > 20) {
       this.emit('strategy_deprecated', { strategyName: name, winRate });
     }
   }
 
   getStrategyHealth() {
-    const out = new Map<string, { winRate: number; trades: number; isHealthy: boolean }>();
+    const out = new Map<string, { winRate: number; trades: number; isHealthy: boolean; lastUpdate: number }>();
     for (const [n, d] of this.strategyHealth) {
       out.set(n, {
         winRate: d.winRate,
         trades: d.trades,
-        isHealthy: d.winRate > this.DEPRECATION_THRESHOLD || d.trades < 20,
+        isHealthy: d.winRate > this.deprecationThreshold || d.trades < 20,
+        lastUpdate: d.lastUpdate,
       });
     }
     return out;
