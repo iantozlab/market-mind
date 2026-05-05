@@ -184,8 +184,13 @@ export class MarketPsychologyEngine {
 
   private shadowMemory = new Map<string, { timestamp: number; lesson: string; confidence: number }>();
   private strategyHealth = new Map<string, { winRate: number; trades: number; lastUpdate: number }>();
-  private readonly DEPRECATION_THRESHOLD = 0.45;
+  private recentTrades = new Map<string, { ts: number; won: boolean; pnl: number }[]>();
+  private deprecationThreshold = 0.45;
   private listeners = new Map<EventName, Set<Listener>>();
+
+  setDeprecationThreshold(t: number) { this.deprecationThreshold = Math.max(0.1, Math.min(0.9, t)); }
+  getDeprecationThreshold() { return this.deprecationThreshold; }
+  getRecentTrades(name: string) { return this.recentTrades.get(name) ?? []; }
 
   constructor() {
     for (const s of [
