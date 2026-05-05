@@ -1123,4 +1123,6 @@ export class UnifiedNeuralBot {
   getPhantomActive() { return this.phantom.getActive(); }
   getPsychologyHealth() { return this.psychology.getStrategyHealth(); }
   getPsychologyShadowMemory() { return this.psychology.getShadowMemory(); }
+  getPsychologyRecentTrades(name: string) { return this.psychology.getRecentTrades(name); }
+  setPsychologyThreshold(t: number) { this.psychology.setDeprecationThreshold(t); }
 }
