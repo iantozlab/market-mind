@@ -31,6 +31,8 @@ const NeuralBotDashboard: React.FC = () => {
   const [mlInsights, setMlInsights] = useState<MLInsights | null>(null);
   const [tradeSettings, setTradeSettings] = useState<TradeSettings | null>(null);
 
+  const botRef = useRef<UnifiedNeuralBot | null>(null);
+
   const updateState = useCallback(() => {
     if (!botRef.current) return;
     const m = botRef.current.getMetrics();
@@ -40,6 +42,7 @@ const NeuralBotDashboard: React.FC = () => {
     setApiStatus(botRef.current.getAPIStatus());
     const health = botRef.current.getPsychologyHealth();
     setPsychologyHealth(Array.from(health.entries()).map(([name, d]) => ({ name, ...d })));
+    setMlInsights(botRef.current.getMLInsights());
     setAnomalyHistory(prev => {
       const next = [...prev, { time: new Date().toLocaleTimeString(), score: m.anomalyScore * 100, threshold: 70 }];
       return next.slice(-30);
