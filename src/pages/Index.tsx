@@ -237,6 +237,20 @@ const NeuralBotDashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* Trade Settings */}
+      {tradeSettings && (
+        <TradeSettingsPanel
+          initial={tradeSettings}
+          onApply={(s) => {
+            botRef.current?.setTradeSettings(s);
+            if (botRef.current) setTradeSettings(botRef.current.getTradeSettings());
+          }}
+        />
+      )}
+
+      {/* ML Insights */}
+      <MLInsightsPanel insights={mlInsights} />
+
       {/* Risk + Psychology Health */}
       <RiskDashboardPanel
         metrics={metrics}
