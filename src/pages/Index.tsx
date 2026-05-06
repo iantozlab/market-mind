@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { UnifiedNeuralBot, getEnvStatus, ENV, CONFIG } from '@/lib/neural-bot-engine';
-import type { LogEntry, BotMetrics, Market, APIStatus, EnvStatus } from '@/lib/neural-bot-engine';
+import type { LogEntry, BotMetrics, Market, APIStatus, EnvStatus, MLInsights, TradeSettings } from '@/lib/neural-bot-engine';
 import NeuralStatusCard from '@/components/NeuralStatusCard';
 import MetricCard from '@/components/MetricCard';
 import TerminalLog from '@/components/TerminalLog';
@@ -10,6 +10,8 @@ import MarketDetailPanel from '@/components/MarketDetailPanel';
 import PsychologyHealthPanel, { type PsychologyHealthRow } from '@/components/PsychologyHealthPanel';
 import RiskDashboardPanel from '@/components/RiskDashboardPanel';
 import BacktestPanel from '@/components/BacktestPanel';
+import TradeSettingsPanel from '@/components/TradeSettingsPanel';
+import MLInsightsPanel from '@/components/MLInsightsPanel';
 import { Button } from '@/components/ui/button';
 
 const NeuralBotDashboard: React.FC = () => {
@@ -26,6 +28,8 @@ const NeuralBotDashboard: React.FC = () => {
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
   const [apiStatus, setApiStatus] = useState<APIStatus>({ polymarket: false, polygon: false, dataSource: 'simulated', lastFetch: 0, marketsLoaded: 0 });
   const [psychologyHealth, setPsychologyHealth] = useState<PsychologyHealthRow[]>([]);
+  const [mlInsights, setMlInsights] = useState<MLInsights | null>(null);
+  const [tradeSettings, setTradeSettings] = useState<TradeSettings | null>(null);
 
   const botRef = useRef<UnifiedNeuralBot | null>(null);
 
@@ -38,6 +42,7 @@ const NeuralBotDashboard: React.FC = () => {
     setApiStatus(botRef.current.getAPIStatus());
     const health = botRef.current.getPsychologyHealth();
     setPsychologyHealth(Array.from(health.entries()).map(([name, d]) => ({ name, ...d })));
+    setMlInsights(botRef.current.getMLInsights());
     setAnomalyHistory(prev => {
       const next = [...prev, { time: new Date().toLocaleTimeString(), score: m.anomalyScore * 100, threshold: 70 }];
       return next.slice(-30);
@@ -53,6 +58,7 @@ const NeuralBotDashboard: React.FC = () => {
     bot.setOnUpdate(updateState);
     botRef.current = bot;
     bot.run();
+    setTradeSettings(bot.getTradeSettings());
     setIsRunning(true);
   }, [updateState]);
 
@@ -230,6 +236,20 @@ const NeuralBotDashboard: React.FC = () => {
           <MarketList markets={markets} onSelect={setSelectedMarket} />
         </div>
       </div>
+
+      {/* Trade Settings */}
+      {tradeSettings && (
+        <TradeSettingsPanel
+          initial={tradeSettings}
+          onApply={(s) => {
+            botRef.current?.setTradeSettings(s);
+            if (botRef.current) setTradeSettings(botRef.current.getTradeSettings());
+          }}
+        />
+      )}
+
+      {/* ML Insights */}
+      <MLInsightsPanel insights={mlInsights} />
 
       {/* Risk + Psychology Health */}
       <RiskDashboardPanel

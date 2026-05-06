@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { Button } from '@/components/ui/button';
-import { History, Play, Loader2 } from 'lucide-react';
+import { History, Play, Loader2, Download, FileText } from 'lucide-react';
 import { runBacktest, type BacktestConfig, type BacktestResult } from '@/lib/backtest-engine';
+import { downloadCSV, downloadPDF } from '@/lib/exporters';
 
 const defaultConfig: BacktestConfig = {
   durationDays: 30,
@@ -93,9 +94,43 @@ const BacktestPanel: React.FC = () => {
         </Field>
       </div>
 
-      <Button onClick={run} disabled={running} size="sm" className="mt-3 font-display tracking-wide">
-        {running ? <><Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> Running…</> : <><Play className="h-3.5 w-3.5 mr-2" /> Run Backtest</>}
-      </Button>
+      <div className="flex items-center gap-2 mt-3 flex-wrap">
+        <Button onClick={run} disabled={running} size="sm" className="font-display tracking-wide">
+          {running ? <><Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> Running…</> : <><Play className="h-3.5 w-3.5 mr-2" /> Run Backtest</>}
+        </Button>
+        {result && (
+          <>
+            <Button
+              size="sm" variant="outline" className="h-8 text-xs"
+              onClick={() => downloadCSV(
+                `backtest_${Date.now()}.csv`,
+                result.equityCurve.map(p => ({ timestamp: new Date(p.t).toISOString(), equity: p.equity })),
+              )}
+            >
+              <Download className="h-3 w-3 mr-1" /> CSV
+            </Button>
+            <Button
+              size="sm" variant="outline" className="h-8 text-xs"
+              onClick={() => downloadPDF(
+                `backtest_${Date.now()}.pdf`,
+                'Strategy Backtest Results',
+                ['Timestamp', 'Equity ($)'],
+                result.equityCurve.map(p => [new Date(p.t).toLocaleString(), p.equity.toFixed(2)]),
+                {
+                  'End Equity': `$${result.endEquity.toFixed(2)}`,
+                  'Return': `${result.totalReturnPct.toFixed(2)}%`,
+                  'Max DD': `${result.maxDrawdownPct.toFixed(2)}%`,
+                  'Win Rate': `${(result.winRate * 100).toFixed(1)}%`,
+                  'Sharpe': result.sharpeRatio.toFixed(2),
+                  'Trades': result.totalTrades,
+                },
+              )}
+            >
+              <FileText className="h-3 w-3 mr-1" /> PDF
+            </Button>
+          </>
+        )}
+      </div>
 
       {result && (
         <div className="mt-4 space-y-3">

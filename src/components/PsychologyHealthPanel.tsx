@@ -1,8 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { Download, FileText, Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import Sparkline from './Sparkline';
 import StrategyDetailDrawer from './StrategyDetailDrawer';
 import { usePsychologySnapshots, type SnapshotPoint } from '@/hooks/usePsychologySnapshots';
+import { downloadCSV, downloadPDF } from '@/lib/exporters';
 
 export interface PsychologyHealthRow {
   name: string;
@@ -54,7 +57,7 @@ const PsychologyHealthPanel: React.FC<Props> = ({
 }) => {
   const [threshold, setThreshold] = useState(defaultThreshold);
   const [selected, setSelected] = useState<PsychologyHealthRow | null>(null);
-  const history = usePsychologySnapshots(rows, isRunning);
+  const { history, settings, setSettings, pruneNow } = usePsychologySnapshots(rows, isRunning);
   const alertedRef = useRef<Set<string>>(new Set());
 
   // Visual + toast alerts when a strategy crosses the threshold (deprecated)
@@ -86,26 +89,87 @@ const PsychologyHealthPanel: React.FC<Props> = ({
   const recent = selected && getRecentTrades ? getRecentTrades(selected.name) : [];
   const seriesFor = (name: string): SnapshotPoint[] => history[name] ?? [];
 
+  const exportCSV = () => {
+    const out: Record<string, unknown>[] = [];
+    for (const [name, pts] of Object.entries(history)) {
+      for (const p of pts) {
+        out.push({
+          strategy: name,
+          timestamp: new Date(p.t).toISOString(),
+          win_rate: p.winRate,
+          trades: p.trades,
+          is_healthy: p.isHealthy,
+        });
+      }
+    }
+    if (out.length === 0) { toast.info('No snapshots to export yet.'); return; }
+    downloadCSV(`psychology_snapshots_${Date.now()}.csv`, out);
+  };
+
+  const exportPDF = () => {
+    const rowsOut = sorted.map(r => [
+      labelMap[r.name] ?? r.name,
+      `${(r.winRate * 100).toFixed(1)}%`,
+      r.trades,
+      r.trades > 20 && r.winRate < threshold ? 'Deprecated' : 'Healthy',
+    ]);
+    if (rowsOut.length === 0) { toast.info('No strategy data to export.'); return; }
+    downloadPDF(
+      `psychology_health_${Date.now()}.pdf`,
+      'Market Psychology · Strategy Health',
+      ['Strategy', 'Win Rate', 'Trades', 'Status'],
+      rowsOut,
+      { Threshold: `${(threshold * 100).toFixed(0)}%`, Strategies: rowsOut.length },
+    );
+  };
+
   return (
     <div className="rounded-lg border border-border bg-card p-4">
       <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
         <h2 className="font-display text-sm font-semibold text-foreground tracking-wide">
           Market Psychology · Strategy Health
         </h2>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <label className="flex items-center gap-2 text-[10px] font-display uppercase tracking-widest text-muted-foreground">
             Alert &lt;
             <input
-              type="number"
-              min={10}
-              max={90}
-              step={1}
+              type="number" min={10} max={90} step={1}
               value={Math.round(threshold * 100)}
               onChange={(e) => handleThreshold(Math.max(0.1, Math.min(0.9, Number(e.target.value) / 100)))}
               className="w-12 bg-background border border-border rounded px-1.5 py-0.5 text-foreground text-xs font-mono"
             />
             %
           </label>
+          <label className="flex items-center gap-2 text-[10px] font-display uppercase tracking-widest text-muted-foreground">
+            Poll
+            <input
+              type="number" min={5} max={300} step={5}
+              value={Math.round(settings.intervalMs / 1000)}
+              onChange={(e) => setSettings({ intervalMs: Math.max(5, Number(e.target.value)) * 1000 })}
+              className="w-12 bg-background border border-border rounded px-1.5 py-0.5 text-foreground text-xs font-mono"
+            />s
+          </label>
+          <label className="flex items-center gap-2 text-[10px] font-display uppercase tracking-widest text-muted-foreground">
+            Retain
+            <input
+              type="number" min={1} max={720} step={1}
+              value={settings.retentionHours}
+              onChange={(e) => setSettings({ retentionHours: Math.max(1, Number(e.target.value)) })}
+              className="w-14 bg-background border border-border rounded px-1.5 py-0.5 text-foreground text-xs font-mono"
+            />h
+          </label>
+          <Button onClick={exportCSV} size="sm" variant="outline" className="h-7 text-[10px]">
+            <Download className="h-3 w-3 mr-1" /> CSV
+          </Button>
+          <Button onClick={exportPDF} size="sm" variant="outline" className="h-7 text-[10px]">
+            <FileText className="h-3 w-3 mr-1" /> PDF
+          </Button>
+          <Button
+            onClick={async () => { await pruneNow(); toast.success('Pruned old snapshots'); }}
+            size="sm" variant="outline" className="h-7 text-[10px]"
+          >
+            <Trash2 className="h-3 w-3 mr-1" /> Prune
+          </Button>
           <span className={`flex items-center gap-1.5 text-[10px] font-display uppercase tracking-widest ${isRunning ? 'text-primary' : 'text-muted-foreground'}`}>
             <span className={`h-1.5 w-1.5 rounded-full ${isRunning ? 'bg-primary animate-pulse' : 'bg-muted-foreground'}`} />
             {isRunning ? 'Live' : 'Idle'}

@@ -1125,4 +1125,77 @@ export class UnifiedNeuralBot {
   getPsychologyShadowMemory() { return this.psychology.getShadowMemory(); }
   getPsychologyRecentTrades(name: string) { return this.psychology.getRecentTrades(name); }
   setPsychologyThreshold(t: number) { this.psychology.setDeprecationThreshold(t); }
+
+  // -------- Trade Settings (live-tunable) --------
+  getTradeSettings(): TradeSettings {
+    return {
+      entryWindowMs: CONFIG.STRATEGIES.BOT_EXHAUSTION.ENTRY_WINDOW_MS,
+      exitWindowMs: CONFIG.STRATEGIES.BOT_EXHAUSTION.EXIT_WINDOW_MS,
+      kellyFraction: CONFIG.RISK.KELLY_FRACTION,
+      maxPositionPct: CONFIG.RISK.MAX_POSITION_PCT,
+      stopLossPct: this.tradeOverrides.stopLossPct,
+      takeProfitPct: this.tradeOverrides.takeProfitPct,
+      maxDailyLoss: CONFIG.RISK.MAX_DAILY_LOSS,
+      maxDrawdown: CONFIG.RISK.MAX_DRAWDOWN,
+    };
+  }
+  setTradeSettings(s: Partial<TradeSettings>) {
+    if (s.entryWindowMs != null) CONFIG.STRATEGIES.BOT_EXHAUSTION.ENTRY_WINDOW_MS = s.entryWindowMs;
+    if (s.exitWindowMs != null) CONFIG.STRATEGIES.BOT_EXHAUSTION.EXIT_WINDOW_MS = s.exitWindowMs;
+    if (s.kellyFraction != null) CONFIG.RISK.KELLY_FRACTION = s.kellyFraction;
+    if (s.maxPositionPct != null) CONFIG.RISK.MAX_POSITION_PCT = s.maxPositionPct;
+    if (s.maxDailyLoss != null) CONFIG.RISK.MAX_DAILY_LOSS = s.maxDailyLoss;
+    if (s.maxDrawdown != null) CONFIG.RISK.MAX_DRAWDOWN = s.maxDrawdown;
+    if (s.stopLossPct != null) this.tradeOverrides.stopLossPct = s.stopLossPct;
+    if (s.takeProfitPct != null) this.tradeOverrides.takeProfitPct = s.takeProfitPct;
+    this.addLog(`⚙️ Trade settings updated`, 'info');
+  }
+  private tradeOverrides: { stopLossPct: number; takeProfitPct: number } = { stopLossPct: 0.10, takeProfitPct: 0.30 };
+
+  // -------- ML Insights snapshot --------
+  getMLInsights(): MLInsights {
+    const m = this.metrics;
+    const drivers: { label: string; value: number; weight: number }[] = [
+      { label: 'HTM Anomaly', value: m.anomalyScore, weight: 0.30 },
+      { label: 'Bot Detection', value: m.botDetectionAccuracy, weight: 0.25 },
+      { label: 'Win Rate', value: m.winRate, weight: 0.20 },
+      { label: 'Sharpe (norm)', value: Math.max(0, Math.min(1, m.sharpeRatio / 3)), weight: 0.15 },
+      { label: 'Drawdown Inv', value: 1 - Math.min(1, m.maxDrawdown / 0.2), weight: 0.10 },
+    ];
+    const confidence = drivers.reduce((s, d) => s + d.value * d.weight, 0);
+    const health = this.psychology.getStrategyHealth();
+    const perStrategy = Array.from(health.entries()).map(([name, d]) => {
+      const prev = this.lastHealthSnapshot.get(name);
+      const delta = prev ? d.winRate - prev : 0;
+      this.lastHealthSnapshot.set(name, d.winRate);
+      return { name, winRate: d.winRate, trades: d.trades, isHealthy: d.isHealthy, delta };
+    });
+    return {
+      confidence,
+      drivers,
+      perStrategy,
+      signal: confidence > 0.6 ? 'BULLISH' : confidence > 0.4 ? 'NEUTRAL' : 'BEARISH',
+      ts: Date.now(),
+    };
+  }
+  private lastHealthSnapshot = new Map<string, number>();
+}
+
+export interface TradeSettings {
+  entryWindowMs: number;
+  exitWindowMs: number;
+  kellyFraction: number;
+  maxPositionPct: number;
+  stopLossPct: number;
+  takeProfitPct: number;
+  maxDailyLoss: number;
+  maxDrawdown: number;
+}
+
+export interface MLInsights {
+  confidence: number;
+  drivers: { label: string; value: number; weight: number }[];
+  perStrategy: { name: string; winRate: number; trades: number; isHealthy: boolean; delta: number }[];
+  signal: 'BULLISH' | 'NEUTRAL' | 'BEARISH';
+  ts: number;
 }
