@@ -58,6 +58,7 @@ const NeuralBotDashboard: React.FC = () => {
     bot.setOnUpdate(updateState);
     botRef.current = bot;
     bot.run();
+    setTradeSettings(bot.getTradeSettings());
     setIsRunning(true);
   }, [updateState]);
 
