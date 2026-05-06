@@ -1,8 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { Download, FileText, Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import Sparkline from './Sparkline';
 import StrategyDetailDrawer from './StrategyDetailDrawer';
 import { usePsychologySnapshots, type SnapshotPoint } from '@/hooks/usePsychologySnapshots';
+import { downloadCSV, downloadPDF } from '@/lib/exporters';
 
 export interface PsychologyHealthRow {
   name: string;
@@ -54,7 +57,7 @@ const PsychologyHealthPanel: React.FC<Props> = ({
 }) => {
   const [threshold, setThreshold] = useState(defaultThreshold);
   const [selected, setSelected] = useState<PsychologyHealthRow | null>(null);
-  const history = usePsychologySnapshots(rows, isRunning);
+  const { history, settings, setSettings, pruneNow } = usePsychologySnapshots(rows, isRunning);
   const alertedRef = useRef<Set<string>>(new Set());
 
   // Visual + toast alerts when a strategy crosses the threshold (deprecated)
