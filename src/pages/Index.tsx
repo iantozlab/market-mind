@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { UnifiedNeuralBot, getEnvStatus, ENV, CONFIG } from '@/lib/neural-bot-engine';
-import type { LogEntry, BotMetrics, Market, APIStatus, EnvStatus } from '@/lib/neural-bot-engine';
+import type { LogEntry, BotMetrics, Market, APIStatus, EnvStatus, MLInsights, TradeSettings } from '@/lib/neural-bot-engine';
 import NeuralStatusCard from '@/components/NeuralStatusCard';
 import MetricCard from '@/components/MetricCard';
 import TerminalLog from '@/components/TerminalLog';
@@ -10,6 +10,8 @@ import MarketDetailPanel from '@/components/MarketDetailPanel';
 import PsychologyHealthPanel, { type PsychologyHealthRow } from '@/components/PsychologyHealthPanel';
 import RiskDashboardPanel from '@/components/RiskDashboardPanel';
 import BacktestPanel from '@/components/BacktestPanel';
+import TradeSettingsPanel from '@/components/TradeSettingsPanel';
+import MLInsightsPanel from '@/components/MLInsightsPanel';
 import { Button } from '@/components/ui/button';
 
 const NeuralBotDashboard: React.FC = () => {
@@ -26,8 +28,8 @@ const NeuralBotDashboard: React.FC = () => {
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
   const [apiStatus, setApiStatus] = useState<APIStatus>({ polymarket: false, polygon: false, dataSource: 'simulated', lastFetch: 0, marketsLoaded: 0 });
   const [psychologyHealth, setPsychologyHealth] = useState<PsychologyHealthRow[]>([]);
-
-  const botRef = useRef<UnifiedNeuralBot | null>(null);
+  const [mlInsights, setMlInsights] = useState<MLInsights | null>(null);
+  const [tradeSettings, setTradeSettings] = useState<TradeSettings | null>(null);
 
   const updateState = useCallback(() => {
     if (!botRef.current) return;
