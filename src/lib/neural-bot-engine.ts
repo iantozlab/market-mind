@@ -1083,6 +1083,8 @@ export class UnifiedNeuralBot {
 
             if (pnl > 0) this.metrics.winRate = this.metrics.winRate * 0.95 + 0.05;
             else this.metrics.winRate = this.metrics.winRate * 0.95;
+          }
+
           // === Feed broader strategy outcomes into psychology health (paper heuristic) ===
           // Each per-market trigger contributes a synthetic win/loss with confidence-weighted probability.
           if (this.tickCount % 2 === 0) {
