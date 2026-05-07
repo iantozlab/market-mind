@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Settings2, Save, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { TradeSettings } from '@/lib/neural-bot-engine';
+import SettingsConfirmDialog from './SettingsConfirmDialog';
+import { diffSettings, type AuditChange } from '@/lib/settings-audit';
 
 interface Props {
   initial: TradeSettings;
