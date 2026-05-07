@@ -32,15 +32,25 @@ const Field: React.FC<{
 const TradeSettingsPanel: React.FC<Props> = ({ initial, onApply }) => {
   const [s, setS] = useState<TradeSettings>(initial);
   const [dirty, setDirty] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingDiff, setPendingDiff] = useState<AuditChange[]>([]);
 
-  useEffect(() => { setS(initial); }, [initial.entryWindowMs, initial.exitWindowMs]); // refresh on engine restart
+  useEffect(() => { setS(initial); }, [initial.entryWindowMs, initial.exitWindowMs]);
 
   const upd = <K extends keyof TradeSettings>(k: K, v: TradeSettings[K]) => {
     setS(prev => ({ ...prev, [k]: v }));
     setDirty(true);
   };
 
-  const apply = () => { onApply(s); setDirty(false); };
+  const requestApply = () => {
+    setPendingDiff(diffSettings(initial, s));
+    setConfirmOpen(true);
+  };
+  const confirmApply = () => {
+    onApply(s);
+    setConfirmOpen(false);
+    setDirty(false);
+  };
   const reset = () => { setS(initial); setDirty(false); };
 
   return (
