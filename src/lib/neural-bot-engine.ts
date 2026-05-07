@@ -947,10 +947,12 @@ export class UnifiedNeuralBot {
               this.addLog(`🧠 LESSON: ${l.lesson} → ${l.action} (${(l.confidence * 100).toFixed(0)}%)`, 'info');
             }
           }
-          // Feed signal outcomes back into health (paper-mode heuristic)
-          for (const sig of signals.slice(0, 2)) {
+          // Feed signal outcomes back into health (paper-mode heuristic).
+          // Map analyze() signal types onto canonical strategy-health keys.
+          const sigKey = (t: string) => t === 'temporal_entry' ? 'temporal_decay' : t;
+          for (const sig of signals.slice(0, 4)) {
             const won = Math.random() < sig.confidence;
-            this.psychology.updateStrategyPerformance(sig.type, won);
+            this.psychology.updateStrategyPerformance(sigKey(sig.type), won);
           }
         } catch {
           // ignore
