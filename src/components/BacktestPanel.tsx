@@ -130,6 +130,20 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ liveSettings, initialCapi
         <Button onClick={run} disabled={running} size="sm" className="font-display tracking-wide">
           {running ? <><Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> Running…</> : <><Play className="h-3.5 w-3.5 mr-2" /> Run Backtest</>}
         </Button>
+        <Button
+          onClick={runLive}
+          disabled={running || !liveSettings}
+          size="sm" variant="secondary" className="font-display tracking-wide"
+          title={liveSettings ? 'Run with live dashboard trade settings' : 'Start the bot to load live settings'}
+        >
+          <Wand2 className="h-3.5 w-3.5 mr-2" /> Run with Current Settings
+        </Button>
+        {usedLive && result && (
+          <span className="text-[10px] uppercase tracking-widest text-accent font-display">Live Settings Applied</span>
+        )}
+        <Button onClick={applyLiveSettings} disabled={!liveSettings} size="sm" variant="ghost" className="h-8 text-[10px]">
+          Sync fields
+        </Button>
         {result && (
           <>
             <Button
