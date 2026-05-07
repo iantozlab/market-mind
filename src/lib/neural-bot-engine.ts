@@ -947,10 +947,12 @@ export class UnifiedNeuralBot {
               this.addLog(`🧠 LESSON: ${l.lesson} → ${l.action} (${(l.confidence * 100).toFixed(0)}%)`, 'info');
             }
           }
-          // Feed signal outcomes back into health (paper-mode heuristic)
-          for (const sig of signals.slice(0, 2)) {
+          // Feed signal outcomes back into health (paper-mode heuristic).
+          // Map analyze() signal types onto canonical strategy-health keys.
+          const sigKey = (t: string) => t === 'temporal_entry' ? 'temporal_decay' : t;
+          for (const sig of signals.slice(0, 4)) {
             const won = Math.random() < sig.confidence;
-            this.psychology.updateStrategyPerformance(sig.type, won);
+            this.psychology.updateStrategyPerformance(sigKey(sig.type), won);
           }
         } catch {
           // ignore
@@ -1081,6 +1083,38 @@ export class UnifiedNeuralBot {
 
             if (pnl > 0) this.metrics.winRate = this.metrics.winRate * 0.95 + 0.05;
             else this.metrics.winRate = this.metrics.winRate * 0.95;
+          }
+
+          // === Feed broader strategy outcomes into psychology health (paper heuristic) ===
+          // Each per-market trigger contributes a synthetic win/loss with confidence-weighted probability.
+          if (this.tickCount % 2 === 0) {
+            // Bot exhaustion: high anomaly score → likely exhaustion signal
+            if (this.metrics.anomalyScore > 0.55) {
+              this.psychology.updateStrategyPerformance('bot_exhaustion', Math.random() < 0.55);
+            }
+            // Liquidity provision: vortex phase 2 active
+            if (this.liquidityVortex.shouldEnter(market, ob)) {
+              this.psychology.updateStrategyPerformance('liquidity_provision', Math.random() < 0.58);
+            }
+            // ZK exploit: window currently open
+            if (this.zkExploit.isWithinWindow()) {
+              this.psychology.updateStrategyPerformance('zk_exploit', Math.random() < 0.62);
+            }
+            // Whale inactivity: low recent trade count
+            const recentN = trades.filter(t => Date.now() - t.timestamp < 3600_000).length;
+            if (recentN < 3 && market.volume > 5000) {
+              this.psychology.updateStrategyPerformance('whale_inactivity', Math.random() < 0.52);
+            }
+            // Pre-event: end date 3-5 days out
+            const days = (new Date(market.endDate).getTime() - Date.now()) / 86_400_000;
+            if (days > 3 && days < 5) {
+              this.psychology.updateStrategyPerformance('pre_event', Math.random() < 0.54);
+            }
+            // Anchor reversion: price extreme & cross-market disagreement
+            const p = market.outcomePrices[0];
+            if ((p < 0.15 || p > 0.85) && crossPred.confidence > 0.4) {
+              this.psychology.updateStrategyPerformance('anchor_reversion', Math.random() < 0.56);
+            }
           }
         }
 

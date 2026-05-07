@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Settings2, Save, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { TradeSettings } from '@/lib/neural-bot-engine';
+import SettingsConfirmDialog from './SettingsConfirmDialog';
+import { diffSettings, type AuditChange } from '@/lib/settings-audit';
 
 interface Props {
   initial: TradeSettings;
@@ -30,15 +32,25 @@ const Field: React.FC<{
 const TradeSettingsPanel: React.FC<Props> = ({ initial, onApply }) => {
   const [s, setS] = useState<TradeSettings>(initial);
   const [dirty, setDirty] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingDiff, setPendingDiff] = useState<AuditChange[]>([]);
 
-  useEffect(() => { setS(initial); }, [initial.entryWindowMs, initial.exitWindowMs]); // refresh on engine restart
+  useEffect(() => { setS(initial); }, [initial.entryWindowMs, initial.exitWindowMs]);
 
   const upd = <K extends keyof TradeSettings>(k: K, v: TradeSettings[K]) => {
     setS(prev => ({ ...prev, [k]: v }));
     setDirty(true);
   };
 
-  const apply = () => { onApply(s); setDirty(false); };
+  const requestApply = () => {
+    setPendingDiff(diffSettings(initial, s));
+    setConfirmOpen(true);
+  };
+  const confirmApply = () => {
+    onApply(s);
+    setConfirmOpen(false);
+    setDirty(false);
+  };
   const reset = () => { setS(initial); setDirty(false); };
 
   return (
@@ -52,7 +64,7 @@ const TradeSettingsPanel: React.FC<Props> = ({ initial, onApply }) => {
           <Button onClick={reset} disabled={!dirty} size="sm" variant="outline" className="h-7 text-xs">
             <RotateCcw className="h-3 w-3 mr-1" /> Reset
           </Button>
-          <Button onClick={apply} disabled={!dirty} size="sm" className="h-7 text-xs">
+          <Button onClick={requestApply} disabled={!dirty} size="sm" className="h-7 text-xs">
             <Save className="h-3 w-3 mr-1" /> Apply
           </Button>
         </div>
@@ -77,8 +89,15 @@ const TradeSettingsPanel: React.FC<Props> = ({ initial, onApply }) => {
                onChange={v => upd('maxDrawdown', v / 100)} />
       </div>
       <p className="text-[10px] text-muted-foreground mt-3">
-        Changes apply live to the running engine. Risk caps gate new entries; entry/exit windows tune the bot-exhaustion scanner.
+        Changes require confirmation and are written to the audit log. Risk caps gate new entries; entry/exit windows tune the bot-exhaustion scanner.
       </p>
+
+      <SettingsConfirmDialog
+        open={confirmOpen}
+        changes={pendingDiff}
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={confirmApply}
+      />
     </div>
   );
 };

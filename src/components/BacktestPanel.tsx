@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { Button } from '@/components/ui/button';
-import { History, Play, Loader2, Download, FileText } from 'lucide-react';
+import { History, Play, Loader2, Download, FileText, Wand2 } from 'lucide-react';
 import { runBacktest, type BacktestConfig, type BacktestResult } from '@/lib/backtest-engine';
 import { downloadCSV, downloadPDF } from '@/lib/exporters';
+import type { TradeSettings } from '@/lib/neural-bot-engine';
 
 const defaultConfig: BacktestConfig = {
   durationDays: 30,
@@ -16,6 +17,11 @@ const defaultConfig: BacktestConfig = {
   maxActiveMarkets: 8,
 };
 
+interface BacktestPanelProps {
+  liveSettings?: TradeSettings | null;
+  initialCapital?: number;
+}
+
 const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
   <div className="space-y-1">
     <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-display">{label}</label>
@@ -25,20 +31,46 @@ const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, 
 
 const num = "h-8 w-full bg-background border border-border rounded px-2 text-xs font-mono text-foreground";
 
-const BacktestPanel: React.FC = () => {
+const BacktestPanel: React.FC<BacktestPanelProps> = ({ liveSettings, initialCapital }) => {
   const [config, setConfig] = useState<BacktestConfig>(defaultConfig);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<BacktestResult | null>(null);
+  const [usedLive, setUsedLive] = useState(false);
 
   const update = <K extends keyof BacktestConfig>(k: K, v: BacktestConfig[K]) =>
     setConfig(prev => ({ ...prev, [k]: v }));
 
-  const run = () => {
+  const applyLiveSettings = () => {
+    if (!liveSettings) return;
+    setConfig(prev => ({
+      ...prev,
+      stopLoss: liveSettings.stopLossPct,
+      takeProfit: liveSettings.takeProfitPct,
+      initialCapital: initialCapital ?? prev.initialCapital,
+      maxPositionSize: Math.max(50, Math.round((initialCapital ?? prev.initialCapital) * liveSettings.maxPositionPct)),
+    }));
+  };
+
+  const runWith = (cfg: BacktestConfig, live: boolean) => {
     setRunning(true);
+    setUsedLive(live);
     setTimeout(() => {
-      try { setResult(runBacktest(config)); }
+      try { setResult(runBacktest(cfg)); }
       finally { setRunning(false); }
     }, 50);
+  };
+  const run = () => runWith(config, false);
+  const runLive = () => {
+    if (!liveSettings) return;
+    const merged: BacktestConfig = {
+      ...config,
+      stopLoss: liveSettings.stopLossPct,
+      takeProfit: liveSettings.takeProfitPct,
+      initialCapital: initialCapital ?? config.initialCapital,
+      maxPositionSize: Math.max(50, Math.round((initialCapital ?? config.initialCapital) * liveSettings.maxPositionPct)),
+    };
+    setConfig(merged);
+    runWith(merged, true);
   };
 
   const equityData = result?.equityCurve.map(p => ({
@@ -98,13 +130,27 @@ const BacktestPanel: React.FC = () => {
         <Button onClick={run} disabled={running} size="sm" className="font-display tracking-wide">
           {running ? <><Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> Running…</> : <><Play className="h-3.5 w-3.5 mr-2" /> Run Backtest</>}
         </Button>
+        <Button
+          onClick={runLive}
+          disabled={running || !liveSettings}
+          size="sm" variant="secondary" className="font-display tracking-wide"
+          title={liveSettings ? 'Run with live dashboard trade settings' : 'Start the bot to load live settings'}
+        >
+          <Wand2 className="h-3.5 w-3.5 mr-2" /> Run with Current Settings
+        </Button>
+        {usedLive && result && (
+          <span className="text-[10px] uppercase tracking-widest text-accent font-display">Live Settings Applied</span>
+        )}
+        <Button onClick={applyLiveSettings} disabled={!liveSettings} size="sm" variant="ghost" className="h-8 text-[10px]">
+          Sync fields
+        </Button>
         {result && (
           <>
             <Button
               size="sm" variant="outline" className="h-8 text-xs"
               onClick={() => downloadCSV(
-                `backtest_${Date.now()}.csv`,
-                result.equityCurve.map(p => ({ timestamp: new Date(p.t).toISOString(), equity: p.equity })),
+                `backtest_${usedLive ? 'live_' : ''}${Date.now()}.csv`,
+                result.equityCurve.map(p => ({ timestamp: new Date(p.t).toISOString(), equity: p.equity, source: usedLive ? 'live_settings' : 'manual' })),
               )}
             >
               <Download className="h-3 w-3 mr-1" /> CSV
@@ -112,8 +158,8 @@ const BacktestPanel: React.FC = () => {
             <Button
               size="sm" variant="outline" className="h-8 text-xs"
               onClick={() => downloadPDF(
-                `backtest_${Date.now()}.pdf`,
-                'Strategy Backtest Results',
+                `backtest_${usedLive ? 'live_' : ''}${Date.now()}.pdf`,
+                `Strategy Backtest Results${usedLive ? ' (Live Settings)' : ''}`,
                 ['Timestamp', 'Equity ($)'],
                 result.equityCurve.map(p => [new Date(p.t).toLocaleString(), p.equity.toFixed(2)]),
                 {
@@ -123,6 +169,7 @@ const BacktestPanel: React.FC = () => {
                   'Win Rate': `${(result.winRate * 100).toFixed(1)}%`,
                   'Sharpe': result.sharpeRatio.toFixed(2),
                   'Trades': result.totalTrades,
+                  'Source': usedLive ? 'Live dashboard settings' : 'Manual config',
                 },
               )}
             >
