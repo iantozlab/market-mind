@@ -149,8 +149,8 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ liveSettings, initialCapi
             <Button
               size="sm" variant="outline" className="h-8 text-xs"
               onClick={() => downloadCSV(
-                `backtest_${Date.now()}.csv`,
-                result.equityCurve.map(p => ({ timestamp: new Date(p.t).toISOString(), equity: p.equity })),
+                `backtest_${usedLive ? 'live_' : ''}${Date.now()}.csv`,
+                result.equityCurve.map(p => ({ timestamp: new Date(p.t).toISOString(), equity: p.equity, source: usedLive ? 'live_settings' : 'manual' })),
               )}
             >
               <Download className="h-3 w-3 mr-1" /> CSV
@@ -158,8 +158,8 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ liveSettings, initialCapi
             <Button
               size="sm" variant="outline" className="h-8 text-xs"
               onClick={() => downloadPDF(
-                `backtest_${Date.now()}.pdf`,
-                'Strategy Backtest Results',
+                `backtest_${usedLive ? 'live_' : ''}${Date.now()}.pdf`,
+                `Strategy Backtest Results${usedLive ? ' (Live Settings)' : ''}`,
                 ['Timestamp', 'Equity ($)'],
                 result.equityCurve.map(p => [new Date(p.t).toLocaleString(), p.equity.toFixed(2)]),
                 {
@@ -169,6 +169,7 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ liveSettings, initialCapi
                   'Win Rate': `${(result.winRate * 100).toFixed(1)}%`,
                   'Sharpe': result.sharpeRatio.toFixed(2),
                   'Trades': result.totalTrades,
+                  'Source': usedLive ? 'Live dashboard settings' : 'Manual config',
                 },
               )}
             >
