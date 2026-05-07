@@ -12,6 +12,8 @@ import RiskDashboardPanel from '@/components/RiskDashboardPanel';
 import BacktestPanel from '@/components/BacktestPanel';
 import TradeSettingsPanel from '@/components/TradeSettingsPanel';
 import MLInsightsPanel from '@/components/MLInsightsPanel';
+import SettingsAuditPanel from '@/components/SettingsAuditPanel';
+import { appendAudit, diffSettings } from '@/lib/settings-audit';
 import { Button } from '@/components/ui/button';
 
 const NeuralBotDashboard: React.FC = () => {
@@ -30,6 +32,7 @@ const NeuralBotDashboard: React.FC = () => {
   const [psychologyHealth, setPsychologyHealth] = useState<PsychologyHealthRow[]>([]);
   const [mlInsights, setMlInsights] = useState<MLInsights | null>(null);
   const [tradeSettings, setTradeSettings] = useState<TradeSettings | null>(null);
+  const [auditTick, setAuditTick] = useState(0);
 
   const botRef = useRef<UnifiedNeuralBot | null>(null);
 
@@ -242,11 +245,23 @@ const NeuralBotDashboard: React.FC = () => {
         <TradeSettingsPanel
           initial={tradeSettings}
           onApply={(s) => {
+            const prev = botRef.current?.getTradeSettings();
             botRef.current?.setTradeSettings(s);
-            if (botRef.current) setTradeSettings(botRef.current.getTradeSettings());
+            const next = botRef.current?.getTradeSettings();
+            if (next) setTradeSettings(next);
+            if (prev) {
+              const changes = diffSettings(prev, s);
+              if (changes.length > 0) {
+                appendAudit({ actor: 'dashboard-user', changes });
+                setAuditTick(t => t + 1);
+              }
+            }
           }}
         />
       )}
+
+      {/* Settings Audit Log */}
+      <SettingsAuditPanel refreshKey={auditTick} />
 
       {/* ML Insights */}
       <MLInsightsPanel insights={mlInsights} />
@@ -268,7 +283,7 @@ const NeuralBotDashboard: React.FC = () => {
       />
 
       {/* Backtest */}
-      <BacktestPanel />
+      <BacktestPanel liveSettings={tradeSettings} initialCapital={CONFIG.INITIAL_CAPITAL} />
 
       {/* Terminal */}
       <div>
