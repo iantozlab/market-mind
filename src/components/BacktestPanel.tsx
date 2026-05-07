@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { Button } from '@/components/ui/button';
-import { History, Play, Loader2, Download, FileText } from 'lucide-react';
+import { History, Play, Loader2, Download, FileText, Wand2 } from 'lucide-react';
 import { runBacktest, type BacktestConfig, type BacktestResult } from '@/lib/backtest-engine';
 import { downloadCSV, downloadPDF } from '@/lib/exporters';
+import type { TradeSettings } from '@/lib/neural-bot-engine';
 
 const defaultConfig: BacktestConfig = {
   durationDays: 30,
@@ -16,6 +17,11 @@ const defaultConfig: BacktestConfig = {
   maxActiveMarkets: 8,
 };
 
+interface BacktestPanelProps {
+  liveSettings?: TradeSettings | null;
+  initialCapital?: number;
+}
+
 const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
   <div className="space-y-1">
     <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-display">{label}</label>
@@ -25,20 +31,46 @@ const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, 
 
 const num = "h-8 w-full bg-background border border-border rounded px-2 text-xs font-mono text-foreground";
 
-const BacktestPanel: React.FC = () => {
+const BacktestPanel: React.FC<BacktestPanelProps> = ({ liveSettings, initialCapital }) => {
   const [config, setConfig] = useState<BacktestConfig>(defaultConfig);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<BacktestResult | null>(null);
+  const [usedLive, setUsedLive] = useState(false);
 
   const update = <K extends keyof BacktestConfig>(k: K, v: BacktestConfig[K]) =>
     setConfig(prev => ({ ...prev, [k]: v }));
 
-  const run = () => {
+  const applyLiveSettings = () => {
+    if (!liveSettings) return;
+    setConfig(prev => ({
+      ...prev,
+      stopLoss: liveSettings.stopLossPct,
+      takeProfit: liveSettings.takeProfitPct,
+      initialCapital: initialCapital ?? prev.initialCapital,
+      maxPositionSize: Math.max(50, Math.round((initialCapital ?? prev.initialCapital) * liveSettings.maxPositionPct)),
+    }));
+  };
+
+  const runWith = (cfg: BacktestConfig, live: boolean) => {
     setRunning(true);
+    setUsedLive(live);
     setTimeout(() => {
-      try { setResult(runBacktest(config)); }
+      try { setResult(runBacktest(cfg)); }
       finally { setRunning(false); }
     }, 50);
+  };
+  const run = () => runWith(config, false);
+  const runLive = () => {
+    if (!liveSettings) return;
+    const merged: BacktestConfig = {
+      ...config,
+      stopLoss: liveSettings.stopLossPct,
+      takeProfit: liveSettings.takeProfitPct,
+      initialCapital: initialCapital ?? config.initialCapital,
+      maxPositionSize: Math.max(50, Math.round((initialCapital ?? config.initialCapital) * liveSettings.maxPositionPct)),
+    };
+    setConfig(merged);
+    runWith(merged, true);
   };
 
   const equityData = result?.equityCurve.map(p => ({
