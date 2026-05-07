@@ -8,12 +8,15 @@ interface MarketListProps {
 }
 
 const MarketList: React.FC<MarketListProps> = ({ markets, onSelect }) => (
-  <div className="rounded-lg border border-border bg-card">
-    <div className="p-3 border-b border-border">
-      <h2 className="font-display text-sm font-semibold text-foreground tracking-wide">Monitored Markets</h2>
-      <p className="text-[10px] text-muted-foreground mt-0.5">Click a market to view order book &amp; trades</p>
+  <div className="rounded-lg border border-border bg-card flex flex-col">
+    <div className="p-3 border-b border-border flex items-center justify-between gap-2">
+      <div>
+        <h2 className="font-display text-sm font-semibold text-foreground tracking-wide">Monitored Markets</h2>
+        <p className="text-[10px] text-muted-foreground mt-0.5">Scroll · click to inspect</p>
+      </div>
+      <span className="text-[10px] font-mono text-muted-foreground">{markets.length}</span>
     </div>
-    <div className="divide-y divide-border">
+    <div className="divide-y divide-border max-h-[280px] overflow-y-auto terminal-scrollbar">
       {markets.map((m) => {
         const yesPrice = m.outcomePrices[0];
         return (
