@@ -23,7 +23,7 @@ const MarketList: React.FC<MarketListProps> = ({ markets, onSelect }) => (
           <button
             key={m.id}
             onClick={() => onSelect(m)}
-            className="w-full text-left px-3 py-2.5 hover:bg-muted/30 transition-colors flex items-center gap-3 group"
+            className="w-full text-left px-3 py-1.5 hover:bg-muted/30 transition-colors flex items-center gap-3 group"
           >
             <div className="flex-1 min-w-0">
               <p className="text-xs text-foreground truncate group-hover:text-primary transition-colors">
