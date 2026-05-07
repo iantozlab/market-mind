@@ -64,7 +64,7 @@ const TradeSettingsPanel: React.FC<Props> = ({ initial, onApply }) => {
           <Button onClick={reset} disabled={!dirty} size="sm" variant="outline" className="h-7 text-xs">
             <RotateCcw className="h-3 w-3 mr-1" /> Reset
           </Button>
-          <Button onClick={apply} disabled={!dirty} size="sm" className="h-7 text-xs">
+          <Button onClick={requestApply} disabled={!dirty} size="sm" className="h-7 text-xs">
             <Save className="h-3 w-3 mr-1" /> Apply
           </Button>
         </div>
@@ -89,8 +89,15 @@ const TradeSettingsPanel: React.FC<Props> = ({ initial, onApply }) => {
                onChange={v => upd('maxDrawdown', v / 100)} />
       </div>
       <p className="text-[10px] text-muted-foreground mt-3">
-        Changes apply live to the running engine. Risk caps gate new entries; entry/exit windows tune the bot-exhaustion scanner.
+        Changes require confirmation and are written to the audit log. Risk caps gate new entries; entry/exit windows tune the bot-exhaustion scanner.
       </p>
+
+      <SettingsConfirmDialog
+        open={confirmOpen}
+        changes={pendingDiff}
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={confirmApply}
+      />
     </div>
   );
 };
