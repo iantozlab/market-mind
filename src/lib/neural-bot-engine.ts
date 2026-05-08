@@ -748,6 +748,7 @@ export class UnifiedNeuralBot {
     this.psychology = new MarketPsychologyEngine();
     this.psychology.on('strategy_deprecated', ({ strategyName, winRate }) => {
       this.addLog(`⚠ STRATEGY DEPRECATED: ${strategyName} (WR ${(winRate * 100).toFixed(1)}%)`, 'warning');
+      this.emitAlert({ severity: 'warning', title: `Strategy deprecated: ${strategyName}`, detail: `Win rate ${(winRate * 100).toFixed(1)}% below threshold` });
     });
   }
 
