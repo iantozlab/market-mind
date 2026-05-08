@@ -1003,12 +1003,18 @@ export class UnifiedNeuralBot {
               this.addLog(`🧠 LESSON: ${l.lesson} → ${l.action} (${(l.confidence * 100).toFixed(0)}%)`, 'info');
             }
           }
-          // Feed signal outcomes back into health (paper-mode heuristic).
-          // Map analyze() signal types onto canonical strategy-health keys.
+          // Map analyze() signal types onto canonical strategy-health keys + record routing.
           const sigKey = (t: string) => t === 'temporal_entry' ? 'temporal_decay' : t;
-          for (const sig of signals.slice(0, 4)) {
+          for (const sig of signals.slice(0, 8)) {
+            const key = sigKey(sig.type);
+            this.routeSignal(sig.type, key, sig.confidence, { direction: sig.direction, marketId: sig.marketId.slice(0, 12) });
             const won = Math.random() < sig.confidence;
-            this.psychology.updateStrategyPerformance(sigKey(sig.type), won);
+            this.psychology.updateStrategyPerformance(key, won);
+          }
+          // Whale wreckage produces lessons (no signals); still record activity for diagnostics.
+          if (lessons.length > 0) {
+            this.routeSignal('whale_wreckage_lesson', 'whale_wreckage', Math.min(0.9, 0.5 + lessons.length * 0.05), { lessons: lessons.length });
+            this.psychology.updateStrategyPerformance('whale_wreckage', Math.random() < 0.55);
           }
         } catch {
           // ignore
