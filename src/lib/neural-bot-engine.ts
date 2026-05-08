@@ -1289,3 +1289,25 @@ export interface MLInsights {
   signal: 'BULLISH' | 'NEUTRAL' | 'BEARISH';
   ts: number;
 }
+
+export interface SignalRoute {
+  signalType: string;
+  healthKey: string;
+  count: number;
+  lastSeen: number;
+  avgConfidence: number;
+}
+
+export interface StrategyTrigger {
+  strategy: string;
+  reason: string;
+  confidence: number;
+  ts: number;
+  metrics: Record<string, number | string>;
+}
+
+export interface CooldownStatus {
+  active: boolean;
+  remainingSec: number;
+  reason: string;
+}
