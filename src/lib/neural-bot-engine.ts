@@ -753,6 +753,62 @@ export class UnifiedNeuralBot {
 
   setOnUpdate(cb: () => void) { this.onUpdate = cb; }
 
+  // -------- Signal-routing diagnostics + per-strategy "why active" --------
+  private signalRoutes: Map<string, SignalRoute> = new Map();
+  private strategyTriggers: Map<string, StrategyTrigger> = new Map();
+
+  private routeSignal(signalType: string, healthKey: string, confidence: number, metrics?: Record<string, number | string>) {
+    const ex = this.signalRoutes.get(signalType);
+    if (ex) {
+      ex.count += 1;
+      ex.lastSeen = Date.now();
+      ex.avgConfidence = ex.avgConfidence * 0.9 + confidence * 0.1;
+    } else {
+      this.signalRoutes.set(signalType, {
+        signalType, healthKey, count: 1, lastSeen: Date.now(), avgConfidence: confidence,
+      });
+    }
+    this.strategyTriggers.set(healthKey, {
+      strategy: healthKey,
+      reason: signalType,
+      confidence,
+      ts: Date.now(),
+      metrics: metrics ?? {},
+    });
+  }
+
+  getSignalRoutes(): SignalRoute[] { return Array.from(this.signalRoutes.values()); }
+  getStrategyTriggers(): StrategyTrigger[] { return Array.from(this.strategyTriggers.values()); }
+  getStrategyTrigger(name: string): StrategyTrigger | undefined { return this.strategyTriggers.get(name); }
+
+  // -------- Cooldown / risk gating --------
+  private cooldownUntil = 0;
+  private cooldownReason = '';
+  private alertSink: ((a: { severity: 'info' | 'warning' | 'critical'; title: string; detail?: string }) => void) | null = null;
+  setAlertSink(cb: typeof this.alertSink) { this.alertSink = cb; }
+  private emitAlert(a: { severity: 'info' | 'warning' | 'critical'; title: string; detail?: string }) {
+    try { this.alertSink?.(a); } catch { /* noop */ }
+  }
+  getCooldownStatus(): CooldownStatus {
+    const now = Date.now();
+    const remaining = Math.max(0, this.cooldownUntil - now);
+    return { active: remaining > 0, remainingSec: Math.ceil(remaining / 1000), reason: this.cooldownReason };
+  }
+  private checkRiskCooldown() {
+    if (this.cooldownUntil > Date.now()) return; // already cooling down
+    if (this.metrics.maxDrawdown >= CONFIG.RISK.MAX_DRAWDOWN) {
+      this.cooldownUntil = Date.now() + 15 * 60 * 1000;
+      this.cooldownReason = 'max-drawdown';
+      this.addLog(`❄️ COOLDOWN engaged — drawdown ${(this.metrics.maxDrawdown * 100).toFixed(1)}% exceeded cap`, 'warning');
+      this.emitAlert({ severity: 'critical', title: 'Risk cooldown engaged', detail: `Drawdown ${(this.metrics.maxDrawdown * 100).toFixed(1)}% ≥ ${(CONFIG.RISK.MAX_DRAWDOWN * 100).toFixed(0)}%` });
+    } else if (-this.metrics.dailyPnL >= CONFIG.RISK.MAX_DAILY_LOSS) {
+      this.cooldownUntil = Date.now() + 15 * 60 * 1000;
+      this.cooldownReason = 'daily-loss-limit';
+      this.addLog(`❄️ COOLDOWN engaged — daily loss $${(-this.metrics.dailyPnL).toFixed(2)} exceeded cap`, 'warning');
+      this.emitAlert({ severity: 'critical', title: 'Daily loss limit hit', detail: `Loss $${(-this.metrics.dailyPnL).toFixed(2)} ≥ $${CONFIG.RISK.MAX_DAILY_LOSS.toFixed(0)}` });
+    }
+  }
+
   private addLog(message: string, type: LogEntry['type'] = 'info') {
     const time = new Date().toLocaleTimeString();
     this.logEntries.unshift({ time, message, type });
