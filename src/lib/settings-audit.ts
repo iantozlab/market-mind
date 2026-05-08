@@ -67,10 +67,10 @@ export const appendAudit = async (entry: Omit<AuditEntry, 'id' | 'ts'>): Promise
   try { localStorage.setItem(KEY, JSON.stringify(list)); } catch { /* noop */ }
   // Persist to Supabase (fire-and-forget, but await to surface errors in console)
   try {
-    await supabase.from('trade_settings_audit').insert({
+    await supabase.from('trade_settings_audit').insert([{
       actor: entry.actor,
-      changes: entry.changes as unknown as Record<string, unknown>,
-    });
+      changes: entry.changes as unknown as import('@/integrations/supabase/types').Json,
+    }]);
   } catch { /* offline-tolerant */ }
   return e;
 };
