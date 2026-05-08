@@ -148,21 +148,39 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ liveSettings, initialCapi
           <>
             <Button
               size="sm" variant="outline" className="h-8 text-xs"
-              onClick={() => downloadCSV(
-                `backtest_${usedLive ? 'live_' : ''}${Date.now()}.csv`,
-                result.equityCurve.map(p => ({ timestamp: new Date(p.t).toISOString(), equity: p.equity, source: usedLive ? 'live_settings' : 'manual' })),
-              )}
+              onClick={() => {
+                const settingsCols = liveSettings ? {
+                  setting_entry_window_ms: liveSettings.entryWindowMs,
+                  setting_exit_window_ms: liveSettings.exitWindowMs,
+                  setting_kelly_fraction: liveSettings.kellyFraction,
+                  setting_max_position_pct: liveSettings.maxPositionPct,
+                  setting_stop_loss_pct: liveSettings.stopLossPct,
+                  setting_take_profit_pct: liveSettings.takeProfitPct,
+                  setting_max_daily_loss: liveSettings.maxDailyLoss,
+                  setting_max_drawdown: liveSettings.maxDrawdown,
+                } : {};
+                downloadCSV(
+                  `backtest_${usedLive ? 'live_' : ''}${Date.now()}.csv`,
+                  result.equityCurve.map(p => ({
+                    timestamp: new Date(p.t).toISOString(),
+                    equity: p.equity,
+                    source: usedLive ? 'live_settings' : 'manual',
+                    bt_stop_loss: config.stopLoss,
+                    bt_take_profit: config.takeProfit,
+                    bt_max_position: config.maxPositionSize,
+                    bt_max_markets: config.maxActiveMarkets,
+                    bt_initial_capital: config.initialCapital,
+                    ...settingsCols,
+                  })),
+                );
+              }}
             >
               <Download className="h-3 w-3 mr-1" /> CSV
             </Button>
             <Button
               size="sm" variant="outline" className="h-8 text-xs"
-              onClick={() => downloadPDF(
-                `backtest_${usedLive ? 'live_' : ''}${Date.now()}.pdf`,
-                `Strategy Backtest Results${usedLive ? ' (Live Settings)' : ''}`,
-                ['Timestamp', 'Equity ($)'],
-                result.equityCurve.map(p => [new Date(p.t).toLocaleString(), p.equity.toFixed(2)]),
-                {
+              onClick={() => {
+                const meta: Record<string, string | number> = {
                   'End Equity': `$${result.endEquity.toFixed(2)}`,
                   'Return': `${result.totalReturnPct.toFixed(2)}%`,
                   'Max DD': `${result.maxDrawdownPct.toFixed(2)}%`,
@@ -170,8 +188,29 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ liveSettings, initialCapi
                   'Sharpe': result.sharpeRatio.toFixed(2),
                   'Trades': result.totalTrades,
                   'Source': usedLive ? 'Live dashboard settings' : 'Manual config',
-                },
-              )}
+                  'Backtest Stop Loss': `${(config.stopLoss * 100).toFixed(1)}%`,
+                  'Backtest Take Profit': `${(config.takeProfit * 100).toFixed(1)}%`,
+                  'Backtest Max Position': `$${config.maxPositionSize}`,
+                  'Backtest Markets': config.marketCount,
+                };
+                if (liveSettings) {
+                  meta['Live Entry Window'] = `${liveSettings.entryWindowMs}ms`;
+                  meta['Live Exit Window'] = `${liveSettings.exitWindowMs}ms`;
+                  meta['Live Kelly Fraction'] = `${(liveSettings.kellyFraction * 100).toFixed(1)}%`;
+                  meta['Live Max Position %'] = `${(liveSettings.maxPositionPct * 100).toFixed(1)}%`;
+                  meta['Live Stop Loss'] = `${(liveSettings.stopLossPct * 100).toFixed(1)}%`;
+                  meta['Live Take Profit'] = `${(liveSettings.takeProfitPct * 100).toFixed(1)}%`;
+                  meta['Live Max Daily Loss'] = `$${liveSettings.maxDailyLoss}`;
+                  meta['Live Max Drawdown'] = `${(liveSettings.maxDrawdown * 100).toFixed(1)}%`;
+                }
+                downloadPDF(
+                  `backtest_${usedLive ? 'live_' : ''}${Date.now()}.pdf`,
+                  `Strategy Backtest Results${usedLive ? ' (Live Settings)' : ''}`,
+                  ['Timestamp', 'Equity ($)'],
+                  result.equityCurve.map(p => [new Date(p.t).toLocaleString(), p.equity.toFixed(2)]),
+                  meta,
+                );
+              }}
             >
               <FileText className="h-3 w-3 mr-1" /> PDF
             </Button>

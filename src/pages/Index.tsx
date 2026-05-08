@@ -1,20 +1,21 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { UnifiedNeuralBot, getEnvStatus, ENV, CONFIG } from '@/lib/neural-bot-engine';
-import type { LogEntry, BotMetrics, Market, APIStatus, EnvStatus, MLInsights, TradeSettings } from '@/lib/neural-bot-engine';
+import type {
+  LogEntry, BotMetrics, Market, APIStatus, MLInsights, TradeSettings,
+  StrategyStatus, SignalRoute, StrategyTrigger, CooldownStatus,
+} from '@/lib/neural-bot-engine';
 import NeuralStatusCard from '@/components/NeuralStatusCard';
 import MetricCard from '@/components/MetricCard';
 import TerminalLog from '@/components/TerminalLog';
 import MarketList from '@/components/MarketList';
 import MarketDetailPanel from '@/components/MarketDetailPanel';
 import PsychologyHealthPanel, { type PsychologyHealthRow } from '@/components/PsychologyHealthPanel';
-import RiskDashboardPanel from '@/components/RiskDashboardPanel';
-import BacktestPanel from '@/components/BacktestPanel';
-import TradeSettingsPanel from '@/components/TradeSettingsPanel';
-import MLInsightsPanel from '@/components/MLInsightsPanel';
-import SettingsAuditPanel from '@/components/SettingsAuditPanel';
+import PsychologyDiagnosticsPanel from '@/components/PsychologyDiagnosticsPanel';
+import RiskAlertsPanel from '@/components/RiskAlertsPanel';
+import AppNavbar from '@/components/AppNavbar';
 import { appendAudit, diffSettings } from '@/lib/settings-audit';
-import { Button } from '@/components/ui/button';
+import { useAlertsCenter } from '@/hooks/useAlertsCenter';
 
 const NeuralBotDashboard: React.FC = () => {
   const [isRunning, setIsRunning] = useState(false);
@@ -33,7 +34,12 @@ const NeuralBotDashboard: React.FC = () => {
   const [mlInsights, setMlInsights] = useState<MLInsights | null>(null);
   const [tradeSettings, setTradeSettings] = useState<TradeSettings | null>(null);
   const [auditTick, setAuditTick] = useState(0);
+  const [strategies, setStrategies] = useState<StrategyStatus[]>([]);
+  const [signalRoutes, setSignalRoutes] = useState<SignalRoute[]>([]);
+  const [strategyTriggers, setStrategyTriggers] = useState<StrategyTrigger[]>([]);
+  const [cooldown, setCooldown] = useState<CooldownStatus | null>(null);
 
+  const alerts = useAlertsCenter();
   const botRef = useRef<UnifiedNeuralBot | null>(null);
 
   const updateState = useCallback(() => {
@@ -46,6 +52,10 @@ const NeuralBotDashboard: React.FC = () => {
     const health = botRef.current.getPsychologyHealth();
     setPsychologyHealth(Array.from(health.entries()).map(([name, d]) => ({ name, ...d })));
     setMlInsights(botRef.current.getMLInsights());
+    setStrategies(botRef.current.getStrategies());
+    setSignalRoutes(botRef.current.getSignalRoutes());
+    setStrategyTriggers(botRef.current.getStrategyTriggers());
+    setCooldown(botRef.current.getCooldownStatus());
     setAnomalyHistory(prev => {
       const next = [...prev, { time: new Date().toLocaleTimeString(), score: m.anomalyScore * 100, threshold: 70 }];
       return next.slice(-30);
@@ -59,11 +69,13 @@ const NeuralBotDashboard: React.FC = () => {
   const startBot = useCallback(() => {
     const bot = new UnifiedNeuralBot(true);
     bot.setOnUpdate(updateState);
+    bot.setAlertSink((a) => alerts.push(a));
     botRef.current = bot;
     bot.run();
     setTradeSettings(bot.getTradeSettings());
+    setStrategies(bot.getStrategies());
     setIsRunning(true);
-  }, [updateState]);
+  }, [updateState, alerts]);
 
   const stopBot = useCallback(() => {
     botRef.current?.stop();
@@ -74,20 +86,61 @@ const NeuralBotDashboard: React.FC = () => {
     return () => { botRef.current?.stop(); };
   }, []);
 
+  // Refresh cooldown countdown every second so the UI shows live ticking down.
+  useEffect(() => {
+    if (!isRunning) return;
+    const id = setInterval(() => {
+      if (botRef.current) setCooldown(botRef.current.getCooldownStatus());
+    }, 1000);
+    return () => clearInterval(id);
+  }, [isRunning]);
+
+  const applyTradeSettings = useCallback((s: Partial<TradeSettings>) => {
+    const prev = botRef.current?.getTradeSettings();
+    botRef.current?.setTradeSettings(s);
+    const next = botRef.current?.getTradeSettings();
+    if (next) setTradeSettings(next);
+    if (prev) {
+      const changes = diffSettings(prev, s);
+      if (changes.length > 0) {
+        void appendAudit({ actor: 'dashboard-user', changes }).then(() =>
+          setAuditTick(t => t + 1),
+        );
+      }
+    }
+  }, []);
+
   const selectedOrderBook = selectedMarket && botRef.current ? botRef.current.getOrderBook(selectedMarket.id) : null;
   const selectedTrades = selectedMarket && botRef.current ? botRef.current.getTrades(selectedMarket.id) : [];
 
-  const strategyLabels = [
-    'HTM Anomaly', 'Transformer', 'Contrastive', 'MAML',
-    'Gas Shadow', 'ZK Exploit', 'Liquidity Vortex', '47s Window',
-    'Consensus Failure', 'Bot Exhaustion', 'Whale Inactivity', 'Anti-Detection',
-    'Phantom Harvester', 'Whale Wreckage', 'Convergence Fade', 'Governance Attack', 'Temporal Decay',
-  ];
+  const triggerByName = new Map(strategyTriggers.map(t => [t.strategy, t]));
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-6 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+    <div className="min-h-screen bg-background">
+      <AppNavbar
+        isRunning={isRunning}
+        onStart={startBot}
+        onStop={stopBot}
+        tradeSettings={tradeSettings}
+        applyTradeSettings={applyTradeSettings}
+        mlInsights={mlInsights}
+        metrics={metrics}
+        initialCapital={CONFIG.INITIAL_CAPITAL}
+        maxDrawdownLimit={tradeSettings?.maxDrawdown ?? 0.20}
+        dailyLossLimit={tradeSettings?.maxDailyLoss ?? ENV.MAX_DAILY_LOSS}
+        strategies={strategies}
+        auditTick={auditTick}
+        alerts={{
+          items: alerts.alerts,
+          unread: alerts.unread,
+          open: alerts.open,
+          setOpen: alerts.setOpen,
+          clear: alerts.clear,
+        }}
+      />
+
+      <div className="p-4 md:p-6 space-y-6">
+        {/* Header */}
         <div>
           <h1 className="font-display text-2xl md:text-3xl font-bold text-foreground text-glow tracking-tight">
             Polymarket Neural Trading System
@@ -124,186 +177,160 @@ const NeuralBotDashboard: React.FC = () => {
             </div>
           )}
         </div>
-        <div className="flex items-center gap-3">
-          <div className={`h-2 w-2 rounded-full ${isRunning ? 'bg-primary animate-pulse-glow' : 'bg-muted-foreground'}`} />
-          <span className="text-xs text-muted-foreground">{isRunning ? 'LIVE' : 'OFFLINE'}</span>
-          <Button
-            onClick={isRunning ? stopBot : startBot}
-            variant={isRunning ? 'destructive' : 'default'}
-            size="sm"
-            className="font-display tracking-wide"
-          >
-            {isRunning ? '■ STOP' : '▶ START'}
-          </Button>
+
+        {/* Neural Status Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <NeuralStatusCard
+            title="HTM"
+            status={metrics.anomalyScore > 0.5 ? '⚠ ANOMALY' : '● NORMAL'}
+            detail={`Score: ${(metrics.anomalyScore * 100).toFixed(1)}%`}
+            isActive={isRunning}
+            color={metrics.anomalyScore > 0.7 ? 'warning' : 'primary'}
+          />
+          <NeuralStatusCard title="Transformer" status="CROSS-ATTN" detail="8 Evolved Heads" isActive={isRunning} color="accent" />
+          <NeuralStatusCard
+            title="Contrastive"
+            status={`${(metrics.botDetectionAccuracy * 100).toFixed(0)}%`}
+            detail="Bot Detection"
+            isActive={isRunning}
+            color="info"
+          />
+          <NeuralStatusCard title="MAML" status="ADAPTIVE" detail="Meta-Learning" isActive={isRunning} color="warning" />
         </div>
-      </div>
 
-      {/* Neural Status Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <NeuralStatusCard
-          title="HTM"
-          status={metrics.anomalyScore > 0.5 ? '⚠ ANOMALY' : '● NORMAL'}
-          detail={`Score: ${(metrics.anomalyScore * 100).toFixed(1)}%`}
-          isActive={isRunning}
-          color={metrics.anomalyScore > 0.7 ? 'warning' : 'primary'}
-        />
-        <NeuralStatusCard title="Transformer" status="CROSS-ATTN" detail="8 Evolved Heads" isActive={isRunning} color="accent" />
-        <NeuralStatusCard
-          title="Contrastive"
-          status={`${(metrics.botDetectionAccuracy * 100).toFixed(0)}%`}
-          detail="Bot Detection"
-          isActive={isRunning}
-          color="info"
-        />
-        <NeuralStatusCard title="MAML" status="ADAPTIVE" detail="Meta-Learning" isActive={isRunning} color="warning" />
-      </div>
-
-      {/* Metrics row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
-        <MetricCard label="Total P&L" value={`$${metrics.totalPnL.toFixed(2)}`} trend={metrics.totalPnL > 0 ? 'up' : metrics.totalPnL < 0 ? 'down' : 'neutral'} />
-        <MetricCard label="Daily P&L" value={`$${metrics.dailyPnL.toFixed(2)}`} trend={metrics.dailyPnL > 0 ? 'up' : metrics.dailyPnL < 0 ? 'down' : 'neutral'} />
-        <MetricCard label="Win Rate" value={`${(metrics.winRate * 100).toFixed(1)}%`} trend={metrics.winRate > 0.5 ? 'up' : 'neutral'} />
-        <MetricCard label="Positions" value={String(metrics.activePositions)} />
-        <MetricCard label="Trades" value={String(metrics.tradesExecuted)} />
-        <MetricCard label="Markets" value={String(metrics.marketsMonitored)} />
-        <MetricCard label="Sharpe" value={metrics.sharpeRatio.toFixed(2)} trend={metrics.sharpeRatio > 1 ? 'up' : metrics.sharpeRatio < 0 ? 'down' : 'neutral'} />
-        <MetricCard label="Max DD" value={`${(metrics.maxDrawdown * 100).toFixed(1)}%`} trend={metrics.maxDrawdown > 0.1 ? 'down' : 'neutral'} />
-      </div>
-
-      {/* Active Strategies */}
-      <div className="rounded-lg border border-border bg-card p-4">
-        <h2 className="font-display text-sm font-semibold text-foreground mb-3 tracking-wide">Active Strategies</h2>
-        <div className="flex flex-wrap gap-2">
-          {strategyLabels.map((label) => (
-            <span
-              key={label}
-              className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-display tracking-wide transition-all duration-300 ${
-                isRunning
-                  ? 'border-primary/30 bg-primary/10 text-primary'
-                  : 'border-border bg-muted/30 text-muted-foreground'
-              }`}
-            >
-              <span className={`h-1.5 w-1.5 rounded-full ${isRunning ? 'bg-primary animate-pulse' : 'bg-muted-foreground'}`} />
-              {label}
-            </span>
-          ))}
+        {/* Metrics row */}
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+          <MetricCard label="Total P&L" value={`$${metrics.totalPnL.toFixed(2)}`} trend={metrics.totalPnL > 0 ? 'up' : metrics.totalPnL < 0 ? 'down' : 'neutral'} />
+          <MetricCard label="Daily P&L" value={`$${metrics.dailyPnL.toFixed(2)}`} trend={metrics.dailyPnL > 0 ? 'up' : metrics.dailyPnL < 0 ? 'down' : 'neutral'} />
+          <MetricCard label="Win Rate" value={`${(metrics.winRate * 100).toFixed(1)}%`} trend={metrics.winRate > 0.5 ? 'up' : 'neutral'} />
+          <MetricCard label="Positions" value={String(metrics.activePositions)} />
+          <MetricCard label="Trades" value={String(metrics.tradesExecuted)} />
+          <MetricCard label="Markets" value={String(metrics.marketsMonitored)} />
+          <MetricCard label="Sharpe" value={metrics.sharpeRatio.toFixed(2)} trend={metrics.sharpeRatio > 1 ? 'up' : metrics.sharpeRatio < 0 ? 'down' : 'neutral'} />
+          <MetricCard label="Max DD" value={`${(metrics.maxDrawdown * 100).toFixed(1)}%`} trend={metrics.maxDrawdown > 0.1 ? 'down' : 'neutral'} />
         </div>
-      </div>
 
-      {/* Charts + Markets */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Charts column */}
-        <div className="lg:col-span-2 space-y-4">
-          {/* Anomaly Chart */}
-          <div className="rounded-lg border border-border bg-card p-4">
-            <h2 className="font-display text-sm font-semibold text-foreground mb-3 tracking-wide">HTM Anomaly Detection</h2>
-            <ResponsiveContainer width="100%" height={180}>
-              <AreaChart data={anomalyHistory}>
-                <defs>
-                  <linearGradient id="anomalyGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="hsl(150, 100%, 45%)" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="hsl(150, 100%, 45%)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="time" tick={{ fontSize: 9, fill: 'hsl(220, 10%, 50%)' }} axisLine={false} tickLine={false} />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 9, fill: 'hsl(220, 10%, 50%)' }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ background: 'hsl(220, 18%, 7%)', border: '1px solid hsl(150, 30%, 15%)', borderRadius: 6, fontSize: 11, color: 'hsl(150, 80%, 85%)' }} />
-                <Area type="monotone" dataKey="score" stroke="hsl(150, 100%, 45%)" fill="url(#anomalyGrad)" strokeWidth={2} />
-                <Area type="monotone" dataKey="threshold" stroke="hsl(0, 80%, 55%)" strokeDasharray="4 4" fill="none" strokeWidth={1} />
-              </AreaChart>
-            </ResponsiveContainer>
+        {/* Risk threshold alerts (homepage) */}
+        <RiskAlertsPanel
+          metrics={metrics}
+          maxDrawdownLimit={tradeSettings?.maxDrawdown ?? 0.20}
+          dailyLossLimit={tradeSettings?.maxDailyLoss ?? ENV.MAX_DAILY_LOSS}
+          maxPositions={8}
+          cooldown={cooldown}
+          isRunning={isRunning}
+          onEmergencyStop={stopBot}
+        />
+
+        {/* Charts + Markets */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 space-y-4">
+            <div className="rounded-lg border border-border bg-card p-4">
+              <h2 className="font-display text-sm font-semibold text-foreground mb-3 tracking-wide">HTM Anomaly Detection</h2>
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={anomalyHistory}>
+                  <defs>
+                    <linearGradient id="anomalyGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="time" tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                  <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 6, fontSize: 11, color: 'hsl(var(--foreground))' }} />
+                  <Area type="monotone" dataKey="score" stroke="hsl(var(--primary))" fill="url(#anomalyGrad)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="threshold" stroke="hsl(var(--destructive))" strokeDasharray="4 4" fill="none" strokeWidth={1} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="rounded-lg border border-border bg-card p-4">
+              <h2 className="font-display text-sm font-semibold text-foreground mb-3 tracking-wide">Cumulative P&L</h2>
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={pnlHistory}>
+                  <defs>
+                    <linearGradient id="pnlGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(var(--accent))" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="hsl(var(--accent))" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="time" tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                  <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 6, fontSize: 11, color: 'hsl(var(--foreground))' }} />
+                  <Area type="monotone" dataKey="pnl" stroke="hsl(var(--accent))" fill="url(#pnlGrad)" strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
           </div>
 
-          {/* P&L Chart */}
-          <div className="rounded-lg border border-border bg-card p-4">
-            <h2 className="font-display text-sm font-semibold text-foreground mb-3 tracking-wide">Cumulative P&L</h2>
-            <ResponsiveContainer width="100%" height={180}>
-              <AreaChart data={pnlHistory}>
-                <defs>
-                  <linearGradient id="pnlGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="hsl(280, 100%, 60%)" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="hsl(280, 100%, 60%)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="time" tick={{ fontSize: 9, fill: 'hsl(220, 10%, 50%)' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 9, fill: 'hsl(220, 10%, 50%)' }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ background: 'hsl(220, 18%, 7%)', border: '1px solid hsl(150, 30%, 15%)', borderRadius: 6, fontSize: 11, color: 'hsl(150, 80%, 85%)' }} />
-                <Area type="monotone" dataKey="pnl" stroke="hsl(280, 100%, 60%)" fill="url(#pnlGrad)" strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
+          <div>
+            <MarketList markets={markets} onSelect={setSelectedMarket} />
           </div>
         </div>
 
-        {/* Markets column */}
+        {/* Psychology + Diagnostics */}
+        <PsychologyHealthPanel
+          rows={psychologyHealth}
+          isRunning={isRunning}
+          getRecentTrades={(name) => botRef.current?.getPsychologyRecentTrades(name) ?? []}
+          onThresholdChange={(t) => botRef.current?.setPsychologyThreshold(t)}
+        />
+
+        {/* Why-active explanations */}
+        <div className="rounded-lg border border-border bg-card p-4">
+          <h2 className="font-display text-sm font-semibold text-foreground mb-3 tracking-wide">
+            Why Each Strategy Is Active
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+            {psychologyHealth.map(r => {
+              const tr = triggerByName.get(r.name);
+              const fresh = tr && Date.now() - tr.ts < 60_000;
+              return (
+                <div key={r.name} className={`rounded border px-3 py-2 ${fresh ? 'border-primary/30 bg-primary/5' : 'border-border bg-background/40'}`}>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-display text-foreground capitalize">{r.name.replace(/_/g, ' ')}</span>
+                    <span className={`text-[10px] font-mono ${fresh ? 'text-primary' : 'text-muted-foreground'}`}>
+                      {tr ? `${Math.floor((Date.now() - tr.ts) / 1000)}s` : '—'}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground mt-0.5">
+                    {tr ? <>Trigger: <span className="font-mono text-accent">{tr.reason}</span> · conf {(tr.confidence * 100).toFixed(0)}%</> : 'Awaiting first trigger…'}
+                  </div>
+                  {tr && Object.keys(tr.metrics).length > 0 && (
+                    <div className="text-[10px] font-mono text-muted-foreground mt-1 truncate">
+                      {Object.entries(tr.metrics).map(([k, v]) => `${k}=${v}`).join(' · ')}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {psychologyHealth.length === 0 && (
+              <p className="col-span-full text-xs text-muted-foreground text-center py-4">
+                Start the bot to see live trigger reasons per strategy.
+              </p>
+            )}
+          </div>
+        </div>
+
+        <PsychologyDiagnosticsPanel routes={signalRoutes} />
+
+        {/* Terminal */}
         <div>
-          <MarketList markets={markets} onSelect={setSelectedMarket} />
+          <h2 className="font-display text-sm font-semibold text-foreground mb-2 tracking-wide">Neural Network Activity Log</h2>
+          <TerminalLog logs={logs} />
         </div>
-      </div>
 
-      {/* Trade Settings */}
-      {tradeSettings && (
-        <TradeSettingsPanel
-          initial={tradeSettings}
-          onApply={(s) => {
-            const prev = botRef.current?.getTradeSettings();
-            botRef.current?.setTradeSettings(s);
-            const next = botRef.current?.getTradeSettings();
-            if (next) setTradeSettings(next);
-            if (prev) {
-              const changes = diffSettings(prev, s);
-              if (changes.length > 0) {
-                appendAudit({ actor: 'dashboard-user', changes });
-                setAuditTick(t => t + 1);
-              }
-            }
-          }}
+        <p className="text-center text-[10px] text-muted-foreground tracking-widest uppercase">
+          Exclusive Architecture · Evolved Parameters (50k Gen) · 12 Exploit Strategies · Anti-Detection Active · Paper Trading Mode
+        </p>
+
+        <MarketDetailPanel
+          market={selectedMarket}
+          orderBook={selectedOrderBook}
+          trades={selectedTrades}
+          open={!!selectedMarket}
+          onClose={() => setSelectedMarket(null)}
         />
-      )}
-
-      {/* Settings Audit Log */}
-      <SettingsAuditPanel refreshKey={auditTick} />
-
-      {/* ML Insights */}
-      <MLInsightsPanel insights={mlInsights} />
-
-      {/* Risk + Psychology Health */}
-      <RiskDashboardPanel
-        metrics={metrics}
-        initialCapital={CONFIG.INITIAL_CAPITAL}
-        maxDrawdownLimit={0.20}
-        dailyLossLimit={ENV.MAX_DAILY_LOSS}
-        isRunning={isRunning}
-        onEmergencyStop={stopBot}
-      />
-      <PsychologyHealthPanel
-        rows={psychologyHealth}
-        isRunning={isRunning}
-        getRecentTrades={(name) => botRef.current?.getPsychologyRecentTrades(name) ?? []}
-        onThresholdChange={(t) => botRef.current?.setPsychologyThreshold(t)}
-      />
-
-      {/* Backtest */}
-      <BacktestPanel liveSettings={tradeSettings} initialCapital={CONFIG.INITIAL_CAPITAL} />
-
-      {/* Terminal */}
-      <div>
-        <h2 className="font-display text-sm font-semibold text-foreground mb-2 tracking-wide">Neural Network Activity Log</h2>
-        <TerminalLog logs={logs} />
       </div>
-
-      {/* Footer */}
-      <p className="text-center text-[10px] text-muted-foreground tracking-widest uppercase">
-        Exclusive Architecture · Evolved Parameters (50k Gen) · 12 Exploit Strategies · Anti-Detection Active · Paper Trading Mode
-      </p>
-
-      {/* Market Detail Panel */}
-      <MarketDetailPanel
-        market={selectedMarket}
-        orderBook={selectedOrderBook}
-        trades={selectedTrades}
-        open={!!selectedMarket}
-        onClose={() => setSelectedMarket(null)}
-      />
     </div>
   );
 };

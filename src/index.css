@@ -51,6 +51,35 @@
     --success: 150 100% 45%;
     --info: 200 100% 50%;
   }
+
+  .light {
+    --background: 220 30% 97%;
+    --foreground: 220 30% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 25% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 25% 15%;
+    --primary: 150 70% 35%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 15% 92%;
+    --secondary-foreground: 220 30% 20%;
+    --muted: 220 15% 94%;
+    --muted-foreground: 220 10% 40%;
+    --accent: 280 70% 50%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 15% 86%;
+    --input: 220 15% 92%;
+    --ring: 150 70% 35%;
+    --terminal-bg: 220 15% 96%;
+    --warning: 35 90% 45%;
+    --warning-foreground: 0 0% 100%;
+    --success: 150 70% 35%;
+    --info: 200 80% 45%;
+    --neon-glow: 0 0 0 transparent;
+    --neon-glow-accent: 0 0 0 transparent;
+  }
 }
 
 @layer base {

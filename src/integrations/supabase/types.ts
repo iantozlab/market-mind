@@ -41,6 +41,27 @@ export type Database = {
         }
         Relationships: []
       }
+      trade_settings_audit: {
+        Row: {
+          actor: string
+          changes: Json
+          created_at: string
+          id: string
+        }
+        Insert: {
+          actor?: string
+          changes: Json
+          created_at?: string
+          id?: string
+        }
+        Update: {
+          actor?: string
+          changes?: Json
+          created_at?: string
+          id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
