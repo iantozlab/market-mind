@@ -197,6 +197,7 @@ export class MarketPsychologyEngine {
       'bot_exhaustion', 'liquidity_provision', 'pre_event',
       'whale_inactivity', 'anchor_reversion', 'zk_exploit',
       'convergence_fade', 'governance_attack', 'temporal_decay',
+      'whale_wreckage',
     ]) {
       this.strategyHealth.set(s, { winRate: 0.5, trades: 0, lastUpdate: Date.now() });
     }
