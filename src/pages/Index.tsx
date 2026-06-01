@@ -5,6 +5,7 @@ import type {
   LogEntry, BotMetrics, Market, APIStatus, MLInsights, TradeSettings,
   StrategyStatus, SignalRoute, StrategyTrigger, CooldownStatus,
 } from '@/lib/neural-bot-engine';
+import type { RANSPlan } from '@/lib/rans-engine';
 import NeuralStatusCard from '@/components/NeuralStatusCard';
 import MetricCard from '@/components/MetricCard';
 import TerminalLog from '@/components/TerminalLog';
