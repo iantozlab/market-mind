@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  Sliders, Brain, Shield, History, Layers, ChevronDown,
+  Sliders, Brain, Shield, History, Layers, ChevronDown, Cpu,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
