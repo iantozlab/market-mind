@@ -42,6 +42,8 @@ const NeuralBotDashboard: React.FC = () => {
   const [ransPlan, setRansPlan] = useState<RANSPlan | null>(null);
   const [ransCapital, setRansCapital] = useState<number>(CONFIG.INITIAL_CAPITAL);
   const [ransRealized, setRansRealized] = useState<number>(0);
+
+  const alerts = useAlertsCenter();
   const botRef = useRef<UnifiedNeuralBot | null>(null);
 
   const updateState = useCallback(() => {
