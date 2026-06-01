@@ -60,6 +60,9 @@ const NeuralBotDashboard: React.FC = () => {
     setSignalRoutes(botRef.current.getSignalRoutes());
     setStrategyTriggers(botRef.current.getStrategyTriggers());
     setCooldown(botRef.current.getCooldownStatus());
+    setRansPlan(botRef.current.getRANSPlan());
+    setRansCapital(botRef.current.getRANSCapital());
+    setRansRealized(botRef.current.getRANSRealized());
     setAnomalyHistory(prev => {
       const next = [...prev, { time: new Date().toLocaleTimeString(), score: m.anomalyScore * 100, threshold: 70 }];
       return next.slice(-30);
