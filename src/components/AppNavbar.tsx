@@ -94,6 +94,9 @@ const AppNavbar: React.FC<Props> = ({
             <Button onClick={() => open('backtest')} variant="ghost" className={navBtn}>
               <History className="h-3.5 w-3.5 mr-1.5" /> Backtest
             </Button>
+            <Button onClick={() => open('rans')} variant="ghost" className={navBtn}>
+              <Cpu className="h-3.5 w-3.5 mr-1.5" /> RANS
+            </Button>
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
