@@ -44,6 +44,10 @@ interface Props {
   strategies: StrategyStatus[];
   auditTick: number;
 
+  ransPlan: RANSPlan | null;
+  ransCapital: number;
+  ransRealized: number;
+
   alerts: {
     items: AlertItem[];
     unread: number;
