@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  Sliders, Brain, Shield, History, Layers, ChevronDown,
+  Sliders, Brain, Shield, History, Layers, ChevronDown, Cpu,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,12 +17,14 @@ import MLInsightsPanel from './MLInsightsPanel';
 import RiskDashboardPanel from './RiskDashboardPanel';
 import BacktestPanel from './BacktestPanel';
 import SettingsAuditPanel from './SettingsAuditPanel';
+import RansPanel from './RansPanel';
 import type {
   TradeSettings, MLInsights, BotMetrics, StrategyStatus,
 } from '@/lib/neural-bot-engine';
+import type { RANSPlan } from '@/lib/rans-engine';
 import type { AlertItem } from '@/hooks/useAlertsCenter';
 
-type SheetKey = null | 'settings' | 'ml' | 'risk' | 'backtest';
+type SheetKey = null | 'settings' | 'ml' | 'risk' | 'backtest' | 'rans';
 
 interface Props {
   isRunning: boolean;
@@ -42,6 +44,10 @@ interface Props {
   strategies: StrategyStatus[];
   auditTick: number;
 
+  ransPlan: RANSPlan | null;
+  ransCapital: number;
+  ransRealized: number;
+
   alerts: {
     items: AlertItem[];
     unread: number;
@@ -58,6 +64,7 @@ const AppNavbar: React.FC<Props> = ({
   tradeSettings, applyTradeSettings,
   mlInsights, metrics, initialCapital, maxDrawdownLimit, dailyLossLimit,
   strategies, auditTick, alerts,
+  ransPlan, ransCapital, ransRealized,
 }) => {
   const [sheet, setSheet] = useState<SheetKey>(null);
   const open = (k: SheetKey) => setSheet(k);
@@ -86,6 +93,9 @@ const AppNavbar: React.FC<Props> = ({
             </Button>
             <Button onClick={() => open('backtest')} variant="ghost" className={navBtn}>
               <History className="h-3.5 w-3.5 mr-1.5" /> Backtest
+            </Button>
+            <Button onClick={() => open('rans')} variant="ghost" className={navBtn}>
+              <Cpu className="h-3.5 w-3.5 mr-1.5" /> RANS
             </Button>
 
             <DropdownMenu>
@@ -207,6 +217,20 @@ const AppNavbar: React.FC<Props> = ({
           </SheetHeader>
           <div className="mt-4">
             <BacktestPanel liveSettings={tradeSettings} initialCapital={initialCapital} />
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={sheet === 'rans'} onOpenChange={(o) => !o && close()}>
+        <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="font-display tracking-wide">RANS · Regime-Adaptive Scaler</SheetTitle>
+            <SheetDescription className="text-xs">
+              Proprietary formula: dynamic weighting · structural arbitrage · 30-day temporal positioning.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="mt-4">
+            <RansPanel plan={ransPlan} capital={ransCapital} realized={ransRealized} />
           </div>
         </SheetContent>
       </Sheet>

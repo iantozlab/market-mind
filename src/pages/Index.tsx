@@ -5,6 +5,7 @@ import type {
   LogEntry, BotMetrics, Market, APIStatus, MLInsights, TradeSettings,
   StrategyStatus, SignalRoute, StrategyTrigger, CooldownStatus,
 } from '@/lib/neural-bot-engine';
+import type { RANSPlan } from '@/lib/rans-engine';
 import NeuralStatusCard from '@/components/NeuralStatusCard';
 import MetricCard from '@/components/MetricCard';
 import TerminalLog from '@/components/TerminalLog';
@@ -38,6 +39,9 @@ const NeuralBotDashboard: React.FC = () => {
   const [signalRoutes, setSignalRoutes] = useState<SignalRoute[]>([]);
   const [strategyTriggers, setStrategyTriggers] = useState<StrategyTrigger[]>([]);
   const [cooldown, setCooldown] = useState<CooldownStatus | null>(null);
+  const [ransPlan, setRansPlan] = useState<RANSPlan | null>(null);
+  const [ransCapital, setRansCapital] = useState<number>(CONFIG.INITIAL_CAPITAL);
+  const [ransRealized, setRansRealized] = useState<number>(0);
 
   const alerts = useAlertsCenter();
   const botRef = useRef<UnifiedNeuralBot | null>(null);
@@ -56,6 +60,9 @@ const NeuralBotDashboard: React.FC = () => {
     setSignalRoutes(botRef.current.getSignalRoutes());
     setStrategyTriggers(botRef.current.getStrategyTriggers());
     setCooldown(botRef.current.getCooldownStatus());
+    setRansPlan(botRef.current.getRANSPlan());
+    setRansCapital(botRef.current.getRANSCapital());
+    setRansRealized(botRef.current.getRANSRealized());
     setAnomalyHistory(prev => {
       const next = [...prev, { time: new Date().toLocaleTimeString(), score: m.anomalyScore * 100, threshold: 70 }];
       return next.slice(-30);
@@ -130,6 +137,9 @@ const NeuralBotDashboard: React.FC = () => {
         dailyLossLimit={tradeSettings?.maxDailyLoss ?? ENV.MAX_DAILY_LOSS}
         strategies={strategies}
         auditTick={auditTick}
+        ransPlan={ransPlan}
+        ransCapital={ransCapital}
+        ransRealized={ransRealized}
         alerts={{
           items: alerts.alerts,
           unread: alerts.unread,
