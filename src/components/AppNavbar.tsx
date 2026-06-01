@@ -220,6 +220,20 @@ const AppNavbar: React.FC<Props> = ({
           </div>
         </SheetContent>
       </Sheet>
+
+      <Sheet open={sheet === 'rans'} onOpenChange={(o) => !o && close()}>
+        <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="font-display tracking-wide">RANS · Regime-Adaptive Scaler</SheetTitle>
+            <SheetDescription className="text-xs">
+              Proprietary formula: dynamic weighting · structural arbitrage · 30-day temporal positioning.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="mt-4">
+            <RansPanel plan={ransPlan} capital={ransCapital} realized={ransRealized} />
+          </div>
+        </SheetContent>
+      </Sheet>
     </>
   );
 };
