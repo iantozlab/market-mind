@@ -39,8 +39,9 @@ const NeuralBotDashboard: React.FC = () => {
   const [signalRoutes, setSignalRoutes] = useState<SignalRoute[]>([]);
   const [strategyTriggers, setStrategyTriggers] = useState<StrategyTrigger[]>([]);
   const [cooldown, setCooldown] = useState<CooldownStatus | null>(null);
-
-  const alerts = useAlertsCenter();
+  const [ransPlan, setRansPlan] = useState<RANSPlan | null>(null);
+  const [ransCapital, setRansCapital] = useState<number>(CONFIG.INITIAL_CAPITAL);
+  const [ransRealized, setRansRealized] = useState<number>(0);
   const botRef = useRef<UnifiedNeuralBot | null>(null);
 
   const updateState = useCallback(() => {
