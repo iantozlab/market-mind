@@ -17,12 +17,14 @@ import MLInsightsPanel from './MLInsightsPanel';
 import RiskDashboardPanel from './RiskDashboardPanel';
 import BacktestPanel from './BacktestPanel';
 import SettingsAuditPanel from './SettingsAuditPanel';
+import RansPanel from './RansPanel';
 import type {
   TradeSettings, MLInsights, BotMetrics, StrategyStatus,
 } from '@/lib/neural-bot-engine';
+import type { RANSPlan } from '@/lib/rans-engine';
 import type { AlertItem } from '@/hooks/useAlertsCenter';
 
-type SheetKey = null | 'settings' | 'ml' | 'risk' | 'backtest';
+type SheetKey = null | 'settings' | 'ml' | 'risk' | 'backtest' | 'rans';
 
 interface Props {
   isRunning: boolean;
