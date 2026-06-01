@@ -1313,6 +1313,11 @@ export class UnifiedNeuralBot {
   getPsychologyRecentTrades(name: string) { return this.psychology.getRecentTrades(name); }
   setPsychologyThreshold(t: number) { this.psychology.setDeprecationThreshold(t); }
 
+  // -------- RANS --------
+  getRANSPlan(): RANSPlan | null { return this.lastRansPlan; }
+  getRANSCapital(): number { return this.rans?.getCapital() ?? CONFIG.INITIAL_CAPITAL; }
+  getRANSRealized(): number { return this.rans?.getTotalRealized() ?? 0; }
+
   // -------- Trade Settings (live-tunable) --------
   getTradeSettings(): TradeSettings {
     return {
