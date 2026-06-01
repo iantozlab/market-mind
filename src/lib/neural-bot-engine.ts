@@ -726,7 +726,13 @@ export class UnifiedNeuralBot {
     { name: 'convergence_fade', active: true, label: 'Convergence Fade' },
     { name: 'governance_attack', active: true, label: 'Governance Attack' },
     { name: 'temporal_decay', active: true, label: 'Temporal Decay' },
+    { name: 'rans_regime', active: true, label: 'RANS Regime Scaler' },
+    { name: 'rans_arbitrage', active: true, label: 'RANS Structural Arb' },
+    { name: 'rans_temporal', active: true, label: 'RANS 30-Day Window' },
   ];
+
+  private rans: RANSExecutionEngine | null = null;
+  private lastRansPlan: RANSPlan | null = null;
 
   private simInterval: ReturnType<typeof setInterval> | null = null;
   private tickCount = 0;
