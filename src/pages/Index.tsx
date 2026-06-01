@@ -137,6 +137,9 @@ const NeuralBotDashboard: React.FC = () => {
         dailyLossLimit={tradeSettings?.maxDailyLoss ?? ENV.MAX_DAILY_LOSS}
         strategies={strategies}
         auditTick={auditTick}
+        ransPlan={ransPlan}
+        ransCapital={ransCapital}
+        ransRealized={ransRealized}
         alerts={{
           items: alerts.alerts,
           unread: alerts.unread,
