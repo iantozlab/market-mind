@@ -154,6 +154,11 @@ const NeuralBotDashboard: React.FC = () => {
         ransPlan={ransPlan}
         ransCapital={ransCapital}
         ransRealized={ransRealized}
+        ransHistory={ransHistory}
+        ransThresholds={ransThresholds}
+        ransWeightsAll={ransWeightsAll}
+        onApplyRansThresholds={applyRansThresholds}
+        onApplyRansWeights={applyRansWeights}
         alerts={{
           items: alerts.alerts,
           unread: alerts.unread,
