@@ -236,7 +236,16 @@ const AppNavbar: React.FC<Props> = ({
             </SheetDescription>
           </SheetHeader>
           <div className="mt-4">
-            <RansPanel plan={ransPlan} capital={ransCapital} realized={ransRealized} />
+            <RansPanel
+              plan={ransPlan}
+              capital={ransCapital}
+              realized={ransRealized}
+              history={ransHistory}
+              thresholds={ransThresholds}
+              weightsAll={ransWeightsAll}
+              onApplyThresholds={onApplyRansThresholds}
+              onApplyWeights={onApplyRansWeights}
+            />
           </div>
         </SheetContent>
       </Sheet>
