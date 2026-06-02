@@ -1,11 +1,27 @@
 import React from 'react';
+import { Button } from '@/components/ui/button';
+import { Download, FileText } from 'lucide-react';
+import { downloadCSV, downloadPDF } from '@/lib/exporters';
+import { toast } from 'sonner';
 import type { RANSPlan } from '@/lib/rans-engine';
 import { RANS_PARAMS } from '@/lib/rans-engine';
+import type {
+  RansHistoryEntry, MarketRegime, RegimeWeights,
+} from '@/lib/neural-bot-engine';
+import type { RansThresholds } from '@/lib/rans-engine';
+import RansControlsPanel from './RansControlsPanel';
+import RegimeTimelineChart from './RegimeTimelineChart';
+import RansComparePanel from './RansComparePanel';
 
 interface Props {
   plan: RANSPlan | null;
   capital: number;
   realized: number;
+  history: RansHistoryEntry[];
+  thresholds: RansThresholds;
+  weightsAll: Record<MarketRegime, RegimeWeights>;
+  onApplyThresholds: (p: Partial<RansThresholds>) => void;
+  onApplyWeights: (regime: MarketRegime, w: Partial<RegimeWeights>) => void;
 }
 
 const regimeTone: Record<string, string> = {
@@ -24,12 +40,71 @@ const phaseTone: Record<string, string> = {
   idle: 'text-muted-foreground',
 };
 
-const RansPanel: React.FC<Props> = ({ plan, capital, realized }) => {
+const exportCsv = (history: RansHistoryEntry[]) => {
+  if (history.length === 0) { toast.error('No RANS history yet'); return; }
+  downloadCSV(`rans-log-${Date.now()}.csv`, history.map(h => ({
+    timestamp: new Date(h.ts).toISOString(),
+    regime: h.regime,
+    regime_changed: h.regimeChanged ? 'YES' : '',
+    regime_confidence: h.regimeConfidence.toFixed(3),
+    weight_directional: h.directional.toFixed(3),
+    weight_arbitrage: h.arbitrage.toFixed(3),
+    weight_temporal: h.temporal.toFixed(3),
+    arb_count: h.arbCount,
+    avg_arb_confidence: h.avgArbConfidence.toFixed(3),
+    realized_arb_profit: h.realizedArbProfit.toFixed(4),
+    expected_daily_return: h.expectedDailyReturn.toFixed(4),
+    top_arb_type: h.topArbType ?? '',
+    top_arb_market: h.topArbMarket ?? '',
+  })));
+  toast.success('RANS log exported');
+};
+
+const exportPdf = (history: RansHistoryEntry[]) => {
+  if (history.length === 0) { toast.error('No RANS history yet'); return; }
+  const totalRealized = history.reduce((s, h) => s + h.realizedArbProfit, 0);
+  const changes = history.filter(h => h.regimeChanged).length;
+  downloadPDF(
+    `rans-log-${Date.now()}.pdf`,
+    'RANS — Regime-Adaptive Scaler Log',
+    ['Time', 'Regime', 'Δ', 'Conf', 'α', 'β', 'γ', 'Arb#', 'AvgArbConf', 'Realized', 'TopArb'],
+    history.slice(-200).map(h => [
+      new Date(h.ts).toLocaleTimeString(),
+      h.regime,
+      h.regimeChanged ? '↻' : '',
+      `${(h.regimeConfidence * 100).toFixed(0)}%`,
+      `${(h.directional * 100).toFixed(0)}%`,
+      `${(h.arbitrage * 100).toFixed(0)}%`,
+      `${(h.temporal * 100).toFixed(0)}%`,
+      h.arbCount,
+      `${(h.avgArbConfidence * 100).toFixed(0)}%`,
+      `$${h.realizedArbProfit.toFixed(2)}`,
+      (h.topArbMarket ?? '').slice(0, 24),
+    ]),
+    {
+      'Total ticks': history.length,
+      'Regime changes': changes,
+      'Total realized arb profit': `$${totalRealized.toFixed(2)}`,
+      'Latest regime': history[history.length - 1]?.regime ?? '—',
+    },
+  );
+  toast.success('RANS PDF exported');
+};
+
+const RansPanel: React.FC<Props> = ({
+  plan, capital, realized, history,
+  thresholds, weightsAll, onApplyThresholds, onApplyWeights,
+}) => {
   if (!plan) {
     return (
-      <p className="text-xs text-muted-foreground">
-        Start the bot to activate the RANS execution engine.
-      </p>
+      <div className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          Start the bot to activate the RANS execution engine.
+        </p>
+        <div className="rounded border border-border bg-background/40 p-3 text-[11px] text-muted-foreground">
+          Once active, RANS will route realized arbitrage profit directly into bot P&L and dynamically reweight directional / arbitrage / temporal strategies based on the detected market regime.
+        </div>
+      </div>
     );
   }
 
@@ -94,10 +169,25 @@ const RansPanel: React.FC<Props> = ({ plan, capital, realized }) => {
         </div>
       </div>
 
+      {/* Regime timeline + weights chart */}
+      <RegimeTimelineChart history={history} />
+
+      {/* Live controls */}
+      <RansControlsPanel
+        thresholds={thresholds}
+        currentRegime={plan.regime}
+        weightsAll={weightsAll}
+        onApplyThresholds={onApplyThresholds}
+        onApplyWeights={onApplyWeights}
+      />
+
       {/* Arbitrage signals */}
       <div>
-        <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
-          Structural Arbitrage · {plan.arbitrageSignals.length} live
+        <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2 flex items-center justify-between">
+          <span>Structural Arbitrage · {plan.arbitrageSignals.length} live · avg conf {(plan.avgArbConfidence * 100).toFixed(0)}%</span>
+          {plan.avgArbConfidence > 0 && plan.avgArbConfidence < RANS_PARAMS.MIN_ARB_CONFIDENCE && (
+            <span className="text-warning normal-case tracking-normal">below cutoff</span>
+          )}
         </div>
         <div className="space-y-1.5 max-h-56 overflow-y-auto terminal-scrollbar">
           {plan.arbitrageSignals.length === 0 ? (
@@ -127,14 +217,35 @@ const RansPanel: React.FC<Props> = ({ plan, capital, realized }) => {
           30-Day Rule · Temporal Windows
         </div>
         <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto terminal-scrollbar">
-          {plan.temporalWindows.map(w => (
-            <div key={w.marketId} className="rounded border border-border bg-background/40 px-2 py-1.5 text-[11px] flex items-center justify-between">
-              <span className="font-mono text-muted-foreground truncate">{w.marketId.slice(0, 10)}</span>
-              <span className={`font-display uppercase tracking-wide ${phaseTone[w.phase]}`}>
-                {w.phase} · {w.daysToExpiry.toFixed(1)}d
+          {plan.temporalWindows.map(win => (
+            <div key={win.marketId} className="rounded border border-border bg-background/40 px-2 py-1.5 text-[11px] flex items-center justify-between">
+              <span className="font-mono text-muted-foreground truncate">{win.marketId.slice(0, 10)}</span>
+              <span className={`font-display uppercase tracking-wide ${phaseTone[win.phase]}`}>
+                {win.phase} · {win.daysToExpiry.toFixed(1)}d
               </span>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Compare */}
+      <RansComparePanel ransPlan={plan} initialCapital={capital} />
+
+      {/* Export */}
+      <div className="rounded border border-border bg-background/40 p-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">RANS Log Export</div>
+            <div className="text-[11px] font-mono text-muted-foreground mt-0.5">{history.length} ticks recorded</div>
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => exportCsv(history)} className="h-7 text-xs">
+              <Download className="h-3 w-3 mr-1" /> CSV
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => exportPdf(history)} className="h-7 text-xs">
+              <FileText className="h-3 w-3 mr-1" /> PDF
+            </Button>
+          </div>
         </div>
       </div>
 
