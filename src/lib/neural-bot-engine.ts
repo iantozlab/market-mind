@@ -1473,3 +1473,19 @@ export interface CooldownStatus {
   remainingSec: number;
   reason: string;
 }
+
+export interface RansHistoryEntry {
+  ts: number;
+  regime: MarketRegime;
+  regimeConfidence: number;
+  directional: number;
+  arbitrage: number;
+  temporal: number;
+  arbCount: number;
+  avgArbConfidence: number;
+  realizedArbProfit: number;
+  expectedDailyReturn: number;
+  topArbType?: string;
+  topArbMarket?: string;
+  regimeChanged: boolean;
+}
