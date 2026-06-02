@@ -19,9 +19,9 @@ import BacktestPanel from './BacktestPanel';
 import SettingsAuditPanel from './SettingsAuditPanel';
 import RansPanel from './RansPanel';
 import type {
-  TradeSettings, MLInsights, BotMetrics, StrategyStatus,
+  TradeSettings, MLInsights, BotMetrics, StrategyStatus, RansHistoryEntry,
 } from '@/lib/neural-bot-engine';
-import type { RANSPlan } from '@/lib/rans-engine';
+import type { RANSPlan, MarketRegime, RegimeWeights, RansThresholds } from '@/lib/rans-engine';
 import type { AlertItem } from '@/hooks/useAlertsCenter';
 
 type SheetKey = null | 'settings' | 'ml' | 'risk' | 'backtest' | 'rans';
