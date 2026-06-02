@@ -69,7 +69,8 @@ const AppNavbar: React.FC<Props> = ({
   tradeSettings, applyTradeSettings,
   mlInsights, metrics, initialCapital, maxDrawdownLimit, dailyLossLimit,
   strategies, auditTick, alerts,
-  ransPlan, ransCapital, ransRealized,
+  ransPlan, ransCapital, ransRealized, ransHistory,
+  ransThresholds, ransWeightsAll, onApplyRansThresholds, onApplyRansWeights,
 }) => {
   const [sheet, setSheet] = useState<SheetKey>(null);
   const open = (k: SheetKey) => setSheet(k);
