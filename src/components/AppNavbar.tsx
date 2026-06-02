@@ -47,6 +47,11 @@ interface Props {
   ransPlan: RANSPlan | null;
   ransCapital: number;
   ransRealized: number;
+  ransHistory: RansHistoryEntry[];
+  ransThresholds: RansThresholds;
+  ransWeightsAll: Record<MarketRegime, RegimeWeights>;
+  onApplyRansThresholds: (p: Partial<RansThresholds>) => void;
+  onApplyRansWeights: (regime: MarketRegime, w: Partial<RegimeWeights>) => void;
 
   alerts: {
     items: AlertItem[];
