@@ -737,6 +737,9 @@ export class UnifiedNeuralBot {
 
   private rans: RANSExecutionEngine | null = null;
   private lastRansPlan: RANSPlan | null = null;
+  private lastRansRegime: MarketRegime | null = null;
+  private ransHistory: RansHistoryEntry[] = [];
+  private lastArbAlertTs = 0;
 
   private simInterval: ReturnType<typeof setInterval> | null = null;
   private tickCount = 0;
