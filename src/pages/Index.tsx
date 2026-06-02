@@ -122,6 +122,15 @@ const NeuralBotDashboard: React.FC = () => {
     }
   }, []);
 
+  const applyRansThresholds = useCallback((p: Partial<RansThresholds>) => {
+    botRef.current?.setRansThresholds(p);
+    setRansThresholdsState(getRansThresholds());
+  }, []);
+  const applyRansWeights = useCallback((regime: MarketRegime, w: Partial<RegimeWeights>) => {
+    botRef.current?.setRansWeights(regime, w);
+    setRansWeightsAll({ ...RANS_PARAMS.WEIGHTS } as Record<MarketRegime, RegimeWeights>);
+  }, []);
+
   const selectedOrderBook = selectedMarket && botRef.current ? botRef.current.getOrderBook(selectedMarket.id) : null;
   const selectedTrades = selectedMarket && botRef.current ? botRef.current.getTrades(selectedMarket.id) : [];
 
