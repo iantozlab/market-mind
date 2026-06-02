@@ -1,7 +1,11 @@
 import { supabase } from '@/integrations/supabase/client';
 import { PhantomLiquidityHarvester } from './phantom-liquidity-harvester';
 import { MarketPsychologyEngine } from './market-psychology-engine';
-import { RANSExecutionEngine, type RANSPlan } from './rans-engine';
+import {
+  RANSExecutionEngine, type RANSPlan, type MarketRegime, type RegimeWeights,
+  getRansThresholds, setRansThresholds, setRansWeights, RANS_PARAMS,
+  type RansThresholds,
+} from './rans-engine';
 
 // ============================================
 // ENVIRONMENT VARIABLES (Lovable Secrets / Vite env)
