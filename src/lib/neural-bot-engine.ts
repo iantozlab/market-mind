@@ -1364,6 +1364,19 @@ export class UnifiedNeuralBot {
   getRANSPlan(): RANSPlan | null { return this.lastRansPlan; }
   getRANSCapital(): number { return this.rans?.getCapital() ?? CONFIG.INITIAL_CAPITAL; }
   getRANSRealized(): number { return this.rans?.getTotalRealized() ?? 0; }
+  getRansHistory(): RansHistoryEntry[] { return [...this.ransHistory]; }
+  getRansThresholds(): RansThresholds { return getRansThresholds(); }
+  setRansThresholds(p: Partial<RansThresholds>) {
+    setRansThresholds(p);
+    this.addLog(`⚙️ RANS thresholds updated`, 'info');
+  }
+  setRansWeights(regime: MarketRegime, w: Partial<RegimeWeights>) {
+    setRansWeights(regime, w);
+    this.addLog(`⚙️ RANS weights updated for ${regime}`, 'info');
+  }
+  getRansWeightsAll(): Record<MarketRegime, RegimeWeights> {
+    return { ...RANS_PARAMS.WEIGHTS } as Record<MarketRegime, RegimeWeights>;
+  }
 
   // -------- Trade Settings (live-tunable) --------
   getTradeSettings(): TradeSettings {
