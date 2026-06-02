@@ -19,9 +19,9 @@ import BacktestPanel from './BacktestPanel';
 import SettingsAuditPanel from './SettingsAuditPanel';
 import RansPanel from './RansPanel';
 import type {
-  TradeSettings, MLInsights, BotMetrics, StrategyStatus,
+  TradeSettings, MLInsights, BotMetrics, StrategyStatus, RansHistoryEntry,
 } from '@/lib/neural-bot-engine';
-import type { RANSPlan } from '@/lib/rans-engine';
+import type { RANSPlan, MarketRegime, RegimeWeights, RansThresholds } from '@/lib/rans-engine';
 import type { AlertItem } from '@/hooks/useAlertsCenter';
 
 type SheetKey = null | 'settings' | 'ml' | 'risk' | 'backtest' | 'rans';
@@ -47,6 +47,11 @@ interface Props {
   ransPlan: RANSPlan | null;
   ransCapital: number;
   ransRealized: number;
+  ransHistory: RansHistoryEntry[];
+  ransThresholds: RansThresholds;
+  ransWeightsAll: Record<MarketRegime, RegimeWeights>;
+  onApplyRansThresholds: (p: Partial<RansThresholds>) => void;
+  onApplyRansWeights: (regime: MarketRegime, w: Partial<RegimeWeights>) => void;
 
   alerts: {
     items: AlertItem[];
@@ -64,7 +69,8 @@ const AppNavbar: React.FC<Props> = ({
   tradeSettings, applyTradeSettings,
   mlInsights, metrics, initialCapital, maxDrawdownLimit, dailyLossLimit,
   strategies, auditTick, alerts,
-  ransPlan, ransCapital, ransRealized,
+  ransPlan, ransCapital, ransRealized, ransHistory,
+  ransThresholds, ransWeightsAll, onApplyRansThresholds, onApplyRansWeights,
 }) => {
   const [sheet, setSheet] = useState<SheetKey>(null);
   const open = (k: SheetKey) => setSheet(k);
@@ -230,7 +236,16 @@ const AppNavbar: React.FC<Props> = ({
             </SheetDescription>
           </SheetHeader>
           <div className="mt-4">
-            <RansPanel plan={ransPlan} capital={ransCapital} realized={ransRealized} />
+            <RansPanel
+              plan={ransPlan}
+              capital={ransCapital}
+              realized={ransRealized}
+              history={ransHistory}
+              thresholds={ransThresholds}
+              weightsAll={ransWeightsAll}
+              onApplyThresholds={onApplyRansThresholds}
+              onApplyWeights={onApplyRansWeights}
+            />
           </div>
         </SheetContent>
       </Sheet>

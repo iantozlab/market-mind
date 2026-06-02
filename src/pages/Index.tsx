@@ -3,9 +3,10 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import { UnifiedNeuralBot, getEnvStatus, ENV, CONFIG } from '@/lib/neural-bot-engine';
 import type {
   LogEntry, BotMetrics, Market, APIStatus, MLInsights, TradeSettings,
-  StrategyStatus, SignalRoute, StrategyTrigger, CooldownStatus,
+  StrategyStatus, SignalRoute, StrategyTrigger, CooldownStatus, RansHistoryEntry,
 } from '@/lib/neural-bot-engine';
-import type { RANSPlan } from '@/lib/rans-engine';
+import type { RANSPlan, MarketRegime, RegimeWeights, RansThresholds } from '@/lib/rans-engine';
+import { getRansThresholds, RANS_PARAMS } from '@/lib/rans-engine';
 import NeuralStatusCard from '@/components/NeuralStatusCard';
 import MetricCard from '@/components/MetricCard';
 import TerminalLog from '@/components/TerminalLog';
@@ -42,6 +43,9 @@ const NeuralBotDashboard: React.FC = () => {
   const [ransPlan, setRansPlan] = useState<RANSPlan | null>(null);
   const [ransCapital, setRansCapital] = useState<number>(CONFIG.INITIAL_CAPITAL);
   const [ransRealized, setRansRealized] = useState<number>(0);
+  const [ransHistory, setRansHistory] = useState<RansHistoryEntry[]>([]);
+  const [ransThresholds, setRansThresholdsState] = useState<RansThresholds>(getRansThresholds());
+  const [ransWeightsAll, setRansWeightsAll] = useState<Record<MarketRegime, RegimeWeights>>(RANS_PARAMS.WEIGHTS as Record<MarketRegime, RegimeWeights>);
 
   const alerts = useAlertsCenter();
   const botRef = useRef<UnifiedNeuralBot | null>(null);
@@ -63,6 +67,7 @@ const NeuralBotDashboard: React.FC = () => {
     setRansPlan(botRef.current.getRANSPlan());
     setRansCapital(botRef.current.getRANSCapital());
     setRansRealized(botRef.current.getRANSRealized());
+    setRansHistory(botRef.current.getRansHistory());
     setAnomalyHistory(prev => {
       const next = [...prev, { time: new Date().toLocaleTimeString(), score: m.anomalyScore * 100, threshold: 70 }];
       return next.slice(-30);
@@ -117,6 +122,15 @@ const NeuralBotDashboard: React.FC = () => {
     }
   }, []);
 
+  const applyRansThresholds = useCallback((p: Partial<RansThresholds>) => {
+    botRef.current?.setRansThresholds(p);
+    setRansThresholdsState(getRansThresholds());
+  }, []);
+  const applyRansWeights = useCallback((regime: MarketRegime, w: Partial<RegimeWeights>) => {
+    botRef.current?.setRansWeights(regime, w);
+    setRansWeightsAll({ ...RANS_PARAMS.WEIGHTS } as Record<MarketRegime, RegimeWeights>);
+  }, []);
+
   const selectedOrderBook = selectedMarket && botRef.current ? botRef.current.getOrderBook(selectedMarket.id) : null;
   const selectedTrades = selectedMarket && botRef.current ? botRef.current.getTrades(selectedMarket.id) : [];
 
@@ -140,6 +154,11 @@ const NeuralBotDashboard: React.FC = () => {
         ransPlan={ransPlan}
         ransCapital={ransCapital}
         ransRealized={ransRealized}
+        ransHistory={ransHistory}
+        ransThresholds={ransThresholds}
+        ransWeightsAll={ransWeightsAll}
+        onApplyRansThresholds={applyRansThresholds}
+        onApplyRansWeights={applyRansWeights}
         alerts={{
           items: alerts.alerts,
           unread: alerts.unread,

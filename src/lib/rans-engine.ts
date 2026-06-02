@@ -6,6 +6,7 @@
 
 import type { Market, Trade } from './neural-bot-engine';
 
+// MUTABLE runtime config — dashboard controls update these values live.
 export const RANS_PARAMS = {
   HIGH_VOLATILITY_THRESHOLD: 0.03,
   LOW_VOLATILITY_THRESHOLD: 0.01,
@@ -32,7 +33,10 @@ export const RANS_PARAMS = {
   TARGET_WIN_RATE: 0.85,
   MAX_DRAWDOWN: 0.08,
   SHARPE_TARGET: 3.0,
-} as const;
+
+  // Configurable confidence floor for arbitrage signals; alerts below this.
+  MIN_ARB_CONFIDENCE: 0.45,
+};
 
 export type MarketRegime =
   | 'trending'
@@ -76,7 +80,46 @@ export interface RANSPlan {
   directionalConfidence: number;
   expectedDailyReturn: number;
   realizedArbitrageProfit: number;
+  avgArbConfidence: number;
   ts: number;
+}
+
+// Live-tunable runtime helpers consumed by the dashboard controls.
+export interface RansThresholds {
+  highVolatility: number;
+  lowVolatility: number;
+  momentumPersistence: number;
+  eventVolumeSpike: number;
+  minArbConfidence: number;
+}
+export function getRansThresholds(): RansThresholds {
+  return {
+    highVolatility: RANS_PARAMS.HIGH_VOLATILITY_THRESHOLD,
+    lowVolatility: RANS_PARAMS.LOW_VOLATILITY_THRESHOLD,
+    momentumPersistence: RANS_PARAMS.MOMENTUM_PERSISTENCE_THRESHOLD,
+    eventVolumeSpike: RANS_PARAMS.EVENT_VOLUME_SPIKE_THRESHOLD,
+    minArbConfidence: RANS_PARAMS.MIN_ARB_CONFIDENCE,
+  };
+}
+export function setRansThresholds(p: Partial<RansThresholds>) {
+  if (p.highVolatility != null) RANS_PARAMS.HIGH_VOLATILITY_THRESHOLD = p.highVolatility;
+  if (p.lowVolatility != null) RANS_PARAMS.LOW_VOLATILITY_THRESHOLD = p.lowVolatility;
+  if (p.momentumPersistence != null) RANS_PARAMS.MOMENTUM_PERSISTENCE_THRESHOLD = p.momentumPersistence;
+  if (p.eventVolumeSpike != null) RANS_PARAMS.EVENT_VOLUME_SPIKE_THRESHOLD = p.eventVolumeSpike;
+  if (p.minArbConfidence != null) RANS_PARAMS.MIN_ARB_CONFIDENCE = p.minArbConfidence;
+}
+export function setRansWeights(regime: MarketRegime, w: Partial<RegimeWeights>) {
+  const cur = RANS_PARAMS.WEIGHTS[regime];
+  const next = { ...cur, ...w };
+  // Re-normalize so directional + arbitrage + temporal = 1
+  const sum = next.directional + next.arbitrage + next.temporal;
+  if (sum > 0) {
+    RANS_PARAMS.WEIGHTS[regime] = {
+      directional: next.directional / sum,
+      arbitrage: next.arbitrage / sum,
+      temporal: next.temporal / sum,
+    };
+  }
 }
 
 // -------- Regime detector --------
@@ -169,7 +212,6 @@ class ArbitrageDetector {
   detect(markets: Market[], capital: number): ArbitrageSignal[] {
     const signals: ArbitrageSignal[] = [];
 
-    // Type 1: Rebalancing — single market YES+NO probability deviates from 1.0
     for (const m of markets) {
       const sum = (m.outcomePrices[0] ?? 0) + (m.outcomePrices[1] ?? 0);
       const dev = Math.abs(sum - 1.0);
@@ -188,7 +230,6 @@ class ArbitrageDetector {
       }
     }
 
-    // Type 2: Combinatorial — markets in same category whose YES probs deviate from 1.0
     const byCat = new Map<string, Market[]>();
     for (const m of markets) {
       const cat = m.category || 'misc';
@@ -260,17 +301,16 @@ export class RANSExecutionEngine {
 
   analyze(markets: Market[], trades: Trade[], directionalConfidence: number): RANSPlan {
     const { regime, confidence: regConf } = this.regimeDetector.detect(markets, trades);
-    const weights = RANS_PARAMS.WEIGHTS[regime];
+    const weights = { ...RANS_PARAMS.WEIGHTS[regime] };
 
     const arbitrageSignals = this.arbDetector.detect(markets, this.capital);
     const temporalWindows = markets.slice(0, 12).map(m => this.temporal.calculate(m));
 
-    // Simulate realized arbitrage profit for high-confidence signals (paper trade).
     let tickRealized = 0;
     for (const s of arbitrageSignals) {
       if (s.confidence > 0.85) {
         const size = Math.min(s.requiredCapital, this.capital * RANS_PARAMS.MAX_ARBITRAGE_POSITION_PCT);
-        const gain = size * s.profitGuaranteed * 0.6; // partial capture after slippage
+        const gain = size * s.profitGuaranteed * 0.6;
         tickRealized += gain;
       }
     }
@@ -283,6 +323,10 @@ export class RANSExecutionEngine {
     const expectedDailyReturn =
       arbReturn * weights.arbitrage + dirReturn * weights.directional + tempReturn * weights.temporal;
 
+    const avgArbConfidence = arbitrageSignals.length > 0
+      ? arbitrageSignals.reduce((s, a) => s + a.confidence, 0) / arbitrageSignals.length
+      : 0;
+
     const plan: RANSPlan = {
       regime,
       regimeConfidence: regConf,
@@ -292,6 +336,7 @@ export class RANSExecutionEngine {
       directionalConfidence,
       expectedDailyReturn,
       realizedArbitrageProfit: tickRealized,
+      avgArbConfidence,
       ts: Date.now(),
     };
     this.lastPlan = plan;

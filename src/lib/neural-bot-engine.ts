@@ -1,7 +1,11 @@
 import { supabase } from '@/integrations/supabase/client';
 import { PhantomLiquidityHarvester } from './phantom-liquidity-harvester';
 import { MarketPsychologyEngine } from './market-psychology-engine';
-import { RANSExecutionEngine, type RANSPlan } from './rans-engine';
+import {
+  RANSExecutionEngine, type RANSPlan, type MarketRegime, type RegimeWeights,
+  getRansThresholds, setRansThresholds, setRansWeights, RANS_PARAMS,
+  type RansThresholds,
+} from './rans-engine';
 
 // ============================================
 // ENVIRONMENT VARIABLES (Lovable Secrets / Vite env)
@@ -733,6 +737,9 @@ export class UnifiedNeuralBot {
 
   private rans: RANSExecutionEngine | null = null;
   private lastRansPlan: RANSPlan | null = null;
+  private lastRansRegime: MarketRegime | null = null;
+  private ransHistory: RansHistoryEntry[] = [];
+  private lastArbAlertTs = 0;
 
   private simInterval: ReturnType<typeof setInterval> | null = null;
   private tickCount = 0;
@@ -1206,7 +1213,49 @@ export class UnifiedNeuralBot {
             const plan = this.rans.analyze(markets, flatTrades, directionalConfidence);
             this.lastRansPlan = plan;
 
-            // Route into diagnostics + psychology so RANS shows up as live strategy
+            // History entry every tick (capped)
+            this.ransHistory.push({
+              ts: plan.ts,
+              regime: plan.regime,
+              regimeConfidence: plan.regimeConfidence,
+              directional: plan.weights.directional,
+              arbitrage: plan.weights.arbitrage,
+              temporal: plan.weights.temporal,
+              arbCount: plan.arbitrageSignals.length,
+              avgArbConfidence: plan.avgArbConfidence,
+              realizedArbProfit: plan.realizedArbitrageProfit,
+              expectedDailyReturn: plan.expectedDailyReturn,
+              topArbType: plan.arbitrageSignals[0]?.type,
+              topArbMarket: plan.arbitrageSignals[0]?.marketSlug ?? plan.arbitrageSignals[0]?.marketId,
+              regimeChanged: this.lastRansRegime !== null && this.lastRansRegime !== plan.regime,
+            });
+            if (this.ransHistory.length > 500) this.ransHistory.shift();
+
+            // Regime change → log + alert
+            if (this.lastRansRegime && this.lastRansRegime !== plan.regime) {
+              const msg = `${this.lastRansRegime.replace('_', ' ').toUpperCase()} → ${plan.regime.replace('_', ' ').toUpperCase()}`;
+              this.addLog(`🌀 RANS REGIME CHANGE: ${msg} · α${(plan.weights.directional * 100).toFixed(0)}/β${(plan.weights.arbitrage * 100).toFixed(0)}/γ${(plan.weights.temporal * 100).toFixed(0)}`, 'strategy');
+              this.emitAlert({
+                severity: 'info',
+                title: `RANS regime change`,
+                detail: `${msg} (conf ${(plan.regimeConfidence * 100).toFixed(0)}%)`,
+              });
+            }
+            this.lastRansRegime = plan.regime;
+
+            // Arbitrage confidence drop alert (throttled to once per 60s)
+            if (plan.arbitrageSignals.length > 0
+                && plan.avgArbConfidence < RANS_PARAMS.MIN_ARB_CONFIDENCE
+                && Date.now() - this.lastArbAlertTs > 60_000) {
+              this.lastArbAlertTs = Date.now();
+              this.addLog(`⚠️ RANS arb confidence ${(plan.avgArbConfidence * 100).toFixed(0)}% < cutoff ${(RANS_PARAMS.MIN_ARB_CONFIDENCE * 100).toFixed(0)}%`, 'warning');
+              this.emitAlert({
+                severity: 'warning',
+                title: 'RANS arbitrage confidence dropped',
+                detail: `avg ${(plan.avgArbConfidence * 100).toFixed(0)}% across ${plan.arbitrageSignals.length} ops`,
+              });
+            }
+
             this.routeSignal(`rans_regime_${plan.regime}`, 'rans_regime', plan.regimeConfidence, {
               regime: plan.regime,
               dir: `${(plan.weights.directional * 100).toFixed(0)}%`,
@@ -1241,19 +1290,17 @@ export class UnifiedNeuralBot {
               this.psychology.updateStrategyPerformance('rans_temporal', Math.random() < 0.4);
             }
 
-            // Apply realized arbitrage profit to bot P&L
+            // Apply realized arbitrage profit to bot P&L (RANS is a profit-driver)
             if (plan.realizedArbitrageProfit !== 0) {
               this.metrics.totalPnL += plan.realizedArbitrageProfit;
               this.metrics.dailyPnL += plan.realizedArbitrageProfit;
               this.metrics.tradesExecuted += plan.arbitrageSignals.length;
             }
-
-            // Regime change announcement
-            if (this.tickCount % 10 === 0) {
-              this.addLog(`🧠 RANS REGIME: ${plan.regime.replace('_', ' ').toUpperCase()} (conf ${(plan.regimeConfidence * 100).toFixed(0)}%) → α${(plan.weights.directional * 100).toFixed(0)}/β${(plan.weights.arbitrage * 100).toFixed(0)}/γ${(plan.weights.temporal * 100).toFixed(0)}`, 'info');
-            }
           }
-        } catch { /* never let RANS errors kill the loop */ }
+        } catch (err) {
+          this.addLog(`RANS error: ${err}`, 'error');
+        }
+
 
         // === Baseline activation guarantee — keep all strategies alive ===
         const allKeys = ['bot_exhaustion','liquidity_provision','pre_event','whale_inactivity','anchor_reversion','zk_exploit','convergence_fade','governance_attack','temporal_decay','whale_wreckage','rans_regime','rans_arbitrage','rans_temporal'];
@@ -1317,6 +1364,19 @@ export class UnifiedNeuralBot {
   getRANSPlan(): RANSPlan | null { return this.lastRansPlan; }
   getRANSCapital(): number { return this.rans?.getCapital() ?? CONFIG.INITIAL_CAPITAL; }
   getRANSRealized(): number { return this.rans?.getTotalRealized() ?? 0; }
+  getRansHistory(): RansHistoryEntry[] { return [...this.ransHistory]; }
+  getRansThresholds(): RansThresholds { return getRansThresholds(); }
+  setRansThresholds(p: Partial<RansThresholds>) {
+    setRansThresholds(p);
+    this.addLog(`⚙️ RANS thresholds updated`, 'info');
+  }
+  setRansWeights(regime: MarketRegime, w: Partial<RegimeWeights>) {
+    setRansWeights(regime, w);
+    this.addLog(`⚙️ RANS weights updated for ${regime}`, 'info');
+  }
+  getRansWeightsAll(): Record<MarketRegime, RegimeWeights> {
+    return { ...RANS_PARAMS.WEIGHTS } as Record<MarketRegime, RegimeWeights>;
+  }
 
   // -------- Trade Settings (live-tunable) --------
   getTradeSettings(): TradeSettings {
@@ -1412,4 +1472,20 @@ export interface CooldownStatus {
   active: boolean;
   remainingSec: number;
   reason: string;
+}
+
+export interface RansHistoryEntry {
+  ts: number;
+  regime: MarketRegime;
+  regimeConfidence: number;
+  directional: number;
+  arbitrage: number;
+  temporal: number;
+  arbCount: number;
+  avgArbConfidence: number;
+  realizedArbProfit: number;
+  expectedDailyReturn: number;
+  topArbType?: string;
+  topArbMarket?: string;
+  regimeChanged: boolean;
 }
