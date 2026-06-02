@@ -3,12 +3,9 @@ import { Button } from '@/components/ui/button';
 import { Download, FileText } from 'lucide-react';
 import { downloadCSV, downloadPDF } from '@/lib/exporters';
 import { toast } from 'sonner';
-import type { RANSPlan } from '@/lib/rans-engine';
+import type { RANSPlan, MarketRegime, RegimeWeights, RansThresholds } from '@/lib/rans-engine';
 import { RANS_PARAMS } from '@/lib/rans-engine';
-import type {
-  RansHistoryEntry, MarketRegime, RegimeWeights,
-} from '@/lib/neural-bot-engine';
-import type { RansThresholds } from '@/lib/rans-engine';
+import type { RansHistoryEntry } from '@/lib/neural-bot-engine';
 import RansControlsPanel from './RansControlsPanel';
 import RegimeTimelineChart from './RegimeTimelineChart';
 import RansComparePanel from './RansComparePanel';
