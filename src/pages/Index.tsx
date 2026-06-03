@@ -46,6 +46,8 @@ const NeuralBotDashboard: React.FC = () => {
   const [ransHistory, setRansHistory] = useState<RansHistoryEntry[]>([]);
   const [ransThresholds, setRansThresholdsState] = useState<RansThresholds>(getRansThresholds());
   const [ransWeightsAll, setRansWeightsAll] = useState<Record<MarketRegime, RegimeWeights>>(RANS_PARAMS.WEIGHTS as Record<MarketRegime, RegimeWeights>);
+  const [ransDiagnostics, setRansDiagnostics] = useState<RansDiagnostics | null>(null);
+  const [ransKillSwitch, setRansKillSwitchState] = useState<boolean>(false);
 
   const alerts = useAlertsCenter();
   const botRef = useRef<UnifiedNeuralBot | null>(null);
