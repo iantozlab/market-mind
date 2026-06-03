@@ -742,6 +742,23 @@ export class UnifiedNeuralBot {
   private ransHistory: RansHistoryEntry[] = [];
   private lastArbAlertTs = 0;
 
+  // RANS diagnostics (telemetry)
+  private ransDx = {
+    tickCount: 0,
+    lastLatencyMs: 0,
+    maxLatencyMs: 0,
+    avgLatencyMs: 0,
+    signalDropouts: 0,    // ticks producing 0 arb signals
+    arbActivations: 0,    // total arb signals processed
+    temporalActivations: 0,
+    regimeChanges: 0,
+    errors: 0,
+    lastError: '' as string,
+    lastErrorTs: 0,
+    startedAt: 0,
+  };
+
+
   private simInterval: ReturnType<typeof setInterval> | null = null;
   private tickCount = 0;
   private lastMarkets: Market[] = [];
