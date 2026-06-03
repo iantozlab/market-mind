@@ -3,7 +3,7 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import { UnifiedNeuralBot, getEnvStatus, ENV, CONFIG } from '@/lib/neural-bot-engine';
 import type {
   LogEntry, BotMetrics, Market, APIStatus, MLInsights, TradeSettings,
-  StrategyStatus, SignalRoute, StrategyTrigger, CooldownStatus, RansHistoryEntry,
+  StrategyStatus, SignalRoute, StrategyTrigger, CooldownStatus, RansHistoryEntry, RansDiagnostics,
 } from '@/lib/neural-bot-engine';
 import type { RANSPlan, MarketRegime, RegimeWeights, RansThresholds } from '@/lib/rans-engine';
 import { getRansThresholds, RANS_PARAMS } from '@/lib/rans-engine';
