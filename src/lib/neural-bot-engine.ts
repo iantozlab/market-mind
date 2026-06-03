@@ -1403,17 +1403,70 @@ export class UnifiedNeuralBot {
   getRANSRealized(): number { return this.rans?.getTotalRealized() ?? 0; }
   getRansHistory(): RansHistoryEntry[] { return [...this.ransHistory]; }
   getRansThresholds(): RansThresholds { return getRansThresholds(); }
-  setRansThresholds(p: Partial<RansThresholds>) {
-    setRansThresholds(p);
-    this.addLog(`⚙️ RANS thresholds updated`, 'info');
+  setRansThresholds(p: Partial<RansThresholds>): RansApplyResult {
+    const result = setRansThresholds(p);
+    if (result.clampedFields.length > 0) {
+      this.addLog(`⚙️ RANS thresholds applied — clamped: ${result.clampedFields.join(', ')}`, 'warning');
+      this.emitAlert({ severity: 'warning', title: 'RANS guardrail clamped', detail: `Fields: ${result.clampedFields.join(', ')}` });
+    } else {
+      this.addLog(`⚙️ RANS thresholds updated`, 'info');
+    }
+    return result;
   }
-  setRansWeights(regime: MarketRegime, w: Partial<RegimeWeights>) {
-    setRansWeights(regime, w);
-    this.addLog(`⚙️ RANS weights updated for ${regime}`, 'info');
+  setRansWeights(regime: MarketRegime, w: Partial<RegimeWeights>): RansApplyResult {
+    const result = setRansWeights(regime, w);
+    if (result.clampedFields.length > 0) {
+      this.addLog(`⚙️ RANS weights applied for ${regime} — clamped: ${result.clampedFields.join(', ')}`, 'warning');
+      this.emitAlert({ severity: 'warning', title: 'RANS weight clamped', detail: `${regime}: ${result.clampedFields.join(', ')}` });
+    } else {
+      this.addLog(`⚙️ RANS weights updated for ${regime}`, 'info');
+    }
+    return result;
   }
   getRansWeightsAll(): Record<MarketRegime, RegimeWeights> {
     return { ...RANS_PARAMS.WEIGHTS } as Record<MarketRegime, RegimeWeights>;
   }
+
+  // -------- RANS kill switch + diagnostics --------
+  isRansKillSwitch(): boolean { return isRansKillSwitchActive(); }
+  setRansKillSwitch(on: boolean, reason = 'manual') {
+    setRansKillSwitch(on);
+    if (on) {
+      this.addLog(`🛑 RANS KILL SWITCH ENGAGED (${reason}) — baseline trading only`, 'warning');
+      this.emitAlert({ severity: 'critical', title: 'RANS kill switch engaged', detail: reason });
+    } else {
+      this.addLog(`✅ RANS RESUMED — scaling re-enabled`, 'info');
+      this.emitAlert({ severity: 'info', title: 'RANS resumed', detail: 'Regime scaling re-enabled' });
+    }
+  }
+  getRansDiagnostics(): RansDiagnostics {
+    const uptimeMs = this.ransDx.startedAt ? Date.now() - this.ransDx.startedAt : 0;
+    const activationRate = this.ransDx.tickCount > 0
+      ? (this.ransDx.arbActivations + this.ransDx.temporalActivations) / this.ransDx.tickCount
+      : 0;
+    const dropoutRate = this.ransDx.tickCount > 0
+      ? this.ransDx.signalDropouts / this.ransDx.tickCount
+      : 0;
+    return {
+      integrationOk: !!this.rans,
+      killSwitch: isRansKillSwitchActive(),
+      uptimeMs,
+      tickCount: this.ransDx.tickCount,
+      lastLatencyMs: this.ransDx.lastLatencyMs,
+      avgLatencyMs: this.ransDx.avgLatencyMs,
+      maxLatencyMs: this.ransDx.maxLatencyMs,
+      signalDropouts: this.ransDx.signalDropouts,
+      dropoutRate,
+      arbActivations: this.ransDx.arbActivations,
+      temporalActivations: this.ransDx.temporalActivations,
+      regimeChanges: this.ransDx.regimeChanges,
+      activationRate,
+      errors: this.ransDx.errors,
+      lastError: this.ransDx.lastError,
+      lastErrorTs: this.ransDx.lastErrorTs,
+    };
+  }
+
 
   // -------- Trade Settings (live-tunable) --------
   getTradeSettings(): TradeSettings {
