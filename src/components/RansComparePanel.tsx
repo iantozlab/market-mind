@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { runBacktest, type BacktestConfig, type BacktestResult } from '@/lib/backtest-engine';
 import { RANS_PARAMS } from '@/lib/rans-engine';
 import type { RANSPlan } from '@/lib/rans-engine';
@@ -9,6 +10,8 @@ import { toast } from 'sonner';
 interface Props {
   ransPlan: RANSPlan | null;
   initialCapital: number;
+  /** Bumping this key (e.g. via stringified thresholds/weights) auto-reruns when autoRerun is on. */
+  autoRerunKey?: string;
 }
 
 interface Row { label: string; baseline: BacktestResult; rans: BacktestResult; }
@@ -20,10 +23,13 @@ interface Row { label: string; baseline: BacktestResult; rans: BacktestResult; }
  *   are scaled by the active regime's weights (β arbitrage drives more
  *   capital, γ temporal tightens stops).
  */
-const RansComparePanel: React.FC<Props> = ({ ransPlan, initialCapital }) => {
+const RansComparePanel: React.FC<Props> = ({ ransPlan, initialCapital, autoRerunKey }) => {
   const [row, setRow] = useState<Row | null>(null);
   const [running, setRunning] = useState(false);
   const [days, setDays] = useState(14);
+  const [autoRerun, setAutoRerun] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastKeyRef = useRef<string | undefined>(undefined);
 
   const run = () => {
     setRunning(true);
@@ -67,6 +73,16 @@ const RansComparePanel: React.FC<Props> = ({ ransPlan, initialCapital }) => {
     }, 30);
   };
 
+  // Auto re-run when thresholds/weights change (key changes), debounced.
+  useEffect(() => {
+    if (!autoRerun || !autoRerunKey || autoRerunKey === lastKeyRef.current) return;
+    lastKeyRef.current = autoRerunKey;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => { run(); }, 600);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRerun, autoRerunKey]);
+
   const exportCsv = () => {
     if (!row) return;
     downloadCSV(`rans-vs-baseline-${Date.now()}.csv`, [
@@ -105,6 +121,10 @@ const RansComparePanel: React.FC<Props> = ({ ransPlan, initialCapital }) => {
             className="h-7 w-16 text-xs bg-background border border-border rounded px-2 font-mono"
           />
           <span className="text-[10px] text-muted-foreground">days</span>
+          <div className="flex items-center gap-1.5 pl-2 border-l border-border ml-1">
+            <Switch checked={autoRerun} onCheckedChange={setAutoRerun} aria-label="Auto re-run on tuning change" />
+            <span className="text-[10px] text-muted-foreground">auto-rerun</span>
+          </div>
           <Button size="sm" onClick={run} disabled={running} className="h-7 px-2 text-xs font-display tracking-wide">
             {running ? 'Running…' : 'Run Comparison'}
           </Button>

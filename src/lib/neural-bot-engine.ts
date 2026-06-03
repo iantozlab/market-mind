@@ -4,7 +4,8 @@ import { MarketPsychologyEngine } from './market-psychology-engine';
 import {
   RANSExecutionEngine, type RANSPlan, type MarketRegime, type RegimeWeights,
   getRansThresholds, setRansThresholds, setRansWeights, RANS_PARAMS,
-  type RansThresholds,
+  setRansKillSwitch, isRansKillSwitchActive,
+  type RansThresholds, type RansApplyResult,
 } from './rans-engine';
 
 // ============================================
@@ -741,6 +742,23 @@ export class UnifiedNeuralBot {
   private ransHistory: RansHistoryEntry[] = [];
   private lastArbAlertTs = 0;
 
+  // RANS diagnostics (telemetry)
+  private ransDx = {
+    tickCount: 0,
+    lastLatencyMs: 0,
+    maxLatencyMs: 0,
+    avgLatencyMs: 0,
+    signalDropouts: 0,    // ticks producing 0 arb signals
+    arbActivations: 0,    // total arb signals processed
+    temporalActivations: 0,
+    regimeChanges: 0,
+    errors: 0,
+    lastError: '' as string,
+    lastErrorTs: 0,
+    startedAt: 0,
+  };
+
+
   private simInterval: ReturnType<typeof setInterval> | null = null;
   private tickCount = 0;
   private lastMarkets: Market[] = [];
@@ -804,6 +822,12 @@ export class UnifiedNeuralBot {
   setAlertSink(cb: typeof this.alertSink) { this.alertSink = cb; }
   private emitAlert(a: { severity: 'info' | 'warning' | 'critical'; title: string; detail?: string }) {
     try { this.alertSink?.(a); } catch { /* noop */ }
+    // Auto-engage RANS kill switch on critical alerts (excluding our own kill-switch alert).
+    if (a.severity === 'critical' && !isRansKillSwitchActive() && a.title !== 'RANS kill switch engaged') {
+      setRansKillSwitch(true);
+      this.addLog(`🛑 RANS auto kill switch — triggered by: ${a.title}`, 'warning');
+      try { this.alertSink?.({ severity: 'warning', title: 'RANS auto-killed', detail: `Triggered by: ${a.title}` }); } catch { /* noop */ }
+    }
   }
   getCooldownStatus(): CooldownStatus {
     const now = Date.now();
@@ -1204,8 +1228,10 @@ export class UnifiedNeuralBot {
         }
 
         // === RANS — Regime-Adaptive Neural Scaling ===
+        const ransStart = (typeof performance !== 'undefined' ? performance.now() : Date.now());
         try {
           if (this.rans) {
+            if (!this.ransDx.startedAt) this.ransDx.startedAt = Date.now();
             const flatTrades: Trade[] = [];
             for (const arr of this.recentTrades.values()) flatTrades.push(...arr);
             const directionalConfidence = Math.max(0.3, Math.min(0.95,
@@ -1233,6 +1259,7 @@ export class UnifiedNeuralBot {
 
             // Regime change → log + alert
             if (this.lastRansRegime && this.lastRansRegime !== plan.regime) {
+              this.ransDx.regimeChanges += 1;
               const msg = `${this.lastRansRegime.replace('_', ' ').toUpperCase()} → ${plan.regime.replace('_', ' ').toUpperCase()}`;
               this.addLog(`🌀 RANS REGIME CHANGE: ${msg} · α${(plan.weights.directional * 100).toFixed(0)}/β${(plan.weights.arbitrage * 100).toFixed(0)}/γ${(plan.weights.temporal * 100).toFixed(0)}`, 'strategy');
               this.emitAlert({
@@ -1265,6 +1292,7 @@ export class UnifiedNeuralBot {
             this.psychology.updateStrategyPerformance('rans_regime', Math.random() < plan.regimeConfidence);
 
             if (plan.arbitrageSignals.length > 0) {
+              this.ransDx.arbActivations += plan.arbitrageSignals.length;
               const top = plan.arbitrageSignals[0];
               this.routeSignal(`rans_arb_${top.type.toLowerCase()}`, 'rans_arbitrage', top.confidence, {
                 type: top.type, profit: `${(top.profitGuaranteed * 100).toFixed(2)}%`, opportunities: plan.arbitrageSignals.length,
@@ -1274,12 +1302,14 @@ export class UnifiedNeuralBot {
                 this.addLog(`🔒 RANS ARB: ${plan.arbitrageSignals.length} ops · top ${top.type} ${(top.profitGuaranteed * 100).toFixed(2)}% on ${top.marketSlug?.slice(0, 24) ?? top.marketId.slice(0, 8)}`, 'strategy');
               }
             } else {
+              this.ransDx.signalDropouts += 1;
               this.routeSignal('rans_arb_scan', 'rans_arbitrage', 0.5, { opportunities: 0 });
               this.psychology.updateStrategyPerformance('rans_arbitrage', Math.random() < 0.5);
             }
 
             const tempActive = plan.temporalWindows.filter(w => w.phase === 'entry' || w.phase === 'exit');
             if (tempActive.length > 0) {
+              this.ransDx.temporalActivations += tempActive.length;
               const sample = tempActive[0];
               this.routeSignal(`rans_temporal_${sample.phase}`, 'rans_temporal', sample.confidence, {
                 phase: sample.phase, days: sample.daysToExpiry.toFixed(1), active: tempActive.length,
@@ -1290,7 +1320,8 @@ export class UnifiedNeuralBot {
               this.psychology.updateStrategyPerformance('rans_temporal', Math.random() < 0.4);
             }
 
-            // Apply realized arbitrage profit to bot P&L (RANS is a profit-driver)
+            // Apply realized arbitrage profit to bot P&L (RANS is a profit-driver).
+            // Kill switch causes analyze() to return 0 realized — this block is a no-op then.
             if (plan.realizedArbitrageProfit !== 0) {
               this.metrics.totalPnL += plan.realizedArbitrageProfit;
               this.metrics.dailyPnL += plan.realizedArbitrageProfit;
@@ -1298,8 +1329,20 @@ export class UnifiedNeuralBot {
             }
           }
         } catch (err) {
+          this.ransDx.errors += 1;
+          this.ransDx.lastError = String(err);
+          this.ransDx.lastErrorTs = Date.now();
           this.addLog(`RANS error: ${err}`, 'error');
+        } finally {
+          const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - ransStart;
+          this.ransDx.tickCount += 1;
+          this.ransDx.lastLatencyMs = elapsed;
+          if (elapsed > this.ransDx.maxLatencyMs) this.ransDx.maxLatencyMs = elapsed;
+          this.ransDx.avgLatencyMs = this.ransDx.avgLatencyMs === 0
+            ? elapsed
+            : this.ransDx.avgLatencyMs * 0.9 + elapsed * 0.1;
         }
+
 
 
         // === Baseline activation guarantee — keep all strategies alive ===
@@ -1366,17 +1409,70 @@ export class UnifiedNeuralBot {
   getRANSRealized(): number { return this.rans?.getTotalRealized() ?? 0; }
   getRansHistory(): RansHistoryEntry[] { return [...this.ransHistory]; }
   getRansThresholds(): RansThresholds { return getRansThresholds(); }
-  setRansThresholds(p: Partial<RansThresholds>) {
-    setRansThresholds(p);
-    this.addLog(`⚙️ RANS thresholds updated`, 'info');
+  setRansThresholds(p: Partial<RansThresholds>): RansApplyResult {
+    const result = setRansThresholds(p);
+    if (result.clampedFields.length > 0) {
+      this.addLog(`⚙️ RANS thresholds applied — clamped: ${result.clampedFields.join(', ')}`, 'warning');
+      this.emitAlert({ severity: 'warning', title: 'RANS guardrail clamped', detail: `Fields: ${result.clampedFields.join(', ')}` });
+    } else {
+      this.addLog(`⚙️ RANS thresholds updated`, 'info');
+    }
+    return result;
   }
-  setRansWeights(regime: MarketRegime, w: Partial<RegimeWeights>) {
-    setRansWeights(regime, w);
-    this.addLog(`⚙️ RANS weights updated for ${regime}`, 'info');
+  setRansWeights(regime: MarketRegime, w: Partial<RegimeWeights>): RansApplyResult {
+    const result = setRansWeights(regime, w);
+    if (result.clampedFields.length > 0) {
+      this.addLog(`⚙️ RANS weights applied for ${regime} — clamped: ${result.clampedFields.join(', ')}`, 'warning');
+      this.emitAlert({ severity: 'warning', title: 'RANS weight clamped', detail: `${regime}: ${result.clampedFields.join(', ')}` });
+    } else {
+      this.addLog(`⚙️ RANS weights updated for ${regime}`, 'info');
+    }
+    return result;
   }
   getRansWeightsAll(): Record<MarketRegime, RegimeWeights> {
     return { ...RANS_PARAMS.WEIGHTS } as Record<MarketRegime, RegimeWeights>;
   }
+
+  // -------- RANS kill switch + diagnostics --------
+  isRansKillSwitch(): boolean { return isRansKillSwitchActive(); }
+  setRansKillSwitch(on: boolean, reason = 'manual') {
+    setRansKillSwitch(on);
+    if (on) {
+      this.addLog(`🛑 RANS KILL SWITCH ENGAGED (${reason}) — baseline trading only`, 'warning');
+      this.emitAlert({ severity: 'critical', title: 'RANS kill switch engaged', detail: reason });
+    } else {
+      this.addLog(`✅ RANS RESUMED — scaling re-enabled`, 'info');
+      this.emitAlert({ severity: 'info', title: 'RANS resumed', detail: 'Regime scaling re-enabled' });
+    }
+  }
+  getRansDiagnostics(): RansDiagnostics {
+    const uptimeMs = this.ransDx.startedAt ? Date.now() - this.ransDx.startedAt : 0;
+    const activationRate = this.ransDx.tickCount > 0
+      ? (this.ransDx.arbActivations + this.ransDx.temporalActivations) / this.ransDx.tickCount
+      : 0;
+    const dropoutRate = this.ransDx.tickCount > 0
+      ? this.ransDx.signalDropouts / this.ransDx.tickCount
+      : 0;
+    return {
+      integrationOk: !!this.rans,
+      killSwitch: isRansKillSwitchActive(),
+      uptimeMs,
+      tickCount: this.ransDx.tickCount,
+      lastLatencyMs: this.ransDx.lastLatencyMs,
+      avgLatencyMs: this.ransDx.avgLatencyMs,
+      maxLatencyMs: this.ransDx.maxLatencyMs,
+      signalDropouts: this.ransDx.signalDropouts,
+      dropoutRate,
+      arbActivations: this.ransDx.arbActivations,
+      temporalActivations: this.ransDx.temporalActivations,
+      regimeChanges: this.ransDx.regimeChanges,
+      activationRate,
+      errors: this.ransDx.errors,
+      lastError: this.ransDx.lastError,
+      lastErrorTs: this.ransDx.lastErrorTs,
+    };
+  }
+
 
   // -------- Trade Settings (live-tunable) --------
   getTradeSettings(): TradeSettings {
@@ -1488,4 +1584,23 @@ export interface RansHistoryEntry {
   topArbType?: string;
   topArbMarket?: string;
   regimeChanged: boolean;
+}
+
+export interface RansDiagnostics {
+  integrationOk: boolean;
+  killSwitch: boolean;
+  uptimeMs: number;
+  tickCount: number;
+  lastLatencyMs: number;
+  avgLatencyMs: number;
+  maxLatencyMs: number;
+  signalDropouts: number;
+  dropoutRate: number;
+  arbActivations: number;
+  temporalActivations: number;
+  regimeChanges: number;
+  activationRate: number;
+  errors: number;
+  lastError: string;
+  lastErrorTs: number;
 }

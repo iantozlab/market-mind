@@ -19,7 +19,7 @@ import BacktestPanel from './BacktestPanel';
 import SettingsAuditPanel from './SettingsAuditPanel';
 import RansPanel from './RansPanel';
 import type {
-  TradeSettings, MLInsights, BotMetrics, StrategyStatus, RansHistoryEntry,
+  TradeSettings, MLInsights, BotMetrics, StrategyStatus, RansHistoryEntry, RansDiagnostics,
 } from '@/lib/neural-bot-engine';
 import type { RANSPlan, MarketRegime, RegimeWeights, RansThresholds } from '@/lib/rans-engine';
 import type { AlertItem } from '@/hooks/useAlertsCenter';
@@ -50,8 +50,11 @@ interface Props {
   ransHistory: RansHistoryEntry[];
   ransThresholds: RansThresholds;
   ransWeightsAll: Record<MarketRegime, RegimeWeights>;
+  ransDiagnostics: RansDiagnostics | null;
+  ransKillSwitch: boolean;
   onApplyRansThresholds: (p: Partial<RansThresholds>) => void;
   onApplyRansWeights: (regime: MarketRegime, w: Partial<RegimeWeights>) => void;
+  onToggleRansKillSwitch: (on: boolean) => void;
 
   alerts: {
     items: AlertItem[];
@@ -70,7 +73,8 @@ const AppNavbar: React.FC<Props> = ({
   mlInsights, metrics, initialCapital, maxDrawdownLimit, dailyLossLimit,
   strategies, auditTick, alerts,
   ransPlan, ransCapital, ransRealized, ransHistory,
-  ransThresholds, ransWeightsAll, onApplyRansThresholds, onApplyRansWeights,
+  ransThresholds, ransWeightsAll, ransDiagnostics, ransKillSwitch,
+  onApplyRansThresholds, onApplyRansWeights, onToggleRansKillSwitch,
 }) => {
   const [sheet, setSheet] = useState<SheetKey>(null);
   const open = (k: SheetKey) => setSheet(k);
@@ -243,8 +247,11 @@ const AppNavbar: React.FC<Props> = ({
               history={ransHistory}
               thresholds={ransThresholds}
               weightsAll={ransWeightsAll}
+              diagnostics={ransDiagnostics}
+              killSwitch={ransKillSwitch}
               onApplyThresholds={onApplyRansThresholds}
               onApplyWeights={onApplyRansWeights}
+              onToggleKillSwitch={onToggleRansKillSwitch}
             />
           </div>
         </SheetContent>

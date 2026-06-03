@@ -3,7 +3,7 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import { UnifiedNeuralBot, getEnvStatus, ENV, CONFIG } from '@/lib/neural-bot-engine';
 import type {
   LogEntry, BotMetrics, Market, APIStatus, MLInsights, TradeSettings,
-  StrategyStatus, SignalRoute, StrategyTrigger, CooldownStatus, RansHistoryEntry,
+  StrategyStatus, SignalRoute, StrategyTrigger, CooldownStatus, RansHistoryEntry, RansDiagnostics,
 } from '@/lib/neural-bot-engine';
 import type { RANSPlan, MarketRegime, RegimeWeights, RansThresholds } from '@/lib/rans-engine';
 import { getRansThresholds, RANS_PARAMS } from '@/lib/rans-engine';
@@ -46,6 +46,8 @@ const NeuralBotDashboard: React.FC = () => {
   const [ransHistory, setRansHistory] = useState<RansHistoryEntry[]>([]);
   const [ransThresholds, setRansThresholdsState] = useState<RansThresholds>(getRansThresholds());
   const [ransWeightsAll, setRansWeightsAll] = useState<Record<MarketRegime, RegimeWeights>>(RANS_PARAMS.WEIGHTS as Record<MarketRegime, RegimeWeights>);
+  const [ransDiagnostics, setRansDiagnostics] = useState<RansDiagnostics | null>(null);
+  const [ransKillSwitch, setRansKillSwitchState] = useState<boolean>(false);
 
   const alerts = useAlertsCenter();
   const botRef = useRef<UnifiedNeuralBot | null>(null);
@@ -68,6 +70,8 @@ const NeuralBotDashboard: React.FC = () => {
     setRansCapital(botRef.current.getRANSCapital());
     setRansRealized(botRef.current.getRANSRealized());
     setRansHistory(botRef.current.getRansHistory());
+    setRansDiagnostics(botRef.current.getRansDiagnostics());
+    setRansKillSwitchState(botRef.current.isRansKillSwitch());
     setAnomalyHistory(prev => {
       const next = [...prev, { time: new Date().toLocaleTimeString(), score: m.anomalyScore * 100, threshold: 70 }];
       return next.slice(-30);
@@ -130,6 +134,10 @@ const NeuralBotDashboard: React.FC = () => {
     botRef.current?.setRansWeights(regime, w);
     setRansWeightsAll({ ...RANS_PARAMS.WEIGHTS } as Record<MarketRegime, RegimeWeights>);
   }, []);
+  const toggleRansKillSwitch = useCallback((on: boolean) => {
+    botRef.current?.setRansKillSwitch(on, on ? 'manual-dashboard' : 'manual-resume');
+    setRansKillSwitchState(on);
+  }, []);
 
   const selectedOrderBook = selectedMarket && botRef.current ? botRef.current.getOrderBook(selectedMarket.id) : null;
   const selectedTrades = selectedMarket && botRef.current ? botRef.current.getTrades(selectedMarket.id) : [];
@@ -157,8 +165,11 @@ const NeuralBotDashboard: React.FC = () => {
         ransHistory={ransHistory}
         ransThresholds={ransThresholds}
         ransWeightsAll={ransWeightsAll}
+        ransDiagnostics={ransDiagnostics}
+        ransKillSwitch={ransKillSwitch}
         onApplyRansThresholds={applyRansThresholds}
         onApplyRansWeights={applyRansWeights}
+        onToggleRansKillSwitch={toggleRansKillSwitch}
         alerts={{
           items: alerts.alerts,
           unread: alerts.unread,
