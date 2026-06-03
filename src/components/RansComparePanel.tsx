@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { runBacktest, type BacktestConfig, type BacktestResult } from '@/lib/backtest-engine';
 import { RANS_PARAMS } from '@/lib/rans-engine';
 import type { RANSPlan } from '@/lib/rans-engine';
@@ -9,6 +10,8 @@ import { toast } from 'sonner';
 interface Props {
   ransPlan: RANSPlan | null;
   initialCapital: number;
+  /** Bumping this key (e.g. via stringified thresholds/weights) auto-reruns when autoRerun is on. */
+  autoRerunKey?: string;
 }
 
 interface Row { label: string; baseline: BacktestResult; rans: BacktestResult; }
