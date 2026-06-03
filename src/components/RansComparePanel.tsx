@@ -23,10 +23,13 @@ interface Row { label: string; baseline: BacktestResult; rans: BacktestResult; }
  *   are scaled by the active regime's weights (β arbitrage drives more
  *   capital, γ temporal tightens stops).
  */
-const RansComparePanel: React.FC<Props> = ({ ransPlan, initialCapital }) => {
+const RansComparePanel: React.FC<Props> = ({ ransPlan, initialCapital, autoRerunKey }) => {
   const [row, setRow] = useState<Row | null>(null);
   const [running, setRunning] = useState(false);
   const [days, setDays] = useState(14);
+  const [autoRerun, setAutoRerun] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastKeyRef = useRef<string | undefined>(undefined);
 
   const run = () => {
     setRunning(true);
