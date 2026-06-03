@@ -1585,3 +1585,22 @@ export interface RansHistoryEntry {
   topArbMarket?: string;
   regimeChanged: boolean;
 }
+
+export interface RansDiagnostics {
+  integrationOk: boolean;
+  killSwitch: boolean;
+  uptimeMs: number;
+  tickCount: number;
+  lastLatencyMs: number;
+  avgLatencyMs: number;
+  maxLatencyMs: number;
+  signalDropouts: number;
+  dropoutRate: number;
+  arbActivations: number;
+  temporalActivations: number;
+  regimeChanges: number;
+  activationRate: number;
+  errors: number;
+  lastError: string;
+  lastErrorTs: number;
+}
