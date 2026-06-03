@@ -155,24 +155,7 @@ const RansPanel: React.FC<Props> = ({
 
       <RansDiagnosticsPanel dx={diagnostics} />
 
-  if (!plan) {
-    return (
-      <div className="space-y-3">
-        <p className="text-xs text-muted-foreground">
-          Start the bot to activate the RANS execution engine.
-        </p>
-        <div className="rounded border border-border bg-background/40 p-3 text-[11px] text-muted-foreground">
-          Once active, RANS will route realized arbitrage profit directly into bot P&L and dynamically reweight directional / arbitrage / temporal strategies based on the detected market regime.
-        </div>
-      </div>
-    );
-  }
 
-  const tone = regimeTone[plan.regime] ?? 'text-foreground border-border';
-  const w = plan.weights;
-
-  return (
-    <div className="space-y-4">
       {/* Header / regime */}
       <div className={`rounded-lg border px-4 py-3 ${tone}`}>
         <div className="flex items-center justify-between">
