@@ -73,7 +73,8 @@ const AppNavbar: React.FC<Props> = ({
   mlInsights, metrics, initialCapital, maxDrawdownLimit, dailyLossLimit,
   strategies, auditTick, alerts,
   ransPlan, ransCapital, ransRealized, ransHistory,
-  ransThresholds, ransWeightsAll, onApplyRansThresholds, onApplyRansWeights,
+  ransThresholds, ransWeightsAll, ransDiagnostics, ransKillSwitch,
+  onApplyRansThresholds, onApplyRansWeights, onToggleRansKillSwitch,
 }) => {
   const [sheet, setSheet] = useState<SheetKey>(null);
   const open = (k: SheetKey) => setSheet(k);
