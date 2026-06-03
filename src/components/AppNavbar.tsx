@@ -19,7 +19,7 @@ import BacktestPanel from './BacktestPanel';
 import SettingsAuditPanel from './SettingsAuditPanel';
 import RansPanel from './RansPanel';
 import type {
-  TradeSettings, MLInsights, BotMetrics, StrategyStatus, RansHistoryEntry,
+  TradeSettings, MLInsights, BotMetrics, StrategyStatus, RansHistoryEntry, RansDiagnostics,
 } from '@/lib/neural-bot-engine';
 import type { RANSPlan, MarketRegime, RegimeWeights, RansThresholds } from '@/lib/rans-engine';
 import type { AlertItem } from '@/hooks/useAlertsCenter';
