@@ -92,6 +92,33 @@ export interface RansThresholds {
   eventVolumeSpike: number;
   minArbConfidence: number;
 }
+
+// Guardrail bounds enforced when the dashboard pushes new values into the
+// running engine. Out-of-range or insane combinations get clamped so a stray
+// slider can never destabilise the live trade loop.
+export const RANS_GUARDRAILS = {
+  highVolatility: { min: 0.005, max: 0.2 },
+  lowVolatility: { min: 0.001, max: 0.05 },
+  momentumPersistence: { min: 0.3, max: 0.95 },
+  eventVolumeSpike: { min: 1.2, max: 10 },
+  minArbConfidence: { min: 0.1, max: 0.95 },
+  // Per-axis weight bounds — prevents a single regime axis from dominating.
+  weightMin: 0.05,
+  weightMax: 0.70,
+};
+
+// Kill switch — when true, RANS analyze() returns a neutral baseline plan
+// (mean_reverting, equal weights, NO realized arbitrage P&L applied).
+let RANS_KILL_SWITCH = false;
+export function isRansKillSwitchActive(): boolean { return RANS_KILL_SWITCH; }
+export function setRansKillSwitch(on: boolean): void { RANS_KILL_SWITCH = on; }
+
+function clampNum(v: number, lo: number, hi: number): { value: number; clamped: boolean } {
+  if (v < lo) return { value: lo, clamped: true };
+  if (v > hi) return { value: hi, clamped: true };
+  return { value: v, clamped: false };
+}
+
 export function getRansThresholds(): RansThresholds {
   return {
     highVolatility: RANS_PARAMS.HIGH_VOLATILITY_THRESHOLD,
@@ -101,17 +128,42 @@ export function getRansThresholds(): RansThresholds {
     minArbConfidence: RANS_PARAMS.MIN_ARB_CONFIDENCE,
   };
 }
-export function setRansThresholds(p: Partial<RansThresholds>) {
-  if (p.highVolatility != null) RANS_PARAMS.HIGH_VOLATILITY_THRESHOLD = p.highVolatility;
-  if (p.lowVolatility != null) RANS_PARAMS.LOW_VOLATILITY_THRESHOLD = p.lowVolatility;
-  if (p.momentumPersistence != null) RANS_PARAMS.MOMENTUM_PERSISTENCE_THRESHOLD = p.momentumPersistence;
-  if (p.eventVolumeSpike != null) RANS_PARAMS.EVENT_VOLUME_SPIKE_THRESHOLD = p.eventVolumeSpike;
-  if (p.minArbConfidence != null) RANS_PARAMS.MIN_ARB_CONFIDENCE = p.minArbConfidence;
+
+export interface RansApplyResult { clampedFields: string[]; }
+
+export function setRansThresholds(p: Partial<RansThresholds>): RansApplyResult {
+  const clamped: string[] = [];
+  const apply = (key: 'highVolatility'|'lowVolatility'|'momentumPersistence'|'eventVolumeSpike'|'minArbConfidence', v: number): number => {
+    const g = RANS_GUARDRAILS[key];
+    const r = clampNum(v, g.min, g.max);
+    if (r.clamped) clamped.push(key);
+    return r.value;
+  };
+  if (p.highVolatility != null) RANS_PARAMS.HIGH_VOLATILITY_THRESHOLD = apply('highVolatility', p.highVolatility);
+  if (p.lowVolatility != null) RANS_PARAMS.LOW_VOLATILITY_THRESHOLD = apply('lowVolatility', p.lowVolatility);
+  if (p.momentumPersistence != null) RANS_PARAMS.MOMENTUM_PERSISTENCE_THRESHOLD = apply('momentumPersistence', p.momentumPersistence);
+  if (p.eventVolumeSpike != null) RANS_PARAMS.EVENT_VOLUME_SPIKE_THRESHOLD = apply('eventVolumeSpike', p.eventVolumeSpike);
+  if (p.minArbConfidence != null) RANS_PARAMS.MIN_ARB_CONFIDENCE = apply('minArbConfidence', p.minArbConfidence);
+  // Sanity: highVolatility MUST stay strictly above lowVolatility.
+  if (RANS_PARAMS.HIGH_VOLATILITY_THRESHOLD <= RANS_PARAMS.LOW_VOLATILITY_THRESHOLD) {
+    RANS_PARAMS.HIGH_VOLATILITY_THRESHOLD = RANS_PARAMS.LOW_VOLATILITY_THRESHOLD * 2.5;
+    clamped.push('highVolatility>lowVolatility');
+  }
+  return { clampedFields: clamped };
 }
-export function setRansWeights(regime: MarketRegime, w: Partial<RegimeWeights>) {
+
+export function setRansWeights(regime: MarketRegime, w: Partial<RegimeWeights>): RansApplyResult {
   const cur = RANS_PARAMS.WEIGHTS[regime];
   const next = { ...cur, ...w };
-  // Re-normalize so directional + arbitrage + temporal = 1
+  const clamped: string[] = [];
+  const cap = (v: number, label: string) => {
+    const r = clampNum(v, RANS_GUARDRAILS.weightMin, RANS_GUARDRAILS.weightMax);
+    if (r.clamped) clamped.push(label);
+    return r.value;
+  };
+  next.directional = cap(next.directional, 'α');
+  next.arbitrage = cap(next.arbitrage, 'β');
+  next.temporal = cap(next.temporal, 'γ');
   const sum = next.directional + next.arbitrage + next.temporal;
   if (sum > 0) {
     RANS_PARAMS.WEIGHTS[regime] = {
@@ -120,6 +172,7 @@ export function setRansWeights(regime: MarketRegime, w: Partial<RegimeWeights>) 
       temporal: next.temporal / sum,
     };
   }
+  return { clampedFields: clamped };
 }
 
 // -------- Regime detector --------
