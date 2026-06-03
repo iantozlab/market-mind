@@ -50,8 +50,11 @@ interface Props {
   ransHistory: RansHistoryEntry[];
   ransThresholds: RansThresholds;
   ransWeightsAll: Record<MarketRegime, RegimeWeights>;
+  ransDiagnostics: RansDiagnostics | null;
+  ransKillSwitch: boolean;
   onApplyRansThresholds: (p: Partial<RansThresholds>) => void;
   onApplyRansWeights: (regime: MarketRegime, w: Partial<RegimeWeights>) => void;
+  onToggleRansKillSwitch: (on: boolean) => void;
 
   alerts: {
     items: AlertItem[];
