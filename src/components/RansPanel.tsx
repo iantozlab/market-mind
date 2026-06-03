@@ -95,7 +95,66 @@ const exportPdf = (history: RansHistoryEntry[]) => {
 const RansPanel: React.FC<Props> = ({
   plan, capital, realized, history,
   thresholds, weightsAll, onApplyThresholds, onApplyWeights,
+  diagnostics, killSwitch, onToggleKillSwitch,
 }) => {
+  // Auto-rerun key for the comparison panel — recomputes whenever thresholds or any
+  // regime weights change so the user can see RANS vs baseline side-by-side immediately.
+  const autoRerunKey = JSON.stringify({ t: thresholds, w: weightsAll });
+
+  const KillSwitchBar = (
+    <div className={`rounded-lg border px-3 py-2 flex items-center justify-between ${
+      killSwitch ? 'border-destructive/50 bg-destructive/10' : 'border-border bg-background/40'
+    }`}>
+      <div className="flex items-center gap-2 min-w-0">
+        {killSwitch
+          ? <ShieldOff className="h-4 w-4 text-destructive shrink-0" />
+          : <ShieldCheck className="h-4 w-4 text-primary shrink-0" />}
+        <div className="min-w-0">
+          <div className={`text-[11px] font-display tracking-wide ${killSwitch ? 'text-destructive' : 'text-foreground'}`}>
+            {killSwitch ? 'KILL SWITCH ENGAGED — Baseline trading only' : 'RANS scaling active'}
+          </div>
+          <div className="text-[10px] text-muted-foreground truncate">
+            {killSwitch
+              ? 'Regime weighting + arbitrage capture disabled. Click to resume.'
+              : 'Auto-engages on critical alerts. Click to disable scaling immediately.'}
+          </div>
+        </div>
+      </div>
+      <Button
+        size="sm"
+        variant={killSwitch ? 'default' : 'destructive'}
+        className="h-7 px-2 text-xs font-display tracking-wide"
+        onClick={() => onToggleKillSwitch(!killSwitch)}
+      >
+        {killSwitch ? 'Resume RANS' : 'Kill RANS'}
+      </Button>
+    </div>
+  );
+
+  if (!plan) {
+    return (
+      <div className="space-y-3">
+        {KillSwitchBar}
+        <RansDiagnosticsPanel dx={diagnostics} />
+        <p className="text-xs text-muted-foreground">
+          Start the bot to activate the RANS execution engine.
+        </p>
+        <div className="rounded border border-border bg-background/40 p-3 text-[11px] text-muted-foreground">
+          Once active, RANS will route realized arbitrage profit directly into bot P&L and dynamically reweight directional / arbitrage / temporal strategies based on the detected market regime.
+        </div>
+      </div>
+    );
+  }
+
+  const tone = regimeTone[plan.regime] ?? 'text-foreground border-border';
+  const w = plan.weights;
+
+  return (
+    <div className="space-y-4">
+      {KillSwitchBar}
+
+      <RansDiagnosticsPanel dx={diagnostics} />
+
   if (!plan) {
     return (
       <div className="space-y-3">
