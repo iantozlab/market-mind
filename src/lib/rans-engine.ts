@@ -353,6 +353,24 @@ export class RANSExecutionEngine {
   constructor(capital: number) { this.capital = capital; }
 
   analyze(markets: Market[], trades: Trade[], directionalConfidence: number): RANSPlan {
+    if (RANS_KILL_SWITCH) {
+      // Baseline-only mode: no regime detection, no arbitrage capture, equal weights.
+      const plan: RANSPlan = {
+        regime: 'mean_reverting',
+        regimeConfidence: 0.5,
+        weights: { directional: 1/3, arbitrage: 1/3, temporal: 1/3 },
+        arbitrageSignals: [],
+        temporalWindows: [],
+        directionalConfidence,
+        expectedDailyReturn: 0,
+        realizedArbitrageProfit: 0,
+        avgArbConfidence: 0,
+        ts: Date.now(),
+      };
+      this.lastPlan = plan;
+      return plan;
+    }
+
     const { regime, confidence: regConf } = this.regimeDetector.detect(markets, trades);
     const weights = { ...RANS_PARAMS.WEIGHTS[regime] };
 
