@@ -4,7 +4,8 @@ import { MarketPsychologyEngine } from './market-psychology-engine';
 import {
   RANSExecutionEngine, type RANSPlan, type MarketRegime, type RegimeWeights,
   getRansThresholds, setRansThresholds, setRansWeights, RANS_PARAMS,
-  type RansThresholds,
+  setRansKillSwitch, isRansKillSwitchActive,
+  type RansThresholds, type RansApplyResult,
 } from './rans-engine';
 
 // ============================================
