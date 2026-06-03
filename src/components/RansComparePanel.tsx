@@ -121,6 +121,10 @@ const RansComparePanel: React.FC<Props> = ({ ransPlan, initialCapital, autoRerun
             className="h-7 w-16 text-xs bg-background border border-border rounded px-2 font-mono"
           />
           <span className="text-[10px] text-muted-foreground">days</span>
+          <div className="flex items-center gap-1.5 pl-2 border-l border-border ml-1">
+            <Switch checked={autoRerun} onCheckedChange={setAutoRerun} aria-label="Auto re-run on tuning change" />
+            <span className="text-[10px] text-muted-foreground">auto-rerun</span>
+          </div>
           <Button size="sm" onClick={run} disabled={running} className="h-7 px-2 text-xs font-display tracking-wide">
             {running ? 'Running…' : 'Run Comparison'}
           </Button>
