@@ -70,6 +70,8 @@ const NeuralBotDashboard: React.FC = () => {
     setRansCapital(botRef.current.getRANSCapital());
     setRansRealized(botRef.current.getRANSRealized());
     setRansHistory(botRef.current.getRansHistory());
+    setRansDiagnostics(botRef.current.getRansDiagnostics());
+    setRansKillSwitchState(botRef.current.isRansKillSwitch());
     setAnomalyHistory(prev => {
       const next = [...prev, { time: new Date().toLocaleTimeString(), score: m.anomalyScore * 100, threshold: 70 }];
       return next.slice(-30);
