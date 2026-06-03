@@ -1222,8 +1222,10 @@ export class UnifiedNeuralBot {
         }
 
         // === RANS — Regime-Adaptive Neural Scaling ===
+        const ransStart = (typeof performance !== 'undefined' ? performance.now() : Date.now());
         try {
           if (this.rans) {
+            if (!this.ransDx.startedAt) this.ransDx.startedAt = Date.now();
             const flatTrades: Trade[] = [];
             for (const arr of this.recentTrades.values()) flatTrades.push(...arr);
             const directionalConfidence = Math.max(0.3, Math.min(0.95,
@@ -1251,6 +1253,7 @@ export class UnifiedNeuralBot {
 
             // Regime change → log + alert
             if (this.lastRansRegime && this.lastRansRegime !== plan.regime) {
+              this.ransDx.regimeChanges += 1;
               const msg = `${this.lastRansRegime.replace('_', ' ').toUpperCase()} → ${plan.regime.replace('_', ' ').toUpperCase()}`;
               this.addLog(`🌀 RANS REGIME CHANGE: ${msg} · α${(plan.weights.directional * 100).toFixed(0)}/β${(plan.weights.arbitrage * 100).toFixed(0)}/γ${(plan.weights.temporal * 100).toFixed(0)}`, 'strategy');
               this.emitAlert({
@@ -1283,6 +1286,7 @@ export class UnifiedNeuralBot {
             this.psychology.updateStrategyPerformance('rans_regime', Math.random() < plan.regimeConfidence);
 
             if (plan.arbitrageSignals.length > 0) {
+              this.ransDx.arbActivations += plan.arbitrageSignals.length;
               const top = plan.arbitrageSignals[0];
               this.routeSignal(`rans_arb_${top.type.toLowerCase()}`, 'rans_arbitrage', top.confidence, {
                 type: top.type, profit: `${(top.profitGuaranteed * 100).toFixed(2)}%`, opportunities: plan.arbitrageSignals.length,
@@ -1292,12 +1296,14 @@ export class UnifiedNeuralBot {
                 this.addLog(`🔒 RANS ARB: ${plan.arbitrageSignals.length} ops · top ${top.type} ${(top.profitGuaranteed * 100).toFixed(2)}% on ${top.marketSlug?.slice(0, 24) ?? top.marketId.slice(0, 8)}`, 'strategy');
               }
             } else {
+              this.ransDx.signalDropouts += 1;
               this.routeSignal('rans_arb_scan', 'rans_arbitrage', 0.5, { opportunities: 0 });
               this.psychology.updateStrategyPerformance('rans_arbitrage', Math.random() < 0.5);
             }
 
             const tempActive = plan.temporalWindows.filter(w => w.phase === 'entry' || w.phase === 'exit');
             if (tempActive.length > 0) {
+              this.ransDx.temporalActivations += tempActive.length;
               const sample = tempActive[0];
               this.routeSignal(`rans_temporal_${sample.phase}`, 'rans_temporal', sample.confidence, {
                 phase: sample.phase, days: sample.daysToExpiry.toFixed(1), active: tempActive.length,
@@ -1308,7 +1314,8 @@ export class UnifiedNeuralBot {
               this.psychology.updateStrategyPerformance('rans_temporal', Math.random() < 0.4);
             }
 
-            // Apply realized arbitrage profit to bot P&L (RANS is a profit-driver)
+            // Apply realized arbitrage profit to bot P&L (RANS is a profit-driver).
+            // Kill switch causes analyze() to return 0 realized — this block is a no-op then.
             if (plan.realizedArbitrageProfit !== 0) {
               this.metrics.totalPnL += plan.realizedArbitrageProfit;
               this.metrics.dailyPnL += plan.realizedArbitrageProfit;
@@ -1316,8 +1323,20 @@ export class UnifiedNeuralBot {
             }
           }
         } catch (err) {
+          this.ransDx.errors += 1;
+          this.ransDx.lastError = String(err);
+          this.ransDx.lastErrorTs = Date.now();
           this.addLog(`RANS error: ${err}`, 'error');
+        } finally {
+          const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - ransStart;
+          this.ransDx.tickCount += 1;
+          this.ransDx.lastLatencyMs = elapsed;
+          if (elapsed > this.ransDx.maxLatencyMs) this.ransDx.maxLatencyMs = elapsed;
+          this.ransDx.avgLatencyMs = this.ransDx.avgLatencyMs === 0
+            ? elapsed
+            : this.ransDx.avgLatencyMs * 0.9 + elapsed * 0.1;
         }
+
 
 
         // === Baseline activation guarantee — keep all strategies alive ===
