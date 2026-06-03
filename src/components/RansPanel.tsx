@@ -272,7 +272,7 @@ const RansPanel: React.FC<Props> = ({
       </div>
 
       {/* Compare */}
-      <RansComparePanel ransPlan={plan} initialCapital={capital} />
+      <RansComparePanel ransPlan={plan} initialCapital={capital} autoRerunKey={autoRerunKey} />
 
       {/* Export */}
       <div className="rounded border border-border bg-background/40 p-3">
