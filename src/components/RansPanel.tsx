@@ -18,8 +18,11 @@ interface Props {
   history: RansHistoryEntry[];
   thresholds: RansThresholds;
   weightsAll: Record<MarketRegime, RegimeWeights>;
+  diagnostics: RansDiagnostics | null;
+  killSwitch: boolean;
   onApplyThresholds: (p: Partial<RansThresholds>) => void;
   onApplyWeights: (regime: MarketRegime, w: Partial<RegimeWeights>) => void;
+  onToggleKillSwitch: (on: boolean) => void;
 }
 
 const regimeTone: Record<string, string> = {
