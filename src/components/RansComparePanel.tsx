@@ -73,6 +73,16 @@ const RansComparePanel: React.FC<Props> = ({ ransPlan, initialCapital, autoRerun
     }, 30);
   };
 
+  // Auto re-run when thresholds/weights change (key changes), debounced.
+  useEffect(() => {
+    if (!autoRerun || !autoRerunKey || autoRerunKey === lastKeyRef.current) return;
+    lastKeyRef.current = autoRerunKey;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => { run(); }, 600);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRerun, autoRerunKey]);
+
   const exportCsv = () => {
     if (!row) return;
     downloadCSV(`rans-vs-baseline-${Date.now()}.csv`, [
