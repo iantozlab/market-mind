@@ -1,14 +1,15 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { Download, FileText } from 'lucide-react';
+import { Download, FileText, ShieldOff, ShieldCheck } from 'lucide-react';
 import { downloadCSV, downloadPDF } from '@/lib/exporters';
 import { toast } from 'sonner';
 import type { RANSPlan, MarketRegime, RegimeWeights, RansThresholds } from '@/lib/rans-engine';
 import { RANS_PARAMS } from '@/lib/rans-engine';
-import type { RansHistoryEntry } from '@/lib/neural-bot-engine';
+import type { RansHistoryEntry, RansDiagnostics } from '@/lib/neural-bot-engine';
 import RansControlsPanel from './RansControlsPanel';
 import RegimeTimelineChart from './RegimeTimelineChart';
 import RansComparePanel from './RansComparePanel';
+import RansDiagnosticsPanel from './RansDiagnosticsPanel';
 
 interface Props {
   plan: RANSPlan | null;
