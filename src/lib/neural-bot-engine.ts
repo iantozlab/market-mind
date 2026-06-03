@@ -822,6 +822,12 @@ export class UnifiedNeuralBot {
   setAlertSink(cb: typeof this.alertSink) { this.alertSink = cb; }
   private emitAlert(a: { severity: 'info' | 'warning' | 'critical'; title: string; detail?: string }) {
     try { this.alertSink?.(a); } catch { /* noop */ }
+    // Auto-engage RANS kill switch on critical alerts (excluding our own kill-switch alert).
+    if (a.severity === 'critical' && !isRansKillSwitchActive() && a.title !== 'RANS kill switch engaged') {
+      setRansKillSwitch(true);
+      this.addLog(`🛑 RANS auto kill switch — triggered by: ${a.title}`, 'warning');
+      try { this.alertSink?.({ severity: 'warning', title: 'RANS auto-killed', detail: `Triggered by: ${a.title}` }); } catch { /* noop */ }
+    }
   }
   getCooldownStatus(): CooldownStatus {
     const now = Date.now();
