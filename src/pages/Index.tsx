@@ -134,6 +134,10 @@ const NeuralBotDashboard: React.FC = () => {
     botRef.current?.setRansWeights(regime, w);
     setRansWeightsAll({ ...RANS_PARAMS.WEIGHTS } as Record<MarketRegime, RegimeWeights>);
   }, []);
+  const toggleRansKillSwitch = useCallback((on: boolean) => {
+    botRef.current?.setRansKillSwitch(on, on ? 'manual-dashboard' : 'manual-resume');
+    setRansKillSwitchState(on);
+  }, []);
 
   const selectedOrderBook = selectedMarket && botRef.current ? botRef.current.getOrderBook(selectedMarket.id) : null;
   const selectedTrades = selectedMarket && botRef.current ? botRef.current.getTrades(selectedMarket.id) : [];
