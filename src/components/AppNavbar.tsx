@@ -247,8 +247,11 @@ const AppNavbar: React.FC<Props> = ({
               history={ransHistory}
               thresholds={ransThresholds}
               weightsAll={ransWeightsAll}
+              diagnostics={ransDiagnostics}
+              killSwitch={ransKillSwitch}
               onApplyThresholds={onApplyRansThresholds}
               onApplyWeights={onApplyRansWeights}
+              onToggleKillSwitch={onToggleRansKillSwitch}
             />
           </div>
         </SheetContent>
