@@ -1687,6 +1687,9 @@ export interface RansHistoryEntry {
 export interface RansDiagnostics {
   integrationOk: boolean;
   killSwitch: boolean;
+  killSwitchReason: string;
+  killSwitchAt: number;
+  killSwitchMetrics: Record<string, number | string>;
   uptimeMs: number;
   tickCount: number;
   lastLatencyMs: number;
@@ -1701,4 +1704,8 @@ export interface RansDiagnostics {
   errors: number;
   lastError: string;
   lastErrorTs: number;
+  latencyHistory: { ts: number; latencyMs: number; tick: number }[];
+  activationHistory: { ts: number; rate: number; tick: number }[];
+  guardrailViolations: { ts: number; tick: number; source: 'thresholds' | 'weights'; regime?: MarketRegime; details: RansClampDetail[] }[];
 }
+
