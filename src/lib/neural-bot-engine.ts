@@ -758,7 +758,17 @@ export class UnifiedNeuralBot {
     lastError: '' as string,
     lastErrorTs: 0,
     startedAt: 0,
+    // Kill switch context (what tripped it).
+    killSwitchReason: '' as string,
+    killSwitchAt: 0,
+    killSwitchMetrics: {} as Record<string, number | string>,
+    // Rolling time-series for the dashboard (per-tick samples, capped).
+    latencyHistory: [] as { ts: number; latencyMs: number; tick: number }[],
+    activationHistory: [] as { ts: number; rate: number; tick: number }[],
+    // Recent guardrail violations (clamped α/β/γ + threshold details).
+    guardrailViolations: [] as { ts: number; tick: number; source: 'thresholds' | 'weights'; regime?: MarketRegime; details: RansClampDetail[] }[],
   };
+
 
 
   private simInterval: ReturnType<typeof setInterval> | null = null;
