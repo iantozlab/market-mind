@@ -129,13 +129,27 @@ export function getRansThresholds(): RansThresholds {
   };
 }
 
-export interface RansApplyResult { clampedFields: string[]; }
+export interface RansClampDetail {
+  field: string;
+  before: number;
+  after: number;
+  bounds: { min: number; max: number };
+  clamped: boolean;
+  normalized?: boolean;
+  regime?: MarketRegime;
+}
+export interface RansApplyResult {
+  clampedFields: string[];
+  details: RansClampDetail[];
+}
 
 export function setRansThresholds(p: Partial<RansThresholds>): RansApplyResult {
   const clamped: string[] = [];
+  const details: RansClampDetail[] = [];
   const apply = (key: 'highVolatility'|'lowVolatility'|'momentumPersistence'|'eventVolumeSpike'|'minArbConfidence', v: number): number => {
     const g = RANS_GUARDRAILS[key];
     const r = clampNum(v, g.min, g.max);
+    details.push({ field: key, before: v, after: r.value, bounds: { min: g.min, max: g.max }, clamped: r.clamped });
     if (r.clamped) clamped.push(key);
     return r.value;
   };
@@ -146,18 +160,22 @@ export function setRansThresholds(p: Partial<RansThresholds>): RansApplyResult {
   if (p.minArbConfidence != null) RANS_PARAMS.MIN_ARB_CONFIDENCE = apply('minArbConfidence', p.minArbConfidence);
   // Sanity: highVolatility MUST stay strictly above lowVolatility.
   if (RANS_PARAMS.HIGH_VOLATILITY_THRESHOLD <= RANS_PARAMS.LOW_VOLATILITY_THRESHOLD) {
+    const before = RANS_PARAMS.HIGH_VOLATILITY_THRESHOLD;
     RANS_PARAMS.HIGH_VOLATILITY_THRESHOLD = RANS_PARAMS.LOW_VOLATILITY_THRESHOLD * 2.5;
     clamped.push('highVolatility>lowVolatility');
+    details.push({ field: 'highVolatility>lowVolatility', before, after: RANS_PARAMS.HIGH_VOLATILITY_THRESHOLD, bounds: { min: RANS_PARAMS.LOW_VOLATILITY_THRESHOLD, max: Number.POSITIVE_INFINITY }, clamped: true });
   }
-  return { clampedFields: clamped };
+  return { clampedFields: clamped, details };
 }
 
 export function setRansWeights(regime: MarketRegime, w: Partial<RegimeWeights>): RansApplyResult {
   const cur = RANS_PARAMS.WEIGHTS[regime];
   const next = { ...cur, ...w };
   const clamped: string[] = [];
+  const details: RansClampDetail[] = [];
   const cap = (v: number, label: string) => {
     const r = clampNum(v, RANS_GUARDRAILS.weightMin, RANS_GUARDRAILS.weightMax);
+    details.push({ field: label, before: v, after: r.value, bounds: { min: RANS_GUARDRAILS.weightMin, max: RANS_GUARDRAILS.weightMax }, clamped: r.clamped, regime });
     if (r.clamped) clamped.push(label);
     return r.value;
   };
@@ -166,13 +184,19 @@ export function setRansWeights(regime: MarketRegime, w: Partial<RegimeWeights>):
   next.temporal = cap(next.temporal, 'γ');
   const sum = next.directional + next.arbitrage + next.temporal;
   if (sum > 0) {
-    RANS_PARAMS.WEIGHTS[regime] = {
+    const norm = {
       directional: next.directional / sum,
       arbitrage: next.arbitrage / sum,
       temporal: next.temporal / sum,
     };
+    RANS_PARAMS.WEIGHTS[regime] = norm;
+    const map: Array<['α'|'β'|'γ', keyof RegimeWeights]> = [['α','directional'],['β','arbitrage'],['γ','temporal']];
+    for (const [lab, key] of map) {
+      const d = details.find(x => x.field === lab);
+      if (d) { d.normalized = true; d.after = norm[key]; }
+    }
   }
-  return { clampedFields: clamped };
+  return { clampedFields: clamped, details };
 }
 
 // -------- Regime detector --------
