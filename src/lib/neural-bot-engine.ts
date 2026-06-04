@@ -836,11 +836,18 @@ export class UnifiedNeuralBot {
     try { this.alertSink?.(a); } catch { /* noop */ }
     // Auto-engage RANS kill switch on critical alerts (excluding our own kill-switch alert).
     if (a.severity === 'critical' && !isRansKillSwitchActive() && a.title !== 'RANS kill switch engaged') {
-      setRansKillSwitch(true);
-      this.addLog(`🛑 RANS auto kill switch — triggered by: ${a.title}`, 'warning');
+      const metrics: Record<string, number | string> = {
+        dailyPnL: Number(this.metrics.dailyPnL?.toFixed?.(2) ?? this.metrics.dailyPnL ?? 0),
+        maxDrawdown: Number((this.metrics.maxDrawdown ?? 0).toFixed(4)),
+        winRate: Number((this.metrics.winRate ?? 0).toFixed(4)),
+        tick: this.tickCount,
+        alertDetail: a.detail ?? '',
+      };
+      this.engageKillSwitchInternal(`auto:${a.title}`, metrics);
       try { this.alertSink?.({ severity: 'warning', title: 'RANS auto-killed', detail: `Triggered by: ${a.title}` }); } catch { /* noop */ }
     }
   }
+
   getCooldownStatus(): CooldownStatus {
     const now = Date.now();
     const remaining = Math.max(0, this.cooldownUntil - now);
