@@ -41,6 +41,30 @@ export type Database = {
         }
         Relationships: []
       }
+      rans_diagnostic_events: {
+        Row: {
+          created_at: string
+          detail: Json
+          event_type: string
+          id: string
+          severity: string
+        }
+        Insert: {
+          created_at?: string
+          detail?: Json
+          event_type: string
+          id?: string
+          severity?: string
+        }
+        Update: {
+          created_at?: string
+          detail?: Json
+          event_type?: string
+          id?: string
+          severity?: string
+        }
+        Relationships: []
+      }
       trade_settings_audit: {
         Row: {
           actor: string
