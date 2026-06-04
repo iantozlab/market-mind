@@ -5,8 +5,10 @@ import {
   RANSExecutionEngine, type RANSPlan, type MarketRegime, type RegimeWeights,
   getRansThresholds, setRansThresholds, setRansWeights, RANS_PARAMS,
   setRansKillSwitch, isRansKillSwitchActive,
-  type RansThresholds, type RansApplyResult,
+  type RansThresholds, type RansApplyResult, type RansClampDetail,
 } from './rans-engine';
+import { recordRansDiagEvent } from './rans-diag-events';
+
 
 // ============================================
 // ENVIRONMENT VARIABLES (Lovable Secrets / Vite env)
