@@ -1276,7 +1276,7 @@ export class UnifiedNeuralBot {
             });
             if (this.ransHistory.length > 500) this.ransHistory.shift();
 
-            // Regime change → log + alert
+            // Regime change → log + alert + persist
             if (this.lastRansRegime && this.lastRansRegime !== plan.regime) {
               this.ransDx.regimeChanges += 1;
               const msg = `${this.lastRansRegime.replace('_', ' ').toUpperCase()} → ${plan.regime.replace('_', ' ').toUpperCase()}`;
@@ -1285,6 +1285,17 @@ export class UnifiedNeuralBot {
                 severity: 'info',
                 title: `RANS regime change`,
                 detail: `${msg} (conf ${(plan.regimeConfidence * 100).toFixed(0)}%)`,
+              });
+              recordRansDiagEvent({
+                event_type: 'regime_change',
+                severity: 'info',
+                detail: {
+                  from: this.lastRansRegime,
+                  to: plan.regime,
+                  confidence: plan.regimeConfidence,
+                  weights: plan.weights,
+                  tick: this.tickCount,
+                },
               });
             }
             this.lastRansRegime = plan.regime;
@@ -1324,7 +1335,21 @@ export class UnifiedNeuralBot {
               this.ransDx.signalDropouts += 1;
               this.routeSignal('rans_arb_scan', 'rans_arbitrage', 0.5, { opportunities: 0 });
               this.psychology.updateStrategyPerformance('rans_arbitrage', Math.random() < 0.5);
+              // Persist signal dropouts every 5th occurrence to avoid spam.
+              if (this.ransDx.signalDropouts % 5 === 0) {
+                recordRansDiagEvent({
+                  event_type: 'signal_dropout',
+                  severity: 'warning',
+                  detail: {
+                    cumulative: this.ransDx.signalDropouts,
+                    dropoutRate: this.ransDx.tickCount > 0 ? this.ransDx.signalDropouts / this.ransDx.tickCount : 0,
+                    tick: this.tickCount,
+                    regime: plan.regime,
+                  },
+                });
+              }
             }
+
 
             const tempActive = plan.temporalWindows.filter(w => w.phase === 'entry' || w.phase === 'exit');
             if (tempActive.length > 0) {
