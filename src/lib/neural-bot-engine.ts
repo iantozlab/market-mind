@@ -1385,7 +1385,17 @@ export class UnifiedNeuralBot {
           this.ransDx.avgLatencyMs = this.ransDx.avgLatencyMs === 0
             ? elapsed
             : this.ransDx.avgLatencyMs * 0.9 + elapsed * 0.1;
+          // Per-tick rolling samples for live charts (cap 180).
+          const now = Date.now();
+          this.ransDx.latencyHistory.push({ ts: now, latencyMs: elapsed, tick: this.ransDx.tickCount });
+          const arRate = this.ransDx.tickCount > 0
+            ? (this.ransDx.arbActivations + this.ransDx.temporalActivations) / this.ransDx.tickCount
+            : 0;
+          this.ransDx.activationHistory.push({ ts: now, rate: arRate, tick: this.ransDx.tickCount });
+          if (this.ransDx.latencyHistory.length > 180) this.ransDx.latencyHistory.shift();
+          if (this.ransDx.activationHistory.length > 180) this.ransDx.activationHistory.shift();
         }
+
 
 
 
