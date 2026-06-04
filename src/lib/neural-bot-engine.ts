@@ -5,8 +5,10 @@ import {
   RANSExecutionEngine, type RANSPlan, type MarketRegime, type RegimeWeights,
   getRansThresholds, setRansThresholds, setRansWeights, RANS_PARAMS,
   setRansKillSwitch, isRansKillSwitchActive,
-  type RansThresholds, type RansApplyResult,
+  type RansThresholds, type RansApplyResult, type RansClampDetail,
 } from './rans-engine';
+import { recordRansDiagEvent } from './rans-diag-events';
+
 
 // ============================================
 // ENVIRONMENT VARIABLES (Lovable Secrets / Vite env)
@@ -756,7 +758,17 @@ export class UnifiedNeuralBot {
     lastError: '' as string,
     lastErrorTs: 0,
     startedAt: 0,
+    // Kill switch context (what tripped it).
+    killSwitchReason: '' as string,
+    killSwitchAt: 0,
+    killSwitchMetrics: {} as Record<string, number | string>,
+    // Rolling time-series for the dashboard (per-tick samples, capped).
+    latencyHistory: [] as { ts: number; latencyMs: number; tick: number }[],
+    activationHistory: [] as { ts: number; rate: number; tick: number }[],
+    // Recent guardrail violations (clamped α/β/γ + threshold details).
+    guardrailViolations: [] as { ts: number; tick: number; source: 'thresholds' | 'weights'; regime?: MarketRegime; details: RansClampDetail[] }[],
   };
+
 
 
   private simInterval: ReturnType<typeof setInterval> | null = null;
@@ -824,11 +836,18 @@ export class UnifiedNeuralBot {
     try { this.alertSink?.(a); } catch { /* noop */ }
     // Auto-engage RANS kill switch on critical alerts (excluding our own kill-switch alert).
     if (a.severity === 'critical' && !isRansKillSwitchActive() && a.title !== 'RANS kill switch engaged') {
-      setRansKillSwitch(true);
-      this.addLog(`🛑 RANS auto kill switch — triggered by: ${a.title}`, 'warning');
+      const metrics: Record<string, number | string> = {
+        dailyPnL: Number(this.metrics.dailyPnL?.toFixed?.(2) ?? this.metrics.dailyPnL ?? 0),
+        maxDrawdown: Number((this.metrics.maxDrawdown ?? 0).toFixed(4)),
+        winRate: Number((this.metrics.winRate ?? 0).toFixed(4)),
+        tick: this.tickCount,
+        alertDetail: a.detail ?? '',
+      };
+      this.engageKillSwitchInternal(`auto:${a.title}`, metrics);
       try { this.alertSink?.({ severity: 'warning', title: 'RANS auto-killed', detail: `Triggered by: ${a.title}` }); } catch { /* noop */ }
     }
   }
+
   getCooldownStatus(): CooldownStatus {
     const now = Date.now();
     const remaining = Math.max(0, this.cooldownUntil - now);
@@ -1257,7 +1276,7 @@ export class UnifiedNeuralBot {
             });
             if (this.ransHistory.length > 500) this.ransHistory.shift();
 
-            // Regime change → log + alert
+            // Regime change → log + alert + persist
             if (this.lastRansRegime && this.lastRansRegime !== plan.regime) {
               this.ransDx.regimeChanges += 1;
               const msg = `${this.lastRansRegime.replace('_', ' ').toUpperCase()} → ${plan.regime.replace('_', ' ').toUpperCase()}`;
@@ -1266,6 +1285,17 @@ export class UnifiedNeuralBot {
                 severity: 'info',
                 title: `RANS regime change`,
                 detail: `${msg} (conf ${(plan.regimeConfidence * 100).toFixed(0)}%)`,
+              });
+              recordRansDiagEvent({
+                event_type: 'regime_change',
+                severity: 'info',
+                detail: {
+                  from: this.lastRansRegime,
+                  to: plan.regime,
+                  confidence: plan.regimeConfidence,
+                  weights: plan.weights,
+                  tick: this.tickCount,
+                },
               });
             }
             this.lastRansRegime = plan.regime;
@@ -1305,7 +1335,21 @@ export class UnifiedNeuralBot {
               this.ransDx.signalDropouts += 1;
               this.routeSignal('rans_arb_scan', 'rans_arbitrage', 0.5, { opportunities: 0 });
               this.psychology.updateStrategyPerformance('rans_arbitrage', Math.random() < 0.5);
+              // Persist signal dropouts every 5th occurrence to avoid spam.
+              if (this.ransDx.signalDropouts % 5 === 0) {
+                recordRansDiagEvent({
+                  event_type: 'signal_dropout',
+                  severity: 'warning',
+                  detail: {
+                    cumulative: this.ransDx.signalDropouts,
+                    dropoutRate: this.ransDx.tickCount > 0 ? this.ransDx.signalDropouts / this.ransDx.tickCount : 0,
+                    tick: this.tickCount,
+                    regime: plan.regime,
+                  },
+                });
+              }
             }
+
 
             const tempActive = plan.temporalWindows.filter(w => w.phase === 'entry' || w.phase === 'exit');
             if (tempActive.length > 0) {
@@ -1341,7 +1385,17 @@ export class UnifiedNeuralBot {
           this.ransDx.avgLatencyMs = this.ransDx.avgLatencyMs === 0
             ? elapsed
             : this.ransDx.avgLatencyMs * 0.9 + elapsed * 0.1;
+          // Per-tick rolling samples for live charts (cap 180).
+          const now = Date.now();
+          this.ransDx.latencyHistory.push({ ts: now, latencyMs: elapsed, tick: this.ransDx.tickCount });
+          const arRate = this.ransDx.tickCount > 0
+            ? (this.ransDx.arbActivations + this.ransDx.temporalActivations) / this.ransDx.tickCount
+            : 0;
+          this.ransDx.activationHistory.push({ ts: now, rate: arRate, tick: this.ransDx.tickCount });
+          if (this.ransDx.latencyHistory.length > 180) this.ransDx.latencyHistory.shift();
+          if (this.ransDx.activationHistory.length > 180) this.ransDx.activationHistory.shift();
         }
+
 
 
 
@@ -1411,6 +1465,7 @@ export class UnifiedNeuralBot {
   getRansThresholds(): RansThresholds { return getRansThresholds(); }
   setRansThresholds(p: Partial<RansThresholds>): RansApplyResult {
     const result = setRansThresholds(p);
+    this.recordGuardrailResult('thresholds', undefined, result);
     if (result.clampedFields.length > 0) {
       this.addLog(`⚙️ RANS thresholds applied — clamped: ${result.clampedFields.join(', ')}`, 'warning');
       this.emitAlert({ severity: 'warning', title: 'RANS guardrail clamped', detail: `Fields: ${result.clampedFields.join(', ')}` });
@@ -1421,6 +1476,7 @@ export class UnifiedNeuralBot {
   }
   setRansWeights(regime: MarketRegime, w: Partial<RegimeWeights>): RansApplyResult {
     const result = setRansWeights(regime, w);
+    this.recordGuardrailResult('weights', regime, result);
     if (result.clampedFields.length > 0) {
       this.addLog(`⚙️ RANS weights applied for ${regime} — clamped: ${result.clampedFields.join(', ')}`, 'warning');
       this.emitAlert({ severity: 'warning', title: 'RANS weight clamped', detail: `${regime}: ${result.clampedFields.join(', ')}` });
@@ -1429,21 +1485,56 @@ export class UnifiedNeuralBot {
     }
     return result;
   }
+  private recordGuardrailResult(source: 'thresholds' | 'weights', regime: MarketRegime | undefined, result: RansApplyResult) {
+    const ts = Date.now();
+    this.ransDx.guardrailViolations.unshift({ ts, tick: this.ransDx.tickCount, source, regime, details: result.details });
+    if (this.ransDx.guardrailViolations.length > 100) this.ransDx.guardrailViolations.pop();
+    if (result.clampedFields.length > 0) {
+      recordRansDiagEvent({
+        event_type: 'guardrail_clamp',
+        severity: 'warning',
+        detail: { source, regime, tick: this.ransDx.tickCount, clampedFields: result.clampedFields, details: result.details },
+      });
+    }
+  }
   getRansWeightsAll(): Record<MarketRegime, RegimeWeights> {
     return { ...RANS_PARAMS.WEIGHTS } as Record<MarketRegime, RegimeWeights>;
   }
+  getRansGuardrailViolations() { return [...this.ransDx.guardrailViolations]; }
 
   // -------- RANS kill switch + diagnostics --------
   isRansKillSwitch(): boolean { return isRansKillSwitchActive(); }
   setRansKillSwitch(on: boolean, reason = 'manual') {
-    setRansKillSwitch(on);
     if (on) {
-      this.addLog(`🛑 RANS KILL SWITCH ENGAGED (${reason}) — baseline trading only`, 'warning');
-      this.emitAlert({ severity: 'critical', title: 'RANS kill switch engaged', detail: reason });
+      const metrics: Record<string, number | string> = {
+        dailyPnL: Number((this.metrics.dailyPnL ?? 0).toFixed(2)),
+        maxDrawdown: Number((this.metrics.maxDrawdown ?? 0).toFixed(4)),
+        winRate: Number((this.metrics.winRate ?? 0).toFixed(4)),
+        tick: this.tickCount,
+      };
+      this.engageKillSwitchInternal(reason, metrics);
     } else {
+      setRansKillSwitch(false);
+      this.ransDx.killSwitchReason = '';
+      this.ransDx.killSwitchAt = 0;
+      this.ransDx.killSwitchMetrics = {};
       this.addLog(`✅ RANS RESUMED — scaling re-enabled`, 'info');
       this.emitAlert({ severity: 'info', title: 'RANS resumed', detail: 'Regime scaling re-enabled' });
+      recordRansDiagEvent({ event_type: 'kill_switch_resume', severity: 'info', detail: { reason } });
     }
+  }
+  private engageKillSwitchInternal(reason: string, metrics: Record<string, number | string>) {
+    setRansKillSwitch(true);
+    this.ransDx.killSwitchReason = reason;
+    this.ransDx.killSwitchAt = Date.now();
+    this.ransDx.killSwitchMetrics = metrics;
+    this.addLog(`🛑 RANS KILL SWITCH ENGAGED (${reason}) — baseline trading only`, 'warning');
+    try { this.alertSink?.({ severity: 'critical', title: 'RANS kill switch engaged', detail: reason }); } catch { /* noop */ }
+    recordRansDiagEvent({
+      event_type: 'kill_switch',
+      severity: 'critical',
+      detail: { reason, metrics, at: this.ransDx.killSwitchAt },
+    });
   }
   getRansDiagnostics(): RansDiagnostics {
     const uptimeMs = this.ransDx.startedAt ? Date.now() - this.ransDx.startedAt : 0;
@@ -1456,6 +1547,9 @@ export class UnifiedNeuralBot {
     return {
       integrationOk: !!this.rans,
       killSwitch: isRansKillSwitchActive(),
+      killSwitchReason: this.ransDx.killSwitchReason,
+      killSwitchAt: this.ransDx.killSwitchAt,
+      killSwitchMetrics: { ...this.ransDx.killSwitchMetrics },
       uptimeMs,
       tickCount: this.ransDx.tickCount,
       lastLatencyMs: this.ransDx.lastLatencyMs,
@@ -1470,8 +1564,12 @@ export class UnifiedNeuralBot {
       errors: this.ransDx.errors,
       lastError: this.ransDx.lastError,
       lastErrorTs: this.ransDx.lastErrorTs,
+      latencyHistory: [...this.ransDx.latencyHistory],
+      activationHistory: [...this.ransDx.activationHistory],
+      guardrailViolations: [...this.ransDx.guardrailViolations],
     };
   }
+
 
 
   // -------- Trade Settings (live-tunable) --------
@@ -1589,6 +1687,9 @@ export interface RansHistoryEntry {
 export interface RansDiagnostics {
   integrationOk: boolean;
   killSwitch: boolean;
+  killSwitchReason: string;
+  killSwitchAt: number;
+  killSwitchMetrics: Record<string, number | string>;
   uptimeMs: number;
   tickCount: number;
   lastLatencyMs: number;
@@ -1603,4 +1704,8 @@ export interface RansDiagnostics {
   errors: number;
   lastError: string;
   lastErrorTs: number;
+  latencyHistory: { ts: number; latencyMs: number; tick: number }[];
+  activationHistory: { ts: number; rate: number; tick: number }[];
+  guardrailViolations: { ts: number; tick: number; source: 'thresholds' | 'weights'; regime?: MarketRegime; details: RansClampDetail[] }[];
 }
+

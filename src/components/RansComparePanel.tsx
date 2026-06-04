@@ -126,8 +126,9 @@ const RansComparePanel: React.FC<Props> = ({ ransPlan, initialCapital, autoRerun
             <span className="text-[10px] text-muted-foreground">auto-rerun</span>
           </div>
           <Button size="sm" onClick={run} disabled={running} className="h-7 px-2 text-xs font-display tracking-wide">
-            {running ? 'Running…' : 'Run Comparison'}
+            {running ? 'Running…' : 'Run RANS vs Baseline Now'}
           </Button>
+
           {row && (
             <Button size="sm" variant="outline" onClick={exportCsv} className="h-7 px-2 text-xs">CSV</Button>
           )}
