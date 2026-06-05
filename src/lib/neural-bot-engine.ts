@@ -1485,6 +1485,8 @@ export class UnifiedNeuralBot {
     }
     return result;
   }
+  private guardrailBurstWindow: number[] = [];
+  private lastGuardrailBurstAt = 0;
   private recordGuardrailResult(source: 'thresholds' | 'weights', regime: MarketRegime | undefined, result: RansApplyResult) {
     const ts = Date.now();
     this.ransDx.guardrailViolations.unshift({ ts, tick: this.ransDx.tickCount, source, regime, details: result.details });
@@ -1495,6 +1497,26 @@ export class UnifiedNeuralBot {
         severity: 'warning',
         detail: { source, regime, tick: this.ransDx.tickCount, clampedFields: result.clampedFields, details: result.details },
       });
+      // Burst detection: ≥3 clamps in 10s triggers a single burst notification
+      // (throttled to one per 30s) so external webhooks aren't flooded.
+      const WINDOW = 10_000;
+      this.guardrailBurstWindow.push(ts);
+      this.guardrailBurstWindow = this.guardrailBurstWindow.filter(t => ts - t <= WINDOW);
+      if (this.guardrailBurstWindow.length >= 3 && ts - this.lastGuardrailBurstAt > 30_000) {
+        this.lastGuardrailBurstAt = ts;
+        recordRansDiagEvent({
+          event_type: 'guardrail_burst',
+          severity: 'warning',
+          detail: {
+            count: this.guardrailBurstWindow.length,
+            windowMs: WINDOW,
+            source, regime,
+            tick: this.ransDx.tickCount,
+            lastClampedFields: result.clampedFields,
+          },
+        });
+        try { this.alertSink?.({ severity: 'warning', title: 'RANS guardrail clamp burst', detail: `${this.guardrailBurstWindow.length} clamps in ${WINDOW / 1000}s` }); } catch { /* noop */ }
+      }
     }
   }
   getRansWeightsAll(): Record<MarketRegime, RegimeWeights> {
