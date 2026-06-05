@@ -4,6 +4,7 @@ import { Switch } from '@/components/ui/switch';
 import { runBacktest, type BacktestConfig, type BacktestResult } from '@/lib/backtest-engine';
 import { RANS_PARAMS } from '@/lib/rans-engine';
 import type { RANSPlan } from '@/lib/rans-engine';
+import type { RansDiagnostics } from '@/lib/neural-bot-engine';
 import { downloadCSV } from '@/lib/exporters';
 import { toast } from 'sonner';
 
@@ -12,6 +13,8 @@ interface Props {
   initialCapital: number;
   /** Bumping this key (e.g. via stringified thresholds/weights) auto-reruns when autoRerun is on. */
   autoRerunKey?: string;
+  /** Optional live diagnostics linked into the diff view (avg latency, dropouts, kill switch). */
+  diagnostics?: RansDiagnostics | null;
 }
 
 interface Row { label: string; baseline: BacktestResult; rans: BacktestResult; }
