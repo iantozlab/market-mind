@@ -4,6 +4,7 @@ import { Switch } from '@/components/ui/switch';
 import { runBacktest, type BacktestConfig, type BacktestResult } from '@/lib/backtest-engine';
 import { RANS_PARAMS } from '@/lib/rans-engine';
 import type { RANSPlan } from '@/lib/rans-engine';
+import type { RansDiagnostics } from '@/lib/neural-bot-engine';
 import { downloadCSV } from '@/lib/exporters';
 import { toast } from 'sonner';
 
@@ -12,6 +13,8 @@ interface Props {
   initialCapital: number;
   /** Bumping this key (e.g. via stringified thresholds/weights) auto-reruns when autoRerun is on. */
   autoRerunKey?: string;
+  /** Optional live diagnostics linked into the diff view (avg latency, dropouts, kill switch). */
+  diagnostics?: RansDiagnostics | null;
 }
 
 interface Row { label: string; baseline: BacktestResult; rans: BacktestResult; }
@@ -23,7 +26,7 @@ interface Row { label: string; baseline: BacktestResult; rans: BacktestResult; }
  *   are scaled by the active regime's weights (β arbitrage drives more
  *   capital, γ temporal tightens stops).
  */
-const RansComparePanel: React.FC<Props> = ({ ransPlan, initialCapital, autoRerunKey }) => {
+const RansComparePanel: React.FC<Props> = ({ ransPlan, initialCapital, autoRerunKey, diagnostics }) => {
   const [row, setRow] = useState<Row | null>(null);
   const [running, setRunning] = useState(false);
   const [days, setDays] = useState(14);
@@ -168,6 +171,57 @@ const RansComparePanel: React.FC<Props> = ({ ransPlan, initialCapital, autoRerun
               </tr>
             </tbody>
           </table>
+
+          {/* Side-by-side diff summary: PnL, Drawdown, Hit Rate, Fees */}
+          {(() => {
+            const pnlB = row.baseline.endEquity - initialCapital;
+            const pnlR = row.rans.endEquity - initialCapital;
+            // Fees are estimated as totalTrades × initialCapital × 0.05% (Polymarket maker/taker proxy).
+            const feeRate = 0.0005;
+            const feesB = row.baseline.totalTrades * initialCapital * feeRate;
+            const feesR = row.rans.totalTrades * initialCapital * feeRate;
+            const Card = ({ label, base, rans, fmt, higherBetter = true }: { label: string; base: number; rans: number; fmt: (n: number) => string; higherBetter?: boolean }) => {
+              const delta = rans - base;
+              const better = higherBetter ? delta > 0 : delta < 0;
+              return (
+                <div className="rounded border border-border bg-background/60 p-2">
+                  <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{label}</div>
+                  <div className="grid grid-cols-2 gap-1 mt-1 text-xs font-mono">
+                    <div><span className="text-muted-foreground">B</span> {fmt(base)}</div>
+                    <div className={better ? 'text-primary' : 'text-destructive'}><span className="text-muted-foreground">R</span> {fmt(rans)}</div>
+                  </div>
+                  <div className={`text-[10px] mt-0.5 font-mono ${better ? 'text-primary' : 'text-destructive'}`}>
+                    Δ {delta >= 0 ? '+' : ''}{fmt(delta)}
+                  </div>
+                </div>
+              );
+            };
+            return (
+              <div className="mt-3 space-y-2">
+                <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Latest Run · Side-by-Side Diff</div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  <Card label="PnL ($)" base={pnlB} rans={pnlR} fmt={(n) => `$${n.toFixed(2)}`} />
+                  <Card label="Max Drawdown" base={row.baseline.maxDrawdownPct} rans={row.rans.maxDrawdownPct} fmt={(n) => `${n.toFixed(2)}%`} higherBetter={false} />
+                  <Card label="Hit Rate" base={row.baseline.winRate * 100} rans={row.rans.winRate * 100} fmt={(n) => `${n.toFixed(1)}%`} />
+                  <Card label="Est. Fees" base={feesB} rans={feesR} fmt={(n) => `$${n.toFixed(2)}`} higherBetter={false} />
+                </div>
+                {diagnostics && (
+                  <div className="rounded border border-border bg-background/40 p-2 text-[11px]">
+                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Linked Diagnostics — influenced this run</div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 font-mono text-xs">
+                      <div><span className="text-muted-foreground">Avg latency</span> <span className={diagnostics.avgLatencyMs > 20 ? 'text-warning' : 'text-primary'}>{diagnostics.avgLatencyMs.toFixed(1)}ms</span></div>
+                      <div><span className="text-muted-foreground">Dropouts</span> <span className={diagnostics.dropoutRate > 0.25 ? 'text-warning' : 'text-foreground'}>{(diagnostics.dropoutRate * 100).toFixed(1)}%</span></div>
+                      <div><span className="text-muted-foreground">Regime Δ</span> {diagnostics.regimeChanges}</div>
+                      <div><span className="text-muted-foreground">Kill switch</span> <span className={diagnostics.killSwitch ? 'text-destructive' : 'text-primary'}>{diagnostics.killSwitch ? 'ENGAGED' : 'off'}</span></div>
+                    </div>
+                    {diagnostics.killSwitch && diagnostics.killSwitchReason && (
+                      <div className="mt-1 text-[10px] font-mono text-destructive break-all">↳ {diagnostics.killSwitchReason}</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       ) : (
         <p className="text-xs text-muted-foreground">Run a comparison to benchmark RANS weights vs a vanilla baseline over the same backtest window.</p>
