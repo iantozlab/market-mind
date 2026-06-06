@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Download, AlertOctagon, ShieldAlert, Clock, RefreshCw, Bell, Search, ChevronLeft, ChevronRight, Play } from 'lucide-react';
+import { Download, AlertOctagon, ShieldAlert, Clock, RefreshCw, Bell, Search, ChevronLeft, ChevronRight, Play, Link2, FileJson, FlaskConical } from 'lucide-react';
 import { downloadCSV } from '@/lib/exporters';
 import { toast } from 'sonner';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
 import type { RansDiagnostics } from '@/lib/neural-bot-engine';
 import {
   queryRansDiagEvents, countRansDiagEvents,
-  getNotifySettings, setNotifySettings,
+  getNotifySettings, setNotifySettings, recordRansDiagEvent, notifyExternal,
   type RansDiagEvent, type RansDiagEventType, type NotifySettings,
 } from '@/lib/rans-diag-events';
 
