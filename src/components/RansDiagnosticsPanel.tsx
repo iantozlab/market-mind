@@ -366,7 +366,7 @@ const RansDiagnosticsPanel: React.FC<Props> = ({ dx }) => {
               onChange={(e) => setNotify(n => ({ ...n, email: e.target.value }))}
               className="flex-1 min-w-[180px] h-7 bg-background border border-border rounded px-2 font-mono text-[11px]"
             />
-            <Button size="sm" onClick={saveNotify} className="h-7 text-xs">Save</Button>
+            <Button size="sm" onClick={() => { setNotifySettings(notify); setNotifyOpen(false); toast.success('Notification hooks updated'); }} className="h-7 text-xs">Save</Button>
           </div>
         </div>
       )}
