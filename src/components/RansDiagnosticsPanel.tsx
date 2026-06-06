@@ -47,7 +47,10 @@ const RansDiagnosticsPanel: React.FC<Props> = ({ dx }) => {
   const [selectedTick, setSelectedTick] = useState<number | null>(null);
   const [notify, setNotify] = useState<NotifySettings>(() => getNotifySettings());
   const [notifyOpen, setNotifyOpen] = useState(false);
+  const [harnessOpen, setHarnessOpen] = useState(false);
+  const [harnessLog, setHarnessLog] = useState<Array<{ ts: number; kind: string; status: string; payload: any }>>([]);
   const guardrailContainerRef = useRef<HTMLDivElement>(null);
+  const deepLinkHandledRef = useRef(false);
 
   const loadEvents = async () => {
     setLoadingEvents(true);
