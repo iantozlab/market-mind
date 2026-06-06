@@ -643,9 +643,12 @@ const RansDiagnosticsPanel: React.FC<Props> = ({ dx }) => {
                       <td className="px-1.5 py-1 font-mono text-[10px] truncate max-w-[360px]">
                         {JSON.stringify(e.detail)}
                       </td>
-                      <td className="px-1.5 py-1">
+                      <td className="px-1.5 py-1 whitespace-nowrap">
                         <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px]" onClick={() => replayEvent(e)} disabled={tick == null}>
                           <Play className="h-3 w-3 mr-1" /> {tick != null ? `t${tick}` : '—'}
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px]" onClick={() => copyDeepLink(e)} disabled={!e.id}>
+                          <Link2 className="h-3 w-3" />
                         </Button>
                       </td>
                     </tr>
