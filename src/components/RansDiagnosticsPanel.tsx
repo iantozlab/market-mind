@@ -490,6 +490,27 @@ const RansDiagnosticsPanel: React.FC<Props> = ({ dx }) => {
         </div>
       )}
 
+      {/* Deep-link fallback banner */}
+      {fallbackBanner && (
+        <div className="rounded border border-warning/40 bg-warning/5 px-2 py-1.5 text-[11px]">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 text-warning font-display tracking-wide">
+              <AlertTriangle className="h-3.5 w-3.5" /> Deep-link fallback
+            </div>
+            <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setFallbackBanner(null)}>Dismiss</Button>
+          </div>
+          <div className="mt-1 text-foreground">
+            {fallbackBanner.kind === 'tick'
+              ? `Requested tick ${fallbackBanner.requested} — ${fallbackBanner.reason}`
+              : `Requested event ${fallbackBanner.requested.slice(0, 16)}… — ${fallbackBanner.reason}`}
+          </div>
+          <div className="mt-0.5 text-[10px] text-muted-foreground">
+            Resolved to nearest tick <span className="font-mono text-accent">{fallbackBanner.resolved}</span>
+            {' '}· <span className="font-mono">{allTicks.length}</span> ticks in current history
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <Stat label="Uptime" value={fmtDur(dx.uptimeMs)} />
         <Stat label="Ticks" value={dx.tickCount} />
