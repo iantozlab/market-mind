@@ -415,13 +415,63 @@ const RansDiagnosticsPanel: React.FC<Props> = ({ dx }) => {
 
       {/* Replay banner */}
       {selectedTick != null && (
-        <div className="rounded border border-accent/40 bg-accent/5 px-2 py-1 text-[11px] flex items-center justify-between">
+        <div className="rounded border border-accent/40 bg-accent/5 px-2 py-1 text-[11px] flex items-center justify-between flex-wrap gap-2">
           <div className="text-accent font-display tracking-wide flex items-center gap-1.5">
             <Play className="h-3 w-3" /> Replaying tick {selectedTick} — highlighted across latency, activation and guardrail samples.
           </div>
-          <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setSelectedTick(null)}>Clear</Button>
+          <div className="flex items-center gap-1.5">
+            <Button size="sm" variant="outline" className="h-6 text-[10px]" onClick={exportReplayBundle}>
+              <FileJson className="h-3 w-3 mr-1" /> Export Bundle
+            </Button>
+            <Button size="sm" variant="outline" className="h-6 text-[10px]" onClick={() => {
+              const url = new URL(window.location.href);
+              url.searchParams.set('diagTick', String(selectedTick));
+              navigator.clipboard?.writeText(url.toString()).then(
+                () => toast.success('Replay link copied'),
+                () => toast.error('Clipboard blocked'),
+              );
+            }}>
+              <Link2 className="h-3 w-3 mr-1" /> Copy Link
+            </Button>
+            <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setSelectedTick(null)}>Clear</Button>
+          </div>
         </div>
       )}
+
+      {/* Test harness */}
+      {harnessOpen && (
+        <div className="rounded border border-warning/40 bg-warning/5 p-2 space-y-1.5 text-[11px]">
+          <div className="flex items-center gap-1.5 text-warning font-display tracking-wide">
+            <FlaskConical className="h-3.5 w-3.5" /> Notification Test Harness
+          </div>
+          <div className="text-[10px] text-muted-foreground">
+            Fires simulated kill-switch and guardrail-burst events end-to-end (persist → webhook → mailto). Email mailto links are throttled to one per 30s.
+            Current hooks: webhook {notify.webhookUrl ? 'set' : 'none'} · email {notify.email ? 'set' : 'none'} · enabled {notify.enabled ? 'YES' : 'NO'}.
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={simulateKillSwitch}>Simulate Kill-Switch</Button>
+            <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={simulateBurst}>Simulate Guardrail Burst</Button>
+            <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => setHarnessLog([])} disabled={harnessLog.length === 0}>Clear log</Button>
+          </div>
+          {harnessLog.length > 0 && (
+            <div className="max-h-40 overflow-y-auto terminal-scrollbar border border-border rounded bg-background/60">
+              <table className="w-full text-[10px] font-mono">
+                <tbody className="divide-y divide-border/40">
+                  {harnessLog.map((l, i) => (
+                    <tr key={i}>
+                      <td className="px-1.5 py-1 text-muted-foreground whitespace-nowrap">{new Date(l.ts).toLocaleTimeString()}</td>
+                      <td className="px-1.5 py-1 text-foreground">{l.kind}</td>
+                      <td className="px-1.5 py-1 text-accent">{l.status}</td>
+                      <td className="px-1.5 py-1 text-muted-foreground truncate max-w-[320px]">{JSON.stringify(l.payload)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
 
       {/* Live charts */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
