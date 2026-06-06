@@ -174,13 +174,155 @@ const RansDiagnosticsPanel: React.FC<Props> = ({ dx }) => {
     }
   };
 
-  const saveNotify = () => {
-    setNotifySettings(notify);
-    setNotifyOpen(false);
-    toast.success('Notification hooks updated');
+  // -------- Deep-link: ?diagTick=N or ?diagEventId=<id> --------
+  // Auto-opens the panel state, highlights samples, and scrolls to the matching tick.
+  useEffect(() => {
+    if (deepLinkHandledRef.current || typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const tickParam = params.get('diagTick');
+    const eventIdParam = params.get('diagEventId');
+    if (!tickParam && !eventIdParam) return;
+    deepLinkHandledRef.current = true;
+
+    if (tickParam) {
+      const n = Number(tickParam);
+      if (Number.isFinite(n)) {
+        setSelectedTick(n);
+        setTimeout(() => {
+          const node = guardrailContainerRef.current?.querySelector(`[data-tick="${n}"]`) as HTMLElement | null;
+          if (node) node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 250);
+        toast.success(`Deep-link replay: tick ${n}`);
+      }
+    }
+    if (eventIdParam) {
+      (async () => {
+        const all = await queryRansDiagEvents({ limit: 500 });
+        const ev = all.find(e => e.id === eventIdParam);
+        if (ev) {
+          replayEvent(ev);
+          toast.success(`Deep-link event ${eventIdParam.slice(0, 8)}…`);
+        } else {
+          toast.error('Deep-link event not found in recent history');
+        }
+      })();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const copyDeepLink = (e: RansDiagEvent) => {
+    const tick = resolveEventTick(e);
+    const url = new URL(window.location.href);
+    url.searchParams.set('diagEventId', e.id ?? '');
+    if (tick != null) url.searchParams.set('diagTick', String(tick));
+    navigator.clipboard?.writeText(url.toString()).then(
+      () => toast.success('Replay link copied'),
+      () => toast.error('Clipboard blocked'),
+    );
+  };
+
+  // -------- JSON bundle export for the currently selected replay window --------
+  const exportReplayBundle = () => {
+    if (selectedTick == null) { toast.error('Select a replay event first'); return; }
+    const tick = selectedTick;
+    const nearest = <T extends { tick: number }>(arr: T[]): T | null => {
+      if (arr.length === 0) return null;
+      let best = arr[0]; let bd = Math.abs(best.tick - tick);
+      for (const p of arr) { const d = Math.abs(p.tick - tick); if (d < bd) { best = p; bd = d; } }
+      return best;
+    };
+    const win = <T extends { tick: number }>(arr: T[], radius = 15) =>
+      arr.filter(p => Math.abs(p.tick - tick) <= radius);
+
+    const bundle = {
+      generated_at: new Date().toISOString(),
+      app_version: 'rans-diag-bundle/1',
+      selected_tick: tick,
+      kill_switch: {
+        engaged: dx.killSwitch,
+        reason: dx.killSwitchReason,
+        at: dx.killSwitchAt,
+        metrics: dx.killSwitchMetrics,
+      },
+      summary: {
+        uptimeMs: dx.uptimeMs,
+        tickCount: dx.tickCount,
+        avgLatencyMs: dx.avgLatencyMs,
+        maxLatencyMs: dx.maxLatencyMs,
+        dropoutRate: dx.dropoutRate,
+        activationRate: dx.activationRate,
+        regimeChanges: dx.regimeChanges,
+      },
+      nearest: {
+        latency: nearest(dx.latencyHistory),
+        activation: nearest(dx.activationHistory),
+        guardrail: dx.guardrailViolations.find(v => v.tick === tick) ?? nearest(dx.guardrailViolations),
+      },
+      window: {
+        latency: win(dx.latencyHistory),
+        activation: win(dx.activationHistory),
+        guardrail: dx.guardrailViolations.filter(v => Math.abs(v.tick - tick) <= 15),
+      },
+      events_on_page: events.map(e => ({ ...e, _resolvedTick: resolveEventTick(e) })),
+      filters: { rangeHours, typeFilter, regimeFilter, search, page },
+    };
+    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `rans-replay-tick${tick}-${Date.now()}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast.success('Replay JSON bundle exported');
+  };
+
+  // -------- Test harness: simulate kill-switch + guardrail-burst --------
+  const pushHarness = (kind: string, status: string, payload: any) =>
+    setHarnessLog(l => [{ ts: Date.now(), kind, status, payload }, ...l].slice(0, 25));
+
+  const simulateKillSwitch = async () => {
+    const payload = {
+      reason: 'TEST · simulated critical alert',
+      tick: dx.tickCount,
+      dailyPnL: -123.45,
+      maxDrawdown: 0.18,
+      winRate: 0.42,
+      simulated: true,
+    };
+    const ev = { event_type: 'kill_switch' as const, severity: 'critical' as const, detail: payload };
+    recordRansDiagEvent(ev);
+    pushHarness('kill_switch', 'queued+persisted', payload);
+    try {
+      await notifyExternal(ev);
+      pushHarness('kill_switch', notify.enabled ? `notify dispatched (webhook=${notify.webhookUrl ? 'yes' : 'no'}, email=${notify.email ? 'yes' : 'no'})` : 'notify disabled', payload);
+    } catch (err) {
+      pushHarness('kill_switch', `notify error: ${(err as Error).message}`, payload);
+    }
+  };
+
+  const simulateBurst = async () => {
+    const burstCount = 4;
+    for (let i = 0; i < burstCount; i++) {
+      recordRansDiagEvent({
+        event_type: 'guardrail_clamp', severity: 'warning',
+        detail: { simulated: true, idx: i, regime: 'high_volatility', field: 'alpha', before: 0.9, after: 0.7 },
+      });
+    }
+    const burstPayload = { simulated: true, count: burstCount, windowMs: 10_000, regime: 'high_volatility' };
+    const ev = { event_type: 'guardrail_burst' as const, severity: 'warning' as const, detail: burstPayload };
+    recordRansDiagEvent(ev);
+    pushHarness('guardrail_burst', `${burstCount} clamps + burst persisted`, burstPayload);
+    try {
+      await notifyExternal(ev);
+      // Fire a second burst immediately to verify mailto throttling (30s window).
+      await notifyExternal(ev);
+      pushHarness('guardrail_burst', 'notify dispatched x2 (email mailto throttled if <30s)', burstPayload);
+    } catch (err) {
+      pushHarness('guardrail_burst', `notify error: ${(err as Error).message}`, burstPayload);
+    }
   };
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+
 
   return (
     <div className="rounded border border-border bg-background/40 p-3 space-y-3">
