@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Download, AlertOctagon, ShieldAlert, Clock, RefreshCw, Bell, Search, ChevronLeft, ChevronRight, Play, Link2, FileJson, FlaskConical } from 'lucide-react';
+import { Download, AlertOctagon, ShieldAlert, Clock, RefreshCw, Bell, Search, ChevronLeft, ChevronRight, Play, Link2, FileJson, FlaskConical, AlertTriangle } from 'lucide-react';
 import { downloadCSV } from '@/lib/exporters';
 import { toast } from 'sonner';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
