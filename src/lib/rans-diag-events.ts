@@ -63,23 +63,54 @@ export async function queryRansDiagEvents(q: RansDiagQuery = {}): Promise<RansDi
     if (q.fromIso) req = req.gte('created_at', q.fromIso);
     if (q.toIso) req = req.lte('created_at', q.toIso);
     if (q.types && q.types.length) req = req.in('event_type', q.types);
+    if (q.regime) req = req.ilike('search_blob', `%${q.regime}%`);
+
+    // Weighted full-text (server-side, uses `search_tsv` GIN index — A:title/reason,
+    // B:event_type/regime, C:severity, D:detail JSON) combined with an ILIKE on the
+    // trigram-indexed `search_blob` so partial / mis-typed needles still match.
+    if (q.search && q.search.trim()) {
+      const safe = q.search.trim().replace(/[,()'"]/g, ' ');
+      const wild = `%${safe}%`;
+      req = req.or(`search_tsv.wfts(simple).${safe},search_blob.ilike.${wild}`);
+    }
+
     const { data, error } = await req;
     if (error) throw error;
     let rows = (data ?? []) as RansDiagEvent[];
-    if (q.regime) {
-      rows = rows.filter(r => String((r.detail as any)?.regime ?? '').toLowerCase() === q.regime!.toLowerCase());
-    }
-    if (q.search && q.search.trim()) {
+
+    // Client-side trigram fallback for very short / heavily mistyped queries that
+    // neither FTS nor ILIKE catches.
+    if (q.search && q.search.trim() && rows.length === 0) {
+      const fbReq = db().select('*').order('created_at', { ascending: false })
+        .range(0, Math.max(limit * 4, 100));
+      if (q.fromIso) (fbReq as any).gte?.('created_at', q.fromIso);
+      const { data: fb } = await fbReq;
       const needle = q.search.trim().toLowerCase();
-      rows = rows.filter(r => {
+      rows = ((fb ?? []) as RansDiagEvent[]).filter(r => {
         const hay = `${r.event_type} ${r.severity} ${JSON.stringify(r.detail ?? {})}`.toLowerCase();
-        return hay.includes(needle);
-      });
+        return hay.includes(needle) || trigramScore(hay, needle) >= 0.25;
+      }).slice(offset, offset + limit);
     }
+
     return rows;
   } catch {
     return [];
   }
+}
+
+// Lightweight trigram-similarity for client-side typo tolerance.
+function trigramScore(hay: string, needle: string): number {
+  if (!needle) return 0;
+  const tri = (s: string) => {
+    const p = `  ${s}  `;
+    const set = new Set<string>();
+    for (let i = 0; i < p.length - 2; i++) set.add(p.slice(i, i + 3));
+    return set;
+  };
+  const a = tri(hay); const b = tri(needle);
+  let inter = 0;
+  b.forEach(t => { if (a.has(t)) inter++; });
+  return inter / b.size;
 }
 
 export async function countRansDiagEvents(q: RansDiagQuery = {}): Promise<number> {

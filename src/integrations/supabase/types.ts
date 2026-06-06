@@ -47,6 +47,8 @@ export type Database = {
           detail: Json
           event_type: string
           id: string
+          search_blob: string | null
+          search_tsv: unknown
           severity: string
         }
         Insert: {
@@ -54,6 +56,8 @@ export type Database = {
           detail?: Json
           event_type: string
           id?: string
+          search_blob?: string | null
+          search_tsv?: unknown
           severity?: string
         }
         Update: {
@@ -61,6 +65,8 @@ export type Database = {
           detail?: Json
           event_type?: string
           id?: string
+          search_blob?: string | null
+          search_tsv?: unknown
           severity?: string
         }
         Relationships: []
@@ -91,7 +97,8 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      show_limit: { Args: never; Returns: number }
+      show_trgm: { Args: { "": string }; Returns: string[] }
     }
     Enums: {
       [_ in never]: never
