@@ -335,6 +335,9 @@ const RansDiagnosticsPanel: React.FC<Props> = ({ dx }) => {
           <Button size="sm" variant="outline" onClick={() => setNotifyOpen(o => !o)} className="h-7 text-xs">
             <Bell className={`h-3 w-3 mr-1 ${notify.enabled ? 'text-primary' : ''}`} /> Notify
           </Button>
+          <Button size="sm" variant="outline" onClick={() => setHarnessOpen(o => !o)} className="h-7 text-xs">
+            <FlaskConical className="h-3 w-3 mr-1" /> Test
+          </Button>
           <Button size="sm" variant="outline" onClick={exportCsv} className="h-7 text-xs">
             <Download className="h-3 w-3 mr-1" /> CSV
           </Button>
