@@ -52,6 +52,14 @@ const RansDiagnosticsPanel: React.FC<Props> = ({ dx }) => {
   const guardrailContainerRef = useRef<HTMLDivElement>(null);
   const deepLinkHandledRef = useRef(false);
 
+  type FallbackBanner = {
+    kind: 'tick' | 'event';
+    requested: string;
+    resolved: number;
+    reason: string;
+  };
+  const [fallbackBanner, setFallbackBanner] = useState<FallbackBanner | null>(null);
+
   const loadEvents = async () => {
     setLoadingEvents(true);
     const fromIso = new Date(Date.now() - rangeHours * 3_600_000).toISOString();
