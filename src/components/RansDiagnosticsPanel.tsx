@@ -172,10 +172,30 @@ const RansDiagnosticsPanel: React.FC<Props> = ({ dx }) => {
     return best.tick;
   };
 
+  const allTicks = useMemo(() => {
+    const s = new Set<number>();
+    dx.latencyHistory.forEach(p => s.add(p.tick));
+    dx.activationHistory.forEach(p => s.add(p.tick));
+    dx.guardrailViolations.forEach(v => s.add(v.tick));
+    return Array.from(s).sort((a, b) => a - b);
+  }, [dx.latencyHistory, dx.activationHistory, dx.guardrailViolations]);
+
+  const findNearestTick = (target: number): number => {
+    if (allTicks.length === 0) return dx.tickCount > 0 ? dx.tickCount : 0;
+    let best = allTicks[0];
+    let bestDelta = Math.abs(best - target);
+    for (const t of allTicks) {
+      const d = Math.abs(t - target);
+      if (d < bestDelta) { best = t; bestDelta = d; }
+    }
+    return best;
+  };
+
+  const tickExists = (tick: number): boolean => allTicks.includes(tick);
+
   const replayEvent = (e: RansDiagEvent) => {
     const tick = resolveEventTick(e);
     setSelectedTick(tick);
-    // Scroll guardrail viewer to the matching tick if relevant.
     if (tick != null && guardrailContainerRef.current) {
       const node = guardrailContainerRef.current.querySelector(`[data-tick="${tick}"]`) as HTMLElement | null;
       if (node) node.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -183,7 +203,6 @@ const RansDiagnosticsPanel: React.FC<Props> = ({ dx }) => {
   };
 
   // -------- Deep-link: ?diagTick=N or ?diagEventId=<id> --------
-  // Auto-opens the panel state, highlights samples, and scrolls to the matching tick.
   useEffect(() => {
     if (deepLinkHandledRef.current || typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
@@ -192,26 +211,91 @@ const RansDiagnosticsPanel: React.FC<Props> = ({ dx }) => {
     if (!tickParam && !eventIdParam) return;
     deepLinkHandledRef.current = true;
 
+    const scrollToTick = (tick: number) => {
+      setTimeout(() => {
+        const node = guardrailContainerRef.current?.querySelector(`[data-tick="${tick}"]`) as HTMLElement | null;
+        if (node) node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 250);
+    };
+
+    // Resolve tickParam first so it can be reused as a fallback anchor.
+    let resolvedTick: number | null = null;
     if (tickParam) {
       const n = Number(tickParam);
-      if (Number.isFinite(n)) {
+      if (!Number.isInteger(n) || n < 0 || !Number.isFinite(n)) {
+        resolvedTick = findNearestTick(0);
+        setSelectedTick(resolvedTick);
+        setFallbackBanner({
+          kind: 'tick',
+          requested: tickParam,
+          resolved: resolvedTick,
+          reason: `Invalid tick value "${tickParam}" — must be a non-negative integer.`,
+        });
+        toast.warning(`Invalid deep-link tick "${tickParam}" — resolved to nearest tick ${resolvedTick}`);
+        scrollToTick(resolvedTick);
+      } else if (!tickExists(n)) {
+        resolvedTick = findNearestTick(n);
+        setSelectedTick(resolvedTick);
+        setFallbackBanner({
+          kind: 'tick',
+          requested: String(n),
+          resolved: resolvedTick,
+          reason: `Tick ${n} not found in current history (${allTicks.length} ticks recorded) — fell back to nearest tick ${resolvedTick}.`,
+        });
+        toast.warning(`Tick ${n} not found — resolved to nearest tick ${resolvedTick}`);
+        scrollToTick(resolvedTick);
+      } else {
+        resolvedTick = n;
         setSelectedTick(n);
-        setTimeout(() => {
-          const node = guardrailContainerRef.current?.querySelector(`[data-tick="${n}"]`) as HTMLElement | null;
-          if (node) node.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }, 250);
         toast.success(`Deep-link replay: tick ${n}`);
+        scrollToTick(n);
       }
     }
+
     if (eventIdParam) {
       (async () => {
         const all = await queryRansDiagEvents({ limit: 500 });
         const ev = all.find(e => e.id === eventIdParam);
         if (ev) {
-          replayEvent(ev);
-          toast.success(`Deep-link event ${eventIdParam.slice(0, 8)}…`);
+          const tick = resolveEventTick(ev);
+          if (tick != null && tickExists(tick)) {
+            setSelectedTick(tick);
+            toast.success(`Deep-link event ${eventIdParam.slice(0, 8)}… → tick ${tick}`);
+            scrollToTick(tick);
+          } else if (tick != null) {
+            const fb = findNearestTick(tick);
+            setSelectedTick(fb);
+            setFallbackBanner({
+              kind: 'event',
+              requested: eventIdParam,
+              resolved: fb,
+              reason: `Event resolved to tick ${tick}, which is absent from current history — fell back to nearest tick ${fb}.`,
+            });
+            toast.warning(`Event tick ${tick} missing — resolved to nearest tick ${fb}`);
+            scrollToTick(fb);
+          } else {
+            const fb = resolvedTick ?? findNearestTick(dx.tickCount);
+            setSelectedTick(fb);
+            setFallbackBanner({
+              kind: 'event',
+              requested: eventIdParam,
+              resolved: fb,
+              reason: `Event found but has no resolvable tick — fell back to nearest tick ${fb}.`,
+            });
+            toast.warning(`Event has no tick — resolved to nearest tick ${fb}`);
+            scrollToTick(fb);
+          }
         } else {
-          toast.error('Deep-link event not found in recent history');
+          const fb = resolvedTick ?? findNearestTick(dx.tickCount);
+          setSelectedTick(fb);
+          setFallbackBanner({
+            kind: 'event',
+            requested: eventIdParam,
+            resolved: fb,
+            reason: `Event ID "${eventIdParam}" not found in recent history — fell back to nearest tick ${fb}.`,
+          });
+          toast.error(`Event not found — resolved to nearest tick ${fb}`);
+          scrollToTick(fb);
         }
       })();
     }
