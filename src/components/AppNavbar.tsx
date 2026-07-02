@@ -83,14 +83,40 @@ const AppNavbar: React.FC<Props> = ({
   return (
     <>
       <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
-        <div className="flex items-center gap-2 px-3 md:px-5 h-12">
-          <div className="flex items-center gap-2 mr-2">
+        {/* Top bar: brand + system controls */}
+        <div className="flex items-center gap-2 px-3 md:px-5 h-12 border-b border-border/50">
+          <div className="flex items-center gap-2">
             <span className={`h-2 w-2 rounded-full ${isRunning ? 'bg-primary animate-pulse-glow' : 'bg-muted-foreground'}`} />
-            <span className="font-display text-sm font-semibold text-foreground tracking-wide hidden sm:inline">
+            <span className="font-display text-sm font-semibold text-foreground tracking-wide">
               Neural Sentinel
             </span>
           </div>
 
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-[10px] text-muted-foreground tracking-widest uppercase hidden md:inline">
+              {isRunning ? 'LIVE' : 'OFFLINE'}
+            </span>
+            <Button
+              onClick={isRunning ? onStop : onStart}
+              variant={isRunning ? 'destructive' : 'default'}
+              size="sm"
+              className="font-display tracking-wide h-8"
+            >
+              {isRunning ? '■ STOP' : '▶ START'}
+            </Button>
+            <AlertsBell
+              alerts={alerts.items}
+              unread={alerts.unread}
+              open={alerts.open}
+              setOpen={alerts.setOpen}
+              clear={alerts.clear}
+            />
+            <ThemeToggle />
+          </div>
+        </div>
+
+        {/* Second bar: feature navigation */}
+        <div className="flex items-center px-3 md:px-5 h-11 overflow-x-auto">
           <nav className="flex items-center gap-1 flex-wrap">
             <Button onClick={() => open('settings')} variant="ghost" className={navBtn}>
               <Sliders className="h-3.5 w-3.5 mr-1.5" /> Trade Settings
@@ -138,30 +164,9 @@ const AppNavbar: React.FC<Props> = ({
               </DropdownMenuContent>
             </DropdownMenu>
           </nav>
-
-          <div className="ml-auto flex items-center gap-1">
-            <span className="text-[10px] text-muted-foreground tracking-widest uppercase hidden md:inline">
-              {isRunning ? 'LIVE' : 'OFFLINE'}
-            </span>
-            <Button
-              onClick={isRunning ? onStop : onStart}
-              variant={isRunning ? 'destructive' : 'default'}
-              size="sm"
-              className="font-display tracking-wide h-8"
-            >
-              {isRunning ? '■ STOP' : '▶ START'}
-            </Button>
-            <AlertsBell
-              alerts={alerts.items}
-              unread={alerts.unread}
-              open={alerts.open}
-              setOpen={alerts.setOpen}
-              clear={alerts.clear}
-            />
-            <ThemeToggle />
-          </div>
         </div>
       </header>
+
 
       <Sheet open={sheet === 'settings'} onOpenChange={(o) => !o && close()}>
         <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
