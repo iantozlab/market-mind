@@ -19,6 +19,19 @@ import AppNavbar from '@/components/AppNavbar';
 import { appendAudit, diffSettings } from '@/lib/settings-audit';
 import { useAlertsCenter } from '@/hooks/useAlertsCenter';
 
+const StatusPill: React.FC<{ ok: boolean; label: string; value: string; tone?: 'primary' | 'accent' }> = ({ ok, label, value, tone = 'primary' }) => {
+  const dot = ok ? (tone === 'accent' ? 'bg-accent' : 'bg-primary') : 'bg-destructive';
+  const ring = ok ? (tone === 'accent' ? 'border-accent/30 bg-accent/5' : 'border-primary/30 bg-primary/5') : 'border-destructive/30 bg-destructive/5';
+  return (
+    <div className={`inline-flex items-center gap-2 rounded-full border ${ring} px-2.5 py-1`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${dot} ${ok ? 'animate-pulse' : ''}`} />
+      <span className="text-[9px] uppercase tracking-widest text-muted-foreground">{label}</span>
+      <span className="text-[10px] font-mono text-foreground">{value}</span>
+    </div>
+  );
+};
+
+
 const NeuralBotDashboard: React.FC = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
