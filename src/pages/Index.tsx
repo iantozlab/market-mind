@@ -19,6 +19,19 @@ import AppNavbar from '@/components/AppNavbar';
 import { appendAudit, diffSettings } from '@/lib/settings-audit';
 import { useAlertsCenter } from '@/hooks/useAlertsCenter';
 
+const StatusPill: React.FC<{ ok: boolean; label: string; value: string; tone?: 'primary' | 'accent' }> = ({ ok, label, value, tone = 'primary' }) => {
+  const dot = ok ? (tone === 'accent' ? 'bg-accent' : 'bg-primary') : 'bg-destructive';
+  const ring = ok ? (tone === 'accent' ? 'border-accent/30 bg-accent/5' : 'border-primary/30 bg-primary/5') : 'border-destructive/30 bg-destructive/5';
+  return (
+    <div className={`inline-flex items-center gap-2 rounded-full border ${ring} px-2.5 py-1`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${dot} ${ok ? 'animate-pulse' : ''}`} />
+      <span className="text-[9px] uppercase tracking-widest text-muted-foreground">{label}</span>
+      <span className="text-[10px] font-mono text-foreground">{value}</span>
+    </div>
+  );
+};
+
+
 const NeuralBotDashboard: React.FC = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -180,43 +193,36 @@ const NeuralBotDashboard: React.FC = () => {
       />
 
       <div className="p-4 md:p-6 space-y-6">
-        {/* Header */}
-        <div>
-          <h1 className="font-display text-2xl md:text-3xl font-bold text-foreground text-glow tracking-tight">
-            Polymarket Neural Trading System
-          </h1>
-          <p className="text-xs text-muted-foreground mt-1 tracking-widest uppercase">
-            HTM · Transformer · Contrastive · MAML · 12 Exploit Strategies · 50k Gen Evolution
-          </p>
-          {isRunning && (
-            <div className="flex flex-wrap items-center gap-3 mt-1.5">
-              <div className="flex items-center gap-1.5">
-                <span className={`h-1.5 w-1.5 rounded-full ${apiStatus.polymarket ? 'bg-primary' : 'bg-warning'}`} />
-                <span className="text-[10px] text-muted-foreground tracking-wide">
-                  Polymarket API: {apiStatus.polymarket ? 'Connected' : 'Unreachable'}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className={`h-1.5 w-1.5 rounded-full ${apiStatus.dataSource === 'live' ? 'bg-primary' : 'bg-accent'}`} />
-                <span className="text-[10px] text-muted-foreground tracking-wide">
-                  Data: {apiStatus.dataSource === 'live' ? `LIVE (${metrics.marketsMonitored} markets)` : 'SIMULATED'}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className={`h-1.5 w-1.5 rounded-full ${getEnvStatus().polymarketApiKey ? 'bg-primary' : 'bg-destructive'}`} />
-                <span className="text-[10px] text-muted-foreground tracking-wide">
-                  API Key: {getEnvStatus().polymarketApiKey ? 'Configured' : 'Missing'}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-                <span className="text-[10px] text-muted-foreground tracking-wide">
-                  Mode: {CONFIG.BOT_MODE} · Capital: ${CONFIG.INITIAL_CAPITAL.toLocaleString()}
-                </span>
-              </div>
+        {/* Hero header */}
+        <div className="relative overflow-hidden rounded-xl border border-border bg-gradient-to-br from-card via-card/80 to-background p-5 md:p-6">
+          <div className="pointer-events-none absolute inset-0 scanline opacity-40" />
+          <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-32 -left-16 h-64 w-64 rounded-full bg-accent/10 blur-3xl" />
+          <div className="relative">
+            <div className="flex items-center gap-2 mb-2">
+              <span className={`h-2 w-2 rounded-full ${isRunning ? 'bg-primary animate-pulse' : 'bg-muted-foreground'}`} />
+              <span className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
+                {isRunning ? 'System Online' : 'Standby'}
+              </span>
             </div>
-          )}
+            <h1 className="font-display text-2xl md:text-3xl font-bold text-foreground text-glow tracking-tight">
+              Polymarket Neural Trading System
+            </h1>
+            <p className="text-[11px] text-muted-foreground mt-1 tracking-widest uppercase">
+              HTM · Transformer · Contrastive · MAML · 12 Exploit Strategies · 50k Gen Evolution
+            </p>
+            {isRunning && (
+              <div className="flex flex-wrap items-center gap-2 mt-4">
+                <StatusPill ok={apiStatus.polymarket} label="Polymarket" value={apiStatus.polymarket ? 'Connected' : 'Down'} />
+                <StatusPill ok={apiStatus.dataSource === 'live'} label="Data" value={apiStatus.dataSource === 'live' ? `LIVE · ${metrics.marketsMonitored}` : 'SIM'} />
+                <StatusPill ok={!!getEnvStatus().polymarketApiKey} label="API Key" value={getEnvStatus().polymarketApiKey ? 'OK' : 'Missing'} />
+                <StatusPill ok label="Mode" value={CONFIG.BOT_MODE} tone="accent" />
+                <StatusPill ok label="Capital" value={`$${CONFIG.INITIAL_CAPITAL.toLocaleString()}`} tone="accent" />
+              </div>
+            )}
+          </div>
         </div>
+
 
         {/* Neural Status Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
