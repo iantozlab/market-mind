@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  Sliders, Brain, Shield, History, Layers, ChevronDown, Cpu,
+  Sliders, Brain, Shield, History, Layers, ChevronDown, Cpu, Menu,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -10,6 +10,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
 import ThemeToggle from './ThemeToggle';
 import AlertsBell from './AlertsBell';
 import TradeSettingsPanel from './TradeSettingsPanel';
@@ -65,7 +66,13 @@ interface Props {
   };
 }
 
-const navBtn = "h-8 px-2.5 text-xs font-display tracking-wide";
+const NAV_ITEMS: { key: Exclude<SheetKey, null>; label: string; Icon: React.ComponentType<{ className?: string }> }[] = [
+  { key: 'settings', label: 'Trade Settings', Icon: Sliders },
+  { key: 'ml',       label: 'ML Insights',    Icon: Brain },
+  { key: 'risk',     label: 'Risk',           Icon: Shield },
+  { key: 'backtest', label: 'Backtest',       Icon: History },
+  { key: 'rans',     label: 'RANS',           Icon: Cpu },
+];
 
 const AppNavbar: React.FC<Props> = ({
   isRunning, onStart, onStop,
@@ -77,14 +84,90 @@ const AppNavbar: React.FC<Props> = ({
   onApplyRansThresholds, onApplyRansWeights, onToggleRansKillSwitch,
 }) => {
   const [sheet, setSheet] = useState<SheetKey>(null);
-  const open = (k: SheetKey) => setSheet(k);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const open = (k: SheetKey) => { setSheet(k); setMobileOpen(false); };
   const close = () => setSheet(null);
+
+  const navButton = (key: Exclude<SheetKey, null>, label: string, Icon: React.ComponentType<{ className?: string }>) => {
+    const active = sheet === key;
+    return (
+      <Button
+        key={key}
+        onClick={() => open(key)}
+        variant="ghost"
+        aria-current={active ? 'page' : undefined}
+        className={cn(
+          "h-8 px-2.5 text-xs font-display tracking-wide relative",
+          "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+          active && "text-primary bg-primary/10",
+        )}
+      >
+        <Icon className="h-3.5 w-3.5 mr-1.5" /> {label}
+        {active && (
+          <span aria-hidden className="absolute left-1 right-1 -bottom-[7px] h-0.5 rounded-full bg-primary shadow-[0_0_8px_hsl(var(--primary))]" />
+        )}
+      </Button>
+    );
+  };
+
+  const strategiesActive = sheet === null && false; // placeholder — Strategies is a dropdown, not a sheet
+  const StrategiesMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          aria-label="Active strategies menu"
+          className={cn(
+            "h-8 px-2.5 text-xs font-display tracking-wide",
+            "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+            strategiesActive && "text-primary bg-primary/10",
+          )}
+        >
+          <Layers className="h-3.5 w-3.5 mr-1.5" />
+          Strategies
+          <span className="ml-1.5 text-[10px] font-mono text-muted-foreground">
+            {strategies.filter(s => s.active).length}/{strategies.length}
+          </span>
+          <ChevronDown className="h-3 w-3 ml-1" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-64 max-h-[60vh] overflow-y-auto">
+        <DropdownMenuLabel className="text-[10px] uppercase tracking-widest text-muted-foreground">
+          Active Strategies
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {strategies.map(s => (
+          <DropdownMenuItem key={s.name} className="flex items-center justify-between text-xs">
+            <span className="flex items-center gap-2">
+              <span className={`h-1.5 w-1.5 rounded-full ${s.active && isRunning ? 'bg-primary animate-pulse' : s.active ? 'bg-primary/40' : 'bg-muted-foreground'}`} />
+              <span className="text-foreground">{s.label}</span>
+            </span>
+            <span className={`text-[9px] font-display uppercase tracking-widest ${s.active ? 'text-primary' : 'text-muted-foreground'}`}>
+              {s.active ? (isRunning ? 'Live' : 'Armed') : 'Off'}
+            </span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 
   return (
     <>
       <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
         {/* Top bar: brand + system controls */}
         <div className="flex items-center gap-2 px-3 md:px-5 h-12 border-b border-border/50">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 md:hidden"
+            aria-label={mobileOpen ? 'Close navigation menu' : 'Open navigation menu'}
+            aria-expanded={mobileOpen}
+            aria-controls="app-mobile-nav"
+            onClick={() => setMobileOpen(v => !v)}
+          >
+            <Menu className="h-4 w-4" />
+          </Button>
+
           <div className="flex items-center gap-2">
             <span className={`h-2 w-2 rounded-full ${isRunning ? 'bg-primary animate-pulse-glow' : 'bg-muted-foreground'}`} />
             <span className="font-display text-sm font-semibold text-foreground tracking-wide">
@@ -92,7 +175,7 @@ const AppNavbar: React.FC<Props> = ({
             </span>
           </div>
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-1 sm:gap-2">
             <span className="text-[10px] text-muted-foreground tracking-widest uppercase hidden md:inline">
               {isRunning ? 'LIVE' : 'OFFLINE'}
             </span>
@@ -100,7 +183,8 @@ const AppNavbar: React.FC<Props> = ({
               onClick={isRunning ? onStop : onStart}
               variant={isRunning ? 'destructive' : 'default'}
               size="sm"
-              className="font-display tracking-wide h-8"
+              aria-label={isRunning ? 'Stop the bot' : 'Start the bot'}
+              className="font-display tracking-wide h-8 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
             >
               {isRunning ? '■ STOP' : '▶ START'}
             </Button>
@@ -115,57 +199,51 @@ const AppNavbar: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Second bar: feature navigation */}
-        <div className="flex items-center px-3 md:px-5 h-11 overflow-x-auto">
-          <nav className="flex items-center gap-1 flex-wrap">
-            <Button onClick={() => open('settings')} variant="ghost" className={navBtn}>
-              <Sliders className="h-3.5 w-3.5 mr-1.5" /> Trade Settings
-            </Button>
-            <Button onClick={() => open('ml')} variant="ghost" className={navBtn}>
-              <Brain className="h-3.5 w-3.5 mr-1.5" /> ML Insights
-            </Button>
-            <Button onClick={() => open('risk')} variant="ghost" className={navBtn}>
-              <Shield className="h-3.5 w-3.5 mr-1.5" /> Risk
-            </Button>
-            <Button onClick={() => open('backtest')} variant="ghost" className={navBtn}>
-              <History className="h-3.5 w-3.5 mr-1.5" /> Backtest
-            </Button>
-            <Button onClick={() => open('rans')} variant="ghost" className={navBtn}>
-              <Cpu className="h-3.5 w-3.5 mr-1.5" /> RANS
-            </Button>
+        {/* Second bar: feature navigation (desktop) */}
+        <nav
+          aria-label="Primary"
+          className="hidden md:flex items-center px-3 md:px-5 h-11 overflow-x-auto"
+        >
+          <div className="flex items-center gap-1 flex-wrap">
+            {NAV_ITEMS.map(n => navButton(n.key, n.label, n.Icon))}
+            {StrategiesMenu}
+          </div>
+        </nav>
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className={navBtn}>
-                  <Layers className="h-3.5 w-3.5 mr-1.5" />
-                  Strategies
-                  <span className="ml-1.5 text-[10px] font-mono text-muted-foreground">
-                    {strategies.filter(s => s.active).length}/{strategies.length}
-                  </span>
-                  <ChevronDown className="h-3 w-3 ml-1" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-64 max-h-[60vh] overflow-y-auto">
-                <DropdownMenuLabel className="text-[10px] uppercase tracking-widest text-muted-foreground">
-                  Active Strategies
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {strategies.map(s => (
-                  <DropdownMenuItem key={s.name} className="flex items-center justify-between text-xs">
-                    <span className="flex items-center gap-2">
-                      <span className={`h-1.5 w-1.5 rounded-full ${s.active && isRunning ? 'bg-primary animate-pulse' : s.active ? 'bg-primary/40' : 'bg-muted-foreground'}`} />
-                      <span className="text-foreground">{s.label}</span>
-                    </span>
-                    <span className={`text-[9px] font-display uppercase tracking-widest ${s.active ? 'text-primary' : 'text-muted-foreground'}`}>
-                      {s.active ? (isRunning ? 'Live' : 'Armed') : 'Off'}
-                    </span>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+        {/* Mobile collapsed menu */}
+        {mobileOpen && (
+          <nav
+            id="app-mobile-nav"
+            aria-label="Primary mobile"
+            className="md:hidden border-t border-border/50 bg-background/95 backdrop-blur px-3 py-2"
+          >
+            <ul className="flex flex-col gap-1">
+              {NAV_ITEMS.map(({ key, label, Icon }) => {
+                const active = sheet === key;
+                return (
+                  <li key={key}>
+                    <Button
+                      onClick={() => open(key)}
+                      variant="ghost"
+                      aria-current={active ? 'page' : undefined}
+                      className={cn(
+                        "w-full justify-start h-9 text-xs font-display tracking-wide",
+                        "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                        active && "text-primary bg-primary/10 border-l-2 border-primary",
+                      )}
+                    >
+                      <Icon className="h-3.5 w-3.5 mr-2" /> {label}
+                    </Button>
+                  </li>
+                );
+              })}
+              <li className="pt-1">{StrategiesMenu}</li>
+            </ul>
           </nav>
-        </div>
+        )}
       </header>
+
+
 
 
       <Sheet open={sheet === 'settings'} onOpenChange={(o) => !o && close()}>
