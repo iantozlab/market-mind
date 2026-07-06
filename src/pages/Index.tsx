@@ -16,8 +16,13 @@ import PsychologyHealthPanel, { type PsychologyHealthRow } from '@/components/Ps
 import PsychologyDiagnosticsPanel from '@/components/PsychologyDiagnosticsPanel';
 import RiskAlertsPanel from '@/components/RiskAlertsPanel';
 import AppNavbar from '@/components/AppNavbar';
+import MetaRegimeController from '@/components/MetaRegimeController';
+import StrategyStateMachineView from '@/components/StrategyStateMachineView';
+import CorrelationMatrixPanel from '@/components/CorrelationMatrixPanel';
+import ShadowModePanel from '@/components/ShadowModePanel';
 import { appendAudit, diffSettings } from '@/lib/settings-audit';
 import { useAlertsCenter } from '@/hooks/useAlertsCenter';
+import { useMetricsPersistence } from '@/hooks/useMetricsPersistence';
 
 const StatusPill: React.FC<{ ok: boolean; label: string; value: string; tone?: 'primary' | 'accent' }> = ({ ok, label, value, tone = 'primary' }) => {
   const dot = ok ? (tone === 'accent' ? 'bg-accent' : 'bg-primary') : 'bg-destructive';
