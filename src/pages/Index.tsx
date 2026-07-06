@@ -194,10 +194,19 @@ const NeuralBotDashboard: React.FC = () => {
           open: alerts.open,
           setOpen: alerts.setOpen,
           clear: alerts.clear,
+          markRead: alerts.markRead,
+          markAllRead: alerts.markAllRead,
         }}
       />
 
-      <div className="p-4 md:p-6 space-y-6">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus:rounded focus:border focus:border-primary focus:bg-background focus:px-3 focus:py-1.5 focus:text-xs focus:font-display focus:tracking-wide focus:text-primary focus:shadow-lg"
+      >
+        Skip to content
+      </a>
+
+      <main id="main-content" tabIndex={-1} className="p-4 md:p-6 space-y-6 outline-none">
         {/* Hero header */}
         <div className="relative overflow-hidden rounded-xl border border-border bg-gradient-to-br from-card via-card/80 to-background p-5 md:p-6">
           <div className="pointer-events-none absolute inset-0 scanline opacity-40" />
