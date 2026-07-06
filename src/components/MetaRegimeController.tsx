@@ -93,7 +93,7 @@ const MetaRegimeController: React.FC<Props> = ({ metrics, isRunning, onApplyThre
           >
             <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{p}</div>
             <div className="text-[10px] font-mono text-foreground mt-0.5">
-              edge≥{PROFILES[p].minEdgeBps}bps · dd≤{(PROFILES[p].dailyStopLossPct! * 100).toFixed(0)}%
+              {PROFILE_LABEL[p]}
             </div>
           </button>
         ))}
