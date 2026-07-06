@@ -373,6 +373,26 @@ const NeuralBotDashboard: React.FC = () => {
 
         <PsychologyDiagnosticsPanel routes={signalRoutes} />
 
+        {/* Advanced Strategy Analytics */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <MetaRegimeController
+            metrics={metrics}
+            isRunning={isRunning}
+            onApplyThresholds={applyRansThresholds}
+          />
+          <StrategyStateMachineView
+            strategies={strategies}
+            triggers={strategyTriggers}
+            isRunning={isRunning}
+            activePositions={metrics.activePositions}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <CorrelationMatrixPanel strategies={strategies} triggers={strategyTriggers} />
+          <ShadowModePanel strategies={strategies} triggers={strategyTriggers} />
+        </div>
+
         {/* Terminal */}
         <div>
           <h2 className="font-display text-sm font-semibold text-foreground mb-2 tracking-wide">Neural Network Activity Log</h2>
@@ -390,7 +410,7 @@ const NeuralBotDashboard: React.FC = () => {
           open={!!selectedMarket}
           onClose={() => setSelectedMarket(null)}
         />
-      </div>
+      </main>
     </div>
   );
 };
