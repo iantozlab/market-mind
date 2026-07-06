@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Sliders, Brain, Shield, History, Layers, ChevronDown, Cpu, Menu,
 } from 'lucide-react';
@@ -10,6 +10,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import ThemeToggle from './ThemeToggle';
 import AlertsBell from './AlertsBell';
@@ -26,6 +27,7 @@ import type { RANSPlan, MarketRegime, RegimeWeights, RansThresholds } from '@/li
 import type { AlertItem } from '@/hooks/useAlertsCenter';
 
 type SheetKey = null | 'settings' | 'ml' | 'risk' | 'backtest' | 'rans';
+const SHEET_STORAGE_KEY = 'app_last_sheet_v1';
 
 interface Props {
   isRunning: boolean;
@@ -63,6 +65,8 @@ interface Props {
     open: boolean;
     setOpen: (o: boolean) => void;
     clear: () => void;
+    markRead: (id: string) => void;
+    markAllRead: () => void;
   };
 }
 
@@ -85,21 +89,38 @@ const AppNavbar: React.FC<Props> = ({
 }) => {
   const [sheet, setSheet] = useState<SheetKey>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const open = (k: SheetKey) => { setSheet(k); setMobileOpen(false); };
+  const [lastSheet, setLastSheet] = useState<SheetKey>(() => {
+    try {
+      const v = localStorage.getItem(SHEET_STORAGE_KEY);
+      if (v && ['settings','ml','risk','backtest','rans'].includes(v)) return v as SheetKey;
+    } catch { /* noop */ }
+    return null;
+  });
+
+  const open = (k: SheetKey) => {
+    setSheet(k); setMobileOpen(false);
+    if (k) { setLastSheet(k); try { localStorage.setItem(SHEET_STORAGE_KEY, k); } catch { /* noop */ } }
+  };
   const close = () => setSheet(null);
+
+  // Restore last sheet chip in mobile-friendly quick access
+  useEffect(() => { /* lastSheet is available for UI hint via title */ }, [lastSheet]);
 
   const navButton = (key: Exclude<SheetKey, null>, label: string, Icon: React.ComponentType<{ className?: string }>) => {
     const active = sheet === key;
+    const wasLast = !active && lastSheet === key;
     return (
       <Button
         key={key}
         onClick={() => open(key)}
         variant="ghost"
         aria-current={active ? 'page' : undefined}
+        title={wasLast ? `${label} (last opened)` : label}
         className={cn(
           "h-8 px-2.5 text-xs font-display tracking-wide relative",
           "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
           active && "text-primary bg-primary/10",
+          wasLast && "text-foreground/90 ring-1 ring-primary/25",
         )}
       >
         <Icon className="h-3.5 w-3.5 mr-1.5" /> {label}
@@ -110,7 +131,6 @@ const AppNavbar: React.FC<Props> = ({
     );
   };
 
-  const strategiesActive = sheet === null && false; // placeholder — Strategies is a dropdown, not a sheet
   const StrategiesMenu = (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -120,7 +140,6 @@ const AppNavbar: React.FC<Props> = ({
           className={cn(
             "h-8 px-2.5 text-xs font-display tracking-wide",
             "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-            strategiesActive && "text-primary bg-primary/10",
           )}
         >
           <Layers className="h-3.5 w-3.5 mr-1.5" />
@@ -154,19 +173,53 @@ const AppNavbar: React.FC<Props> = ({
   return (
     <>
       <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
-        {/* Top bar: brand + system controls */}
+        {/* Top bar */}
         <div className="flex items-center gap-2 px-3 md:px-5 h-12 border-b border-border/50">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 md:hidden"
-            aria-label={mobileOpen ? 'Close navigation menu' : 'Open navigation menu'}
-            aria-expanded={mobileOpen}
-            aria-controls="app-mobile-nav"
-            onClick={() => setMobileOpen(v => !v)}
-          >
-            <Menu className="h-4 w-4" />
-          </Button>
+          {/* Mobile menu — Popover gives us built-in focus trap + escape + outside click */}
+          <Popover open={mobileOpen} onOpenChange={setMobileOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 md:hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                aria-label={mobileOpen ? 'Close navigation menu' : 'Open navigation menu'}
+                aria-expanded={mobileOpen}
+              >
+                <Menu className="h-4 w-4" aria-hidden />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              side="bottom"
+              align="start"
+              className="w-64 p-2 md:hidden"
+              role="menu"
+              aria-label="Primary navigation"
+            >
+              <ul className="flex flex-col gap-1">
+                {NAV_ITEMS.map(({ key, label, Icon }) => {
+                  const active = sheet === key;
+                  return (
+                    <li key={key} role="none">
+                      <Button
+                        role="menuitem"
+                        onClick={() => open(key)}
+                        variant="ghost"
+                        aria-current={active ? 'page' : undefined}
+                        className={cn(
+                          "w-full justify-start h-9 text-xs font-display tracking-wide",
+                          "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                          active && "text-primary bg-primary/10 border-l-2 border-primary",
+                        )}
+                      >
+                        <Icon className="h-3.5 w-3.5 mr-2" /> {label}
+                      </Button>
+                    </li>
+                  );
+                })}
+                <li className="pt-1 border-t border-border/40 mt-1">{StrategiesMenu}</li>
+              </ul>
+            </PopoverContent>
+          </Popover>
 
           <div className="flex items-center gap-2">
             <span className={`h-2 w-2 rounded-full ${isRunning ? 'bg-primary animate-pulse-glow' : 'bg-muted-foreground'}`} />
@@ -194,12 +247,14 @@ const AppNavbar: React.FC<Props> = ({
               open={alerts.open}
               setOpen={alerts.setOpen}
               clear={alerts.clear}
+              markRead={alerts.markRead}
+              markAllRead={alerts.markAllRead}
             />
             <ThemeToggle />
           </div>
         </div>
 
-        {/* Second bar: feature navigation (desktop) */}
+        {/* Second bar (desktop) */}
         <nav
           aria-label="Primary"
           className="hidden md:flex items-center px-3 md:px-5 h-11 overflow-x-auto"
@@ -209,42 +264,7 @@ const AppNavbar: React.FC<Props> = ({
             {StrategiesMenu}
           </div>
         </nav>
-
-        {/* Mobile collapsed menu */}
-        {mobileOpen && (
-          <nav
-            id="app-mobile-nav"
-            aria-label="Primary mobile"
-            className="md:hidden border-t border-border/50 bg-background/95 backdrop-blur px-3 py-2"
-          >
-            <ul className="flex flex-col gap-1">
-              {NAV_ITEMS.map(({ key, label, Icon }) => {
-                const active = sheet === key;
-                return (
-                  <li key={key}>
-                    <Button
-                      onClick={() => open(key)}
-                      variant="ghost"
-                      aria-current={active ? 'page' : undefined}
-                      className={cn(
-                        "w-full justify-start h-9 text-xs font-display tracking-wide",
-                        "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-                        active && "text-primary bg-primary/10 border-l-2 border-primary",
-                      )}
-                    >
-                      <Icon className="h-3.5 w-3.5 mr-2" /> {label}
-                    </Button>
-                  </li>
-                );
-              })}
-              <li className="pt-1">{StrategiesMenu}</li>
-            </ul>
-          </nav>
-        )}
       </header>
-
-
-
 
       <Sheet open={sheet === 'settings'} onOpenChange={(o) => !o && close()}>
         <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">

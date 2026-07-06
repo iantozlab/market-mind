@@ -16,8 +16,13 @@ import PsychologyHealthPanel, { type PsychologyHealthRow } from '@/components/Ps
 import PsychologyDiagnosticsPanel from '@/components/PsychologyDiagnosticsPanel';
 import RiskAlertsPanel from '@/components/RiskAlertsPanel';
 import AppNavbar from '@/components/AppNavbar';
+import MetaRegimeController from '@/components/MetaRegimeController';
+import StrategyStateMachineView from '@/components/StrategyStateMachineView';
+import CorrelationMatrixPanel from '@/components/CorrelationMatrixPanel';
+import ShadowModePanel from '@/components/ShadowModePanel';
 import { appendAudit, diffSettings } from '@/lib/settings-audit';
 import { useAlertsCenter } from '@/hooks/useAlertsCenter';
+import { useMetricsPersistence } from '@/hooks/useMetricsPersistence';
 
 const StatusPill: React.FC<{ ok: boolean; label: string; value: string; tone?: 'primary' | 'accent' }> = ({ ok, label, value, tone = 'primary' }) => {
   const dot = ok ? (tone === 'accent' ? 'bg-accent' : 'bg-primary') : 'bg-destructive';
@@ -64,6 +69,8 @@ const NeuralBotDashboard: React.FC = () => {
 
   const alerts = useAlertsCenter();
   const botRef = useRef<UnifiedNeuralBot | null>(null);
+  useMetricsPersistence(metrics, isRunning, 30_000);
+
 
   const updateState = useCallback(() => {
     if (!botRef.current) return;
@@ -189,10 +196,19 @@ const NeuralBotDashboard: React.FC = () => {
           open: alerts.open,
           setOpen: alerts.setOpen,
           clear: alerts.clear,
+          markRead: alerts.markRead,
+          markAllRead: alerts.markAllRead,
         }}
       />
 
-      <div className="p-4 md:p-6 space-y-6">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus:rounded focus:border focus:border-primary focus:bg-background focus:px-3 focus:py-1.5 focus:text-xs focus:font-display focus:tracking-wide focus:text-primary focus:shadow-lg"
+      >
+        Skip to content
+      </a>
+
+      <main id="main-content" tabIndex={-1} className="p-4 md:p-6 space-y-6 outline-none">
         {/* Hero header */}
         <div className="relative overflow-hidden rounded-xl border border-border bg-gradient-to-br from-card via-card/80 to-background p-5 md:p-6">
           <div className="pointer-events-none absolute inset-0 scanline opacity-40" />
@@ -359,6 +375,26 @@ const NeuralBotDashboard: React.FC = () => {
 
         <PsychologyDiagnosticsPanel routes={signalRoutes} />
 
+        {/* Advanced Strategy Analytics */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <MetaRegimeController
+            metrics={metrics}
+            isRunning={isRunning}
+            onApplyThresholds={applyRansThresholds}
+          />
+          <StrategyStateMachineView
+            strategies={strategies}
+            triggers={strategyTriggers}
+            isRunning={isRunning}
+            activePositions={metrics.activePositions}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <CorrelationMatrixPanel strategies={strategies} triggers={strategyTriggers} />
+          <ShadowModePanel strategies={strategies} triggers={strategyTriggers} />
+        </div>
+
         {/* Terminal */}
         <div>
           <h2 className="font-display text-sm font-semibold text-foreground mb-2 tracking-wide">Neural Network Activity Log</h2>
@@ -376,7 +412,7 @@ const NeuralBotDashboard: React.FC = () => {
           open={!!selectedMarket}
           onClose={() => setSelectedMarket(null)}
         />
-      </div>
+      </main>
     </div>
   );
 };

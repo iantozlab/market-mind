@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 export type AlertSeverity = 'info' | 'warning' | 'critical';
 export interface AlertItem {
@@ -20,13 +20,16 @@ export function useAlertsCenter() {
     setAlerts(prev => [{ ...a, id: crypto.randomUUID(), ts: Date.now(), read: false }, ...prev].slice(0, MAX));
   }, []);
 
-  const markAllRead = useCallback(() => setAlerts(prev => prev.map(a => ({ ...a, read: true }))), []);
+  const markRead = useCallback((id: string) => {
+    setAlerts(prev => prev.map(a => (a.id === id ? { ...a, read: true } : a)));
+  }, []);
+
+  const markAllRead = useCallback(() => {
+    setAlerts(prev => prev.map(a => ({ ...a, read: true })));
+  }, []);
+
   const clear = useCallback(() => setAlerts([]), []);
 
-  useEffect(() => {
-    if (open) markAllRead();
-  }, [open, markAllRead]);
-
   const unread = alerts.filter(a => !a.read).length;
-  return { alerts, push, unread, open, setOpen, clear };
+  return { alerts, push, unread, open, setOpen, clear, markRead, markAllRead };
 }

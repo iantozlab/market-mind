@@ -14,6 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
+      metrics_snapshots: {
+        Row: {
+          active_positions: number
+          anomaly_score: number
+          captured_at: string
+          daily_pnl: number
+          extra: Json
+          id: string
+          markets_monitored: number
+          max_drawdown: number
+          session_id: string
+          sharpe_ratio: number
+          total_pnl: number
+          trades_executed: number
+          win_rate: number
+        }
+        Insert: {
+          active_positions?: number
+          anomaly_score?: number
+          captured_at?: string
+          daily_pnl?: number
+          extra?: Json
+          id?: string
+          markets_monitored?: number
+          max_drawdown?: number
+          session_id: string
+          sharpe_ratio?: number
+          total_pnl?: number
+          trades_executed?: number
+          win_rate?: number
+        }
+        Update: {
+          active_positions?: number
+          anomaly_score?: number
+          captured_at?: string
+          daily_pnl?: number
+          extra?: Json
+          id?: string
+          markets_monitored?: number
+          max_drawdown?: number
+          session_id?: string
+          sharpe_ratio?: number
+          total_pnl?: number
+          trades_executed?: number
+          win_rate?: number
+        }
+        Relationships: []
+      }
       psychology_snapshots: {
         Row: {
           created_at: string
