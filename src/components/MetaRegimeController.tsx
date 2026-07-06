@@ -7,9 +7,15 @@ import type { RansThresholds } from '@/lib/rans-engine';
 type ProfileName = 'conservative' | 'balanced' | 'aggressive';
 
 const PROFILES: Record<ProfileName, Partial<RansThresholds>> = {
-  conservative: { minEdgeBps: 45, maxSlippageBps: 25, dailyStopLossPct: 0.03 } as Partial<RansThresholds>,
-  balanced:     { minEdgeBps: 30, maxSlippageBps: 40, dailyStopLossPct: 0.05 } as Partial<RansThresholds>,
-  aggressive:   { minEdgeBps: 20, maxSlippageBps: 60, dailyStopLossPct: 0.08 } as Partial<RansThresholds>,
+  conservative: { highVolatility: 0.03,  lowVolatility: 0.008, momentumPersistence: 0.80, eventVolumeSpike: 3.5, minArbConfidence: 0.75 },
+  balanced:     { highVolatility: 0.05,  lowVolatility: 0.012, momentumPersistence: 0.70, eventVolumeSpike: 2.5, minArbConfidence: 0.60 },
+  aggressive:   { highVolatility: 0.08,  lowVolatility: 0.020, momentumPersistence: 0.55, eventVolumeSpike: 1.8, minArbConfidence: 0.45 },
+};
+
+const PROFILE_LABEL: Record<ProfileName, string> = {
+  conservative: 'arb≥75% · spike 3.5x',
+  balanced:     'arb≥60% · spike 2.5x',
+  aggressive:   'arb≥45% · spike 1.8x',
 };
 
 interface Props {
