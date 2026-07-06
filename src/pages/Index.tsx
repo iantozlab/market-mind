@@ -69,6 +69,8 @@ const NeuralBotDashboard: React.FC = () => {
 
   const alerts = useAlertsCenter();
   const botRef = useRef<UnifiedNeuralBot | null>(null);
+  useMetricsPersistence(metrics, isRunning, 30_000);
+
 
   const updateState = useCallback(() => {
     if (!botRef.current) return;
