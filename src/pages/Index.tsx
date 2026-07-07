@@ -407,6 +407,13 @@ const NeuralBotDashboard: React.FC = () => {
           <ShadowModePanel strategies={strategies} triggers={strategyTriggers} />
         </div>
 
+        <StrategyEventTimeline
+          strategies={strategies}
+          triggers={strategyTriggers}
+          activePositions={metrics.activePositions}
+          isRunning={isRunning}
+        />
+
         {/* Terminal */}
         <div>
           <h2 className="font-display text-sm font-semibold text-foreground mb-2 tracking-wide">Neural Network Activity Log</h2>
