@@ -235,6 +235,17 @@ const NeuralBotDashboard: React.FC = () => {
                 <StatusPill ok={!!getEnvStatus().polymarketApiKey} label="API Key" value={getEnvStatus().polymarketApiKey ? 'OK' : 'Missing'} />
                 <StatusPill ok label="Mode" value={CONFIG.BOT_MODE} tone="accent" />
                 <StatusPill ok label="Capital" value={`$${CONFIG.INITIAL_CAPITAL.toLocaleString()}`} tone="accent" />
+                <StatusPill
+                  ok={!persistence.lastError && persistence.queueDepth === 0}
+                  label="Snapshot"
+                  value={
+                    persistence.lastSavedAt
+                      ? `${new Date(persistence.lastSavedAt).toLocaleTimeString()}${persistence.queueDepth ? ` · queued ${persistence.queueDepth}` : ''}`
+                      : persistence.queueDepth
+                        ? `queued ${persistence.queueDepth}`
+                        : 'pending'
+                  }
+                />
               </div>
             )}
           </div>
