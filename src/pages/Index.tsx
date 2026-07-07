@@ -20,6 +20,7 @@ import MetaRegimeController from '@/components/MetaRegimeController';
 import StrategyStateMachineView from '@/components/StrategyStateMachineView';
 import CorrelationMatrixPanel from '@/components/CorrelationMatrixPanel';
 import ShadowModePanel from '@/components/ShadowModePanel';
+import StrategyEventTimeline from '@/components/StrategyEventTimeline';
 import { appendAudit, diffSettings } from '@/lib/settings-audit';
 import { useAlertsCenter } from '@/hooks/useAlertsCenter';
 import { useMetricsPersistence } from '@/hooks/useMetricsPersistence';
@@ -69,7 +70,7 @@ const NeuralBotDashboard: React.FC = () => {
 
   const alerts = useAlertsCenter();
   const botRef = useRef<UnifiedNeuralBot | null>(null);
-  useMetricsPersistence(metrics, isRunning, 30_000);
+  const persistence = useMetricsPersistence(metrics, isRunning, 30_000);
 
 
   const updateState = useCallback(() => {
@@ -234,6 +235,17 @@ const NeuralBotDashboard: React.FC = () => {
                 <StatusPill ok={!!getEnvStatus().polymarketApiKey} label="API Key" value={getEnvStatus().polymarketApiKey ? 'OK' : 'Missing'} />
                 <StatusPill ok label="Mode" value={CONFIG.BOT_MODE} tone="accent" />
                 <StatusPill ok label="Capital" value={`$${CONFIG.INITIAL_CAPITAL.toLocaleString()}`} tone="accent" />
+                <StatusPill
+                  ok={!persistence.lastError && persistence.queueDepth === 0}
+                  label="Snapshot"
+                  value={
+                    persistence.lastSavedAt
+                      ? `${new Date(persistence.lastSavedAt).toLocaleTimeString()}${persistence.queueDepth ? ` · queued ${persistence.queueDepth}` : ''}`
+                      : persistence.queueDepth
+                        ? `queued ${persistence.queueDepth}`
+                        : 'pending'
+                  }
+                />
               </div>
             )}
           </div>
@@ -394,6 +406,13 @@ const NeuralBotDashboard: React.FC = () => {
           <CorrelationMatrixPanel strategies={strategies} triggers={strategyTriggers} />
           <ShadowModePanel strategies={strategies} triggers={strategyTriggers} />
         </div>
+
+        <StrategyEventTimeline
+          strategies={strategies}
+          triggers={strategyTriggers}
+          activePositions={metrics.activePositions}
+          isRunning={isRunning}
+        />
 
         {/* Terminal */}
         <div>
