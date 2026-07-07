@@ -20,6 +20,7 @@ import MetaRegimeController from '@/components/MetaRegimeController';
 import StrategyStateMachineView from '@/components/StrategyStateMachineView';
 import CorrelationMatrixPanel from '@/components/CorrelationMatrixPanel';
 import ShadowModePanel from '@/components/ShadowModePanel';
+import StrategyEventTimeline from '@/components/StrategyEventTimeline';
 import { appendAudit, diffSettings } from '@/lib/settings-audit';
 import { useAlertsCenter } from '@/hooks/useAlertsCenter';
 import { useMetricsPersistence } from '@/hooks/useMetricsPersistence';
