@@ -103,7 +103,40 @@ const StrategyEventTimeline: React.FC<Props> = ({ strategies, triggers, activePo
     return () => clearInterval(id);
   }, [isRunning]);
 
-  const visible = filter === 'all' ? events : events.filter(e => e.to === filter);
+  const RANGE_KEY = 'timeline_range_min_v1';
+  const EXTRA_KEY = 'timeline_export_extras_v1';
+  const [rangeMin, setRangeMin] = useState<number>(() => {
+    try { return Number(sessionStorage.getItem(RANGE_KEY)) || 0; } catch { return 0; }
+  });
+  const [extras, setExtras] = useState<boolean>(() => {
+    try { return sessionStorage.getItem(EXTRA_KEY) === '1'; } catch { return false; }
+  });
+  useEffect(() => { try { sessionStorage.setItem(RANGE_KEY, String(rangeMin)); } catch { /* noop */ } }, [rangeMin]);
+  useEffect(() => { try { sessionStorage.setItem(EXTRA_KEY, extras ? '1' : '0'); } catch { /* noop */ } }, [extras]);
+
+  const cutoff = rangeMin > 0 ? Date.now() - rangeMin * 60_000 : 0;
+  const visible = events
+    .filter(e => filter === 'all' || e.to === filter)
+    .filter(e => e.ts >= cutoff);
+
+  const buildRows = () => visible.map(e => {
+    const base: Record<string, unknown> = {
+      time: new Date(e.ts).toLocaleTimeString(),
+      from: e.from,
+      to: e.to,
+    };
+    if (extras) {
+      base.id = e.id;
+      base.ts_iso = new Date(e.ts).toISOString();
+      base.ts_ms = e.ts;
+      base.strategy = e.strategy;
+      base.reason = e.reason ?? '';
+    } else {
+      base.strategy = e.strategy;
+      base.reason = e.reason ?? '';
+    }
+    return base;
+  });
 
   return (
     <div className="rounded-lg border border-border bg-card p-4">
@@ -112,7 +145,7 @@ const StrategyEventTimeline: React.FC<Props> = ({ strategies, triggers, activePo
           <Radio className="h-4 w-4 text-primary" />
           <h2 className="font-display text-sm font-semibold tracking-wide">Strategy Event Timeline</h2>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 flex-wrap">
           {(['all','armed','triggered','in-position','cooling'] as const).map(f => (
             <button
               key={f}
@@ -125,20 +158,32 @@ const StrategyEventTimeline: React.FC<Props> = ({ strategies, triggers, activePo
               {f}
             </button>
           ))}
+          <select
+            value={rangeMin}
+            onChange={e => setRangeMin(Number(e.target.value))}
+            className="text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded border border-border bg-background text-muted-foreground"
+            aria-label="Time range"
+          >
+            <option value={0}>All time</option>
+            <option value={5}>Last 5m</option>
+            <option value={15}>Last 15m</option>
+            <option value={60}>Last 1h</option>
+            <option value={240}>Last 4h</option>
+          </select>
+          <label className="flex items-center gap-1 text-[9px] uppercase tracking-widest text-muted-foreground px-1">
+            <input
+              type="checkbox"
+              checked={extras}
+              onChange={e => setExtras(e.target.checked)}
+              className="accent-primary h-3 w-3"
+            />
+            +extras
+          </label>
           <Button
             size="sm"
             variant="ghost"
             className="h-6 text-[10px]"
-            onClick={() => {
-              const rows = visible.map(e => ({
-                ts: new Date(e.ts).toISOString(),
-                strategy: e.strategy,
-                from: e.from,
-                to: e.to,
-                reason: e.reason ?? '',
-              }));
-              downloadCSV(`strategy-timeline-${Date.now()}.csv`, rows);
-            }}
+            onClick={() => downloadCSV(`strategy-timeline-${Date.now()}.csv`, buildRows())}
             aria-label="Export timeline as CSV"
             disabled={visible.length === 0}
           >
@@ -149,7 +194,8 @@ const StrategyEventTimeline: React.FC<Props> = ({ strategies, triggers, activePo
             variant="ghost"
             className="h-6 text-[10px]"
             onClick={() => {
-              const blob = new Blob([JSON.stringify(visible, null, 2)], { type: 'application/json' });
+              const payload = { filter, rangeMin, exportedAt: new Date().toISOString(), events: visible };
+              const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');
               a.href = url;
@@ -167,9 +213,9 @@ const StrategyEventTimeline: React.FC<Props> = ({ strategies, triggers, activePo
           <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setEvents([])} aria-label="Clear timeline">
             <Trash2 className="h-3 w-3" />
           </Button>
-
         </div>
       </div>
+
       {visible.length === 0 ? (
         <p className="text-xs text-muted-foreground">
           {isRunning ? 'Waiting for state transitions…' : 'Start the bot to record transitions.'}
