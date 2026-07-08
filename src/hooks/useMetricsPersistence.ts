@@ -53,6 +53,9 @@ export function useMetricsPersistence(
   }));
   const lastSent = useRef(0);
   const backoff = useRef(0);
+  const wasFailing = useRef(false);
+  const retryToastShown = useRef(false);
+
 
   useEffect(() => {
     if (!isRunning) return;
