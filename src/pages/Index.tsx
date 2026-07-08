@@ -246,8 +246,38 @@ const NeuralBotDashboard: React.FC = () => {
                         : 'pending'
                   }
                 />
+                <button
+                  type="button"
+                  onClick={() => { void persistence.flushNow(); }}
+                  disabled={persistence.isFlushing}
+                  className="text-[10px] uppercase tracking-widest px-2 py-1 rounded border border-border hover:border-primary hover:text-primary disabled:opacity-50"
+                  aria-label="Flush pending snapshots now"
+                >
+                  {persistence.isFlushing ? 'Flushing…' : 'Flush now'}
+                </button>
               </div>
             )}
+            {isRunning && persistence.attempts.length > 0 && (
+              <div className="mt-3 rounded border border-border bg-background/40 p-2 max-w-2xl">
+                <div className="text-[9px] uppercase tracking-widest text-muted-foreground mb-1">
+                  Persistence log · last {persistence.attempts.length}
+                </div>
+                <ul className="space-y-0.5 max-h-24 overflow-y-auto">
+                  {persistence.attempts.slice(0, 6).map((a, i) => (
+                    <li key={i} className="flex items-center gap-2 text-[10px] font-mono">
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${
+                          a.status === 'ok' ? 'bg-primary' : a.status === 'retrying' ? 'bg-warning' : 'bg-destructive'
+                        }`}
+                      />
+                      <span className="text-muted-foreground w-16 shrink-0">{new Date(a.ts).toLocaleTimeString()}</span>
+                      <span className="uppercase w-14 shrink-0">{a.status}</span>
+                      <span className="text-muted-foreground">n={a.count}</span>
+                      {a.message && <span className="text-destructive/80 truncate">{a.message}</span>}
+                    </li>
+                  ))}
+                </ul>
+
           </div>
         </div>
 
