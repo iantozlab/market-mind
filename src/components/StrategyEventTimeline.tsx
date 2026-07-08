@@ -125,9 +125,49 @@ const StrategyEventTimeline: React.FC<Props> = ({ strategies, triggers, activePo
               {f}
             </button>
           ))}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 text-[10px]"
+            onClick={() => {
+              const rows = visible.map(e => ({
+                ts: new Date(e.ts).toISOString(),
+                strategy: e.strategy,
+                from: e.from,
+                to: e.to,
+                reason: e.reason ?? '',
+              }));
+              downloadCSV(`strategy-timeline-${Date.now()}.csv`, rows);
+            }}
+            aria-label="Export timeline as CSV"
+            disabled={visible.length === 0}
+          >
+            <Download className="h-3 w-3 mr-1" />CSV
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 text-[10px]"
+            onClick={() => {
+              const blob = new Blob([JSON.stringify(visible, null, 2)], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `strategy-timeline-${Date.now()}.json`;
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+              URL.revokeObjectURL(url);
+            }}
+            aria-label="Export timeline as JSON"
+            disabled={visible.length === 0}
+          >
+            <Download className="h-3 w-3 mr-1" />JSON
+          </Button>
           <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setEvents([])} aria-label="Clear timeline">
             <Trash2 className="h-3 w-3" />
           </Button>
+
         </div>
       </div>
       {visible.length === 0 ? (
