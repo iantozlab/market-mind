@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import type { BotMetrics } from '@/lib/neural-bot-engine';
+
 
 const SESSION_KEY = 'metrics_session_id_v1';
 const QUEUE_KEY = 'metrics_offline_queue_v1';
@@ -51,6 +53,9 @@ export function useMetricsPersistence(
   }));
   const lastSent = useRef(0);
   const backoff = useRef(0);
+  const wasFailing = useRef(false);
+  const retryToastShown = useRef(false);
+
 
   useEffect(() => {
     if (!isRunning) return;
@@ -80,11 +85,20 @@ export function useMetricsPersistence(
       setStatus(s => ({ ...s, isFlushing: true, queueDepth: queue.length }));
 
       try {
+        if (wasFailing.current && !retryToastShown.current) {
+          toast.loading('Retrying metrics sync…', { id: 'metrics-persist' });
+          retryToastShown.current = true;
+        }
         // batch insert everything queued
         const { error } = await supabase.from('metrics_snapshots' as never).insert(queue as never);
         if (error) throw error;
         saveQueue([]);
         backoff.current = 0;
+        if (wasFailing.current) {
+          toast.success(`Metrics sync recovered · flushed ${queue.length}`, { id: 'metrics-persist' });
+          wasFailing.current = false;
+          retryToastShown.current = false;
+        }
         if (!cancelled) setStatus(s => ({
           ...s,
           lastSavedAt: Date.now(),
@@ -97,13 +111,23 @@ export function useMetricsPersistence(
         saveQueue(queue);
         const delay = Math.min(300_000, 5_000 * Math.pow(2, Math.min(6, Math.floor(queue.length / 3))));
         backoff.current = Date.now() + delay;
+        const msg = e instanceof Error ? e.message : String(e);
+        if (!wasFailing.current) {
+          toast.error(`Metrics sync failed · buffering offline (${queue.length})`, {
+            id: 'metrics-persist',
+            description: msg.slice(0, 120),
+          });
+          wasFailing.current = true;
+          retryToastShown.current = false;
+        }
         if (!cancelled) setStatus(s => ({
           ...s,
-          lastError: e instanceof Error ? e.message : String(e),
+          lastError: msg,
           queueDepth: queue.length,
           isFlushing: false,
         }));
       }
+
     };
 
     const id = setInterval(flush, Math.max(5_000, intervalMs));
