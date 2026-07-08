@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import type { BotMetrics } from '@/lib/neural-bot-engine';
+
 
 const SESSION_KEY = 'metrics_session_id_v1';
 const QUEUE_KEY = 'metrics_offline_queue_v1';
