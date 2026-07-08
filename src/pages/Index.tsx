@@ -277,9 +277,11 @@ const NeuralBotDashboard: React.FC = () => {
                     </li>
                   ))}
                 </ul>
-
+              </div>
+            )}
           </div>
         </div>
+
 
 
         {/* Neural Status Cards */}
