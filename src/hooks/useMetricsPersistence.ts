@@ -26,6 +26,8 @@ function saveQueue(q: Record<string, unknown>[]) {
   try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q.slice(-200))); } catch { /* noop */ }
 }
 
+const BADGE_KEY = 'metrics_last_flush_v1';
+
 export type PersistenceAttemptStatus = 'ok' | 'error' | 'retrying';
 export interface PersistenceAttempt {
   ts: number;
@@ -34,13 +36,34 @@ export interface PersistenceAttempt {
   message?: string;
 }
 
+export interface LastFlushBadge {
+  status: PersistenceAttemptStatus;
+  ts: number;
+  count: number;
+  retries: number;
+  message?: string;
+}
+
+function loadBadge(): LastFlushBadge | null {
+  try { return JSON.parse(localStorage.getItem(BADGE_KEY) || 'null'); } catch { return null; }
+}
+function saveBadge(b: LastFlushBadge | null) {
+  try {
+    if (b) localStorage.setItem(BADGE_KEY, JSON.stringify(b));
+    else localStorage.removeItem(BADGE_KEY);
+  } catch { /* noop */ }
+}
+
 export interface MetricsPersistenceStatus {
   sessionId: string;
   lastSavedAt: number | null;
   lastError: string | null;
   queueDepth: number;
   isFlushing: boolean;
+  isReplaying: boolean;
   attempts: PersistenceAttempt[];
+  lastFlush: LastFlushBadge | null;
+  retryCount: number;
   flushNow: () => Promise<void>;
   clearAttempts: () => void;
 }
