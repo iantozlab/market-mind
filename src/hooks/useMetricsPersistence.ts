@@ -76,24 +76,31 @@ export function useMetricsPersistence(
   isRunning: boolean,
   intervalMs: number = 30_000,
 ): MetricsPersistenceStatus {
-  const [status, setStatus] = useState<Omit<MetricsPersistenceStatus, 'flushNow' | 'clearAttempts'>>(() => ({
-    sessionId: getSessionId(),
-    lastSavedAt: null,
-    lastError: null,
-    queueDepth: loadQueue().length,
-    isFlushing: false,
-    attempts: [],
-  }));
+  const [status, setStatus] = useState<Omit<MetricsPersistenceStatus, 'flushNow' | 'clearAttempts'>>(() => {
+    const badge = loadBadge();
+    return {
+      sessionId: getSessionId(),
+      lastSavedAt: badge?.status === 'ok' ? badge.ts : null,
+      lastError: badge?.status === 'error' ? badge.message ?? null : null,
+      queueDepth: loadQueue().length,
+      isFlushing: false,
+      isReplaying: false,
+      attempts: [],
+      lastFlush: badge,
+      retryCount: badge?.retries ?? 0,
+    };
+  });
 
   const metricsRef = useRef(metrics);
   metricsRef.current = metrics;
   const sessionIdRef = useRef(status.sessionId);
   const lastSent = useRef(0);
   const backoff = useRef(0);
-  const wasFailing = useRef(false);
+  const wasFailing = useRef(loadQueue().length > 0);
   const lastToastKey = useRef<string>('');
   const lastToastAt = useRef(0);
   const inFlight = useRef(false);
+  const retriesRef = useRef<number>(status.retryCount);
 
   const pushAttempt = useCallback((a: PersistenceAttempt) => {
     setStatus(s => ({ ...s, attempts: [a, ...s.attempts].slice(0, MAX_ATTEMPTS) }));
