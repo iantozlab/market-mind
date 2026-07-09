@@ -42,6 +42,7 @@ export interface MetricsPersistenceStatus {
   isFlushing: boolean;
   attempts: PersistenceAttempt[];
   flushNow: () => Promise<void>;
+  clearAttempts: () => void;
 }
 
 const MAX_ATTEMPTS = 20;
