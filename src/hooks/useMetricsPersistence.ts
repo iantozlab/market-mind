@@ -139,8 +139,9 @@ export function useMetricsPersistence(
     };
 
     const queue = loadQueue();
+    const isReplay = queue.length > 0;
     queue.push(row);
-    setStatus(s => ({ ...s, isFlushing: true, queueDepth: queue.length }));
+    setStatus(s => ({ ...s, isFlushing: true, isReplaying: isReplay, queueDepth: queue.length }));
 
     try {
       if (wasFailing.current || opts.manual) {
@@ -149,6 +150,7 @@ export function useMetricsPersistence(
           toast.loading(opts.manual ? 'Flushing metrics buffer…' : 'Retrying metrics sync…', { id: 'metrics-persist' }),
         );
       }
+      // Queue is FIFO (push appends, insert preserves array order) — replayed in order.
       const { error } = await supabase.from('metrics_snapshots' as never).insert(queue as never);
       if (error) throw error;
       saveQueue([]);
@@ -160,12 +162,19 @@ export function useMetricsPersistence(
         );
       }
       wasFailing.current = false;
-      setStatus(s => ({ ...s, lastSavedAt: Date.now(), lastError: null, queueDepth: 0, isFlushing: false }));
+      retriesRef.current = 0;
+      const badge: LastFlushBadge = { status: 'ok', ts: Date.now(), count: queue.length, retries: 0 };
+      saveBadge(badge);
+      setStatus(s => ({
+        ...s, lastSavedAt: Date.now(), lastError: null, queueDepth: 0,
+        isFlushing: false, isReplaying: false, lastFlush: badge, retryCount: 0,
+      }));
     } catch (e) {
       saveQueue(queue);
       const delay = Math.min(300_000, 5_000 * Math.pow(2, Math.min(6, Math.floor(queue.length / 3))));
       backoff.current = Date.now() + delay;
       const msg = e instanceof Error ? e.message : String(e);
+      retriesRef.current += 1;
       pushAttempt({ ts: Date.now(), status: 'error', count: queue.length, message: msg });
       showToast('err', () =>
         toast.error(`Metrics sync failed · buffering (${queue.length})`, {
@@ -174,7 +183,12 @@ export function useMetricsPersistence(
         }),
       );
       wasFailing.current = true;
-      setStatus(s => ({ ...s, lastError: msg, queueDepth: queue.length, isFlushing: false }));
+      const badge: LastFlushBadge = { status: 'error', ts: Date.now(), count: queue.length, retries: retriesRef.current, message: msg };
+      saveBadge(badge);
+      setStatus(s => ({
+        ...s, lastError: msg, queueDepth: queue.length,
+        isFlushing: false, isReplaying: false, lastFlush: badge, retryCount: retriesRef.current,
+      }));
     } finally {
       inFlight.current = false;
     }
