@@ -53,7 +53,7 @@ export function useMetricsPersistence(
   isRunning: boolean,
   intervalMs: number = 30_000,
 ): MetricsPersistenceStatus {
-  const [status, setStatus] = useState<Omit<MetricsPersistenceStatus, 'flushNow'>>(() => ({
+  const [status, setStatus] = useState<Omit<MetricsPersistenceStatus, 'flushNow' | 'clearAttempts'>>(() => ({
     sessionId: getSessionId(),
     lastSavedAt: null,
     lastError: null,
