@@ -241,12 +241,9 @@ const StrategyEventTimeline: React.FC<Props> = ({ strategies, triggers, activePo
             onClick={async () => {
               const settings = { filter, rangeMin, extras };
               const text = JSON.stringify(settings, null, 2);
-              try {
-                await navigator.clipboard.writeText(text);
-                toast.success('Export settings copied', { description: text });
-              } catch {
-                toast.error('Copy failed');
-              }
+              const ok = await copyToClipboard(text);
+              if (ok) toast.success('Export settings copied', { description: text });
+              else toast.error('Copy failed');
             }}
             aria-label="Copy export settings to clipboard"
           >
