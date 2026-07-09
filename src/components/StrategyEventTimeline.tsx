@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Radio, Trash2, Download, ClipboardCopy } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { downloadCSV } from '@/lib/exporters';
+import { copyToClipboard } from '@/lib/clipboard';
 import type { StrategyStatus, StrategyTrigger } from '@/lib/neural-bot-engine';
 
 
