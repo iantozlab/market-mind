@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Radio, Trash2, Download } from 'lucide-react';
+import { Radio, Trash2, Download, ClipboardCopy } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { downloadCSV } from '@/lib/exporters';
 import type { StrategyStatus, StrategyTrigger } from '@/lib/neural-bot-engine';
@@ -39,8 +40,16 @@ interface Props {
 const MAX_ROWS = 80;
 
 const StrategyEventTimeline: React.FC<Props> = ({ strategies, triggers, activePositions, isRunning }) => {
+  const FILTER_KEY = 'timeline_filter_v1';
   const [events, setEvents] = useState<EventRow[]>([]);
-  const [filter, setFilter] = useState<'all' | State>('all');
+  const [filter, setFilter] = useState<'all' | State>(() => {
+    try {
+      const v = sessionStorage.getItem(FILTER_KEY);
+      if (v === 'all' || v === 'armed' || v === 'triggered' || v === 'in-position' || v === 'cooling') return v;
+    } catch { /* noop */ }
+    return 'all';
+  });
+  useEffect(() => { try { sessionStorage.setItem(FILTER_KEY, filter); } catch { /* noop */ } }, [filter]);
   const stateRef = useRef<Record<string, State>>({});
   const seenTs = useRef<Record<string, number>>({});
   const coolTimers = useRef<Record<string, number>>({});
@@ -209,6 +218,24 @@ const StrategyEventTimeline: React.FC<Props> = ({ strategies, triggers, activePo
             disabled={visible.length === 0}
           >
             <Download className="h-3 w-3 mr-1" />JSON
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 text-[10px]"
+            onClick={async () => {
+              const settings = { filter, rangeMin, extras };
+              const text = JSON.stringify(settings, null, 2);
+              try {
+                await navigator.clipboard.writeText(text);
+                toast.success('Export settings copied', { description: text });
+              } catch {
+                toast.error('Copy failed');
+              }
+            }}
+            aria-label="Copy export settings to clipboard"
+          >
+            <ClipboardCopy className="h-3 w-3 mr-1" />Copy
           </Button>
           <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setEvents([])} aria-label="Clear timeline">
             <Trash2 className="h-3 w-3" />

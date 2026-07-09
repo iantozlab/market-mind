@@ -259,8 +259,17 @@ const NeuralBotDashboard: React.FC = () => {
             )}
             {isRunning && persistence.attempts.length > 0 && (
               <div className="mt-3 rounded border border-border bg-background/40 p-2 max-w-2xl">
-                <div className="text-[9px] uppercase tracking-widest text-muted-foreground mb-1">
-                  Persistence log · last {persistence.attempts.length}
+                <div className="flex items-center justify-between mb-1">
+                  <div className="text-[9px] uppercase tracking-widest text-muted-foreground">
+                    Persistence log · last {persistence.attempts.length}
+                  </div>
+                  <button
+                    onClick={persistence.clearAttempts}
+                    className="text-[9px] uppercase tracking-widest text-muted-foreground hover:text-foreground border border-border rounded px-1.5 py-0.5"
+                    aria-label="Clear persistence attempt log"
+                  >
+                    Clear
+                  </button>
                 </div>
                 <ul className="space-y-0.5 max-h-24 overflow-y-auto">
                   {persistence.attempts.slice(0, 6).map((a, i) => (
@@ -279,6 +288,7 @@ const NeuralBotDashboard: React.FC = () => {
                 </ul>
               </div>
             )}
+
           </div>
         </div>
 

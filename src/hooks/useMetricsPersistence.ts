@@ -42,6 +42,7 @@ export interface MetricsPersistenceStatus {
   isFlushing: boolean;
   attempts: PersistenceAttempt[];
   flushNow: () => Promise<void>;
+  clearAttempts: () => void;
 }
 
 const MAX_ATTEMPTS = 20;
@@ -52,7 +53,7 @@ export function useMetricsPersistence(
   isRunning: boolean,
   intervalMs: number = 30_000,
 ): MetricsPersistenceStatus {
-  const [status, setStatus] = useState<Omit<MetricsPersistenceStatus, 'flushNow'>>(() => ({
+  const [status, setStatus] = useState<Omit<MetricsPersistenceStatus, 'flushNow' | 'clearAttempts'>>(() => ({
     sessionId: getSessionId(),
     lastSavedAt: null,
     lastError: null,
@@ -160,5 +161,24 @@ export function useMetricsPersistence(
     await flush({ manual: true });
   }, [flush]);
 
-  return { ...status, flushNow };
+  const clearAttempts = useCallback(() => {
+    setStatus(s => ({ ...s, attempts: [] }));
+  }, []);
+
+  // Auto-flush pending writes on network reconnect
+  useEffect(() => {
+    const onOnline = () => {
+      const q = loadQueue();
+      if (q.length > 0 || wasFailing.current) {
+        showToast('online', () => toast.message('Network reconnected · flushing metrics buffer', { id: 'metrics-persist' }));
+        backoff.current = 0;
+        void flush({ manual: true });
+      }
+    };
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [flush, showToast]);
+
+  return { ...status, flushNow, clearAttempts };
 }
+
