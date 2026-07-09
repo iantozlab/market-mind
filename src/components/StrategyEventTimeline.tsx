@@ -260,19 +260,35 @@ const StrategyEventTimeline: React.FC<Props> = ({ strategies, triggers, activePo
           {isRunning ? 'Waiting for state transitions…' : 'Start the bot to record transitions.'}
         </p>
       ) : (
-        <ul className="space-y-1 max-h-64 overflow-y-auto pr-1">
-          {visible.map(e => (
-            <li key={e.id} className="flex items-center gap-2 text-[11px] font-mono border-b border-border/30 pb-1">
-              <span className={`h-1.5 w-1.5 rounded-full ${STATE_DOT[e.to]}`} />
-              <span className="text-muted-foreground w-16 shrink-0">{new Date(e.ts).toLocaleTimeString()}</span>
-              <span className="text-foreground capitalize truncate flex-1">{e.strategy.replace(/_/g, ' ')}</span>
-              <span className="text-muted-foreground">{e.from}</span>
-              <span className="text-muted-foreground">→</span>
-              <span className={`${STATE_COLOR[e.to]} uppercase`}>{e.to}</span>
-              {e.reason && <span className="text-muted-foreground/80 truncate max-w-[140px]">· {e.reason}</span>}
-            </li>
-          ))}
-        </ul>
+        <div
+          ref={scrollRef}
+          onScroll={e => setScrollTop((e.target as HTMLDivElement).scrollTop)}
+          className="overflow-y-auto pr-1 relative"
+          style={{ height: VIEW_H }}
+          role="log"
+          aria-label="Strategy event log"
+        >
+          <div style={{ height: totalHeight, position: 'relative' }}>
+            <ul style={{ transform: `translateY(${offsetY}px)`, position: 'absolute', top: 0, left: 0, right: 0 }}>
+              {virtualRows.map(e => (
+                <li
+                  key={e.id}
+                  style={{ height: ROW_H }}
+                  className="flex items-center gap-2 text-[11px] font-mono border-b border-border/30"
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${STATE_DOT[e.to]}`} />
+                  <span className="text-muted-foreground w-16 shrink-0">{new Date(e.ts).toLocaleTimeString()}</span>
+                  <span className="text-foreground capitalize truncate flex-1">{e.strategy.replace(/_/g, ' ')}</span>
+                  <span className="text-muted-foreground">{e.from}</span>
+                  <span className="text-muted-foreground">→</span>
+                  <span className={`${STATE_COLOR[e.to]} uppercase`}>{e.to}</span>
+                  {e.reason && <span className="text-muted-foreground/80 truncate max-w-[140px]">· {e.reason}</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="sr-only" aria-live="polite">Showing {virtualRows.length} of {visible.length} events</div>
+        </div>
       )}
     </div>
   );
