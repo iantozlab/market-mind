@@ -161,5 +161,24 @@ export function useMetricsPersistence(
     await flush({ manual: true });
   }, [flush]);
 
-  return { ...status, flushNow };
+  const clearAttempts = useCallback(() => {
+    setStatus(s => ({ ...s, attempts: [] }));
+  }, []);
+
+  // Auto-flush pending writes on network reconnect
+  useEffect(() => {
+    const onOnline = () => {
+      const q = loadQueue();
+      if (q.length > 0 || wasFailing.current) {
+        showToast('online', () => toast.message('Network reconnected · flushing metrics buffer', { id: 'metrics-persist' }));
+        backoff.current = 0;
+        void flush({ manual: true });
+      }
+    };
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [flush, showToast]);
+
+  return { ...status, flushNow, clearAttempts };
 }
+
