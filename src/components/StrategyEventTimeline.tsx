@@ -38,7 +38,7 @@ interface Props {
   isRunning: boolean;
 }
 
-const MAX_ROWS = 80;
+const MAX_ROWS = 5000;
 
 const StrategyEventTimeline: React.FC<Props> = ({ strategies, triggers, activePositions, isRunning }) => {
   const FILTER_KEY = 'timeline_filter_v1';
