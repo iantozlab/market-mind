@@ -26,6 +26,8 @@ function saveQueue(q: Record<string, unknown>[]) {
   try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q.slice(-200))); } catch { /* noop */ }
 }
 
+const BADGE_KEY = 'metrics_last_flush_v1';
+
 export type PersistenceAttemptStatus = 'ok' | 'error' | 'retrying';
 export interface PersistenceAttempt {
   ts: number;
@@ -34,13 +36,34 @@ export interface PersistenceAttempt {
   message?: string;
 }
 
+export interface LastFlushBadge {
+  status: PersistenceAttemptStatus;
+  ts: number;
+  count: number;
+  retries: number;
+  message?: string;
+}
+
+function loadBadge(): LastFlushBadge | null {
+  try { return JSON.parse(localStorage.getItem(BADGE_KEY) || 'null'); } catch { return null; }
+}
+function saveBadge(b: LastFlushBadge | null) {
+  try {
+    if (b) localStorage.setItem(BADGE_KEY, JSON.stringify(b));
+    else localStorage.removeItem(BADGE_KEY);
+  } catch { /* noop */ }
+}
+
 export interface MetricsPersistenceStatus {
   sessionId: string;
   lastSavedAt: number | null;
   lastError: string | null;
   queueDepth: number;
   isFlushing: boolean;
+  isReplaying: boolean;
   attempts: PersistenceAttempt[];
+  lastFlush: LastFlushBadge | null;
+  retryCount: number;
   flushNow: () => Promise<void>;
   clearAttempts: () => void;
 }
@@ -53,24 +76,31 @@ export function useMetricsPersistence(
   isRunning: boolean,
   intervalMs: number = 30_000,
 ): MetricsPersistenceStatus {
-  const [status, setStatus] = useState<Omit<MetricsPersistenceStatus, 'flushNow' | 'clearAttempts'>>(() => ({
-    sessionId: getSessionId(),
-    lastSavedAt: null,
-    lastError: null,
-    queueDepth: loadQueue().length,
-    isFlushing: false,
-    attempts: [],
-  }));
+  const [status, setStatus] = useState<Omit<MetricsPersistenceStatus, 'flushNow' | 'clearAttempts'>>(() => {
+    const badge = loadBadge();
+    return {
+      sessionId: getSessionId(),
+      lastSavedAt: badge?.status === 'ok' ? badge.ts : null,
+      lastError: badge?.status === 'error' ? badge.message ?? null : null,
+      queueDepth: loadQueue().length,
+      isFlushing: false,
+      isReplaying: false,
+      attempts: [],
+      lastFlush: badge,
+      retryCount: badge?.retries ?? 0,
+    };
+  });
 
   const metricsRef = useRef(metrics);
   metricsRef.current = metrics;
   const sessionIdRef = useRef(status.sessionId);
   const lastSent = useRef(0);
   const backoff = useRef(0);
-  const wasFailing = useRef(false);
+  const wasFailing = useRef(loadQueue().length > 0);
   const lastToastKey = useRef<string>('');
   const lastToastAt = useRef(0);
   const inFlight = useRef(false);
+  const retriesRef = useRef<number>(status.retryCount);
 
   const pushAttempt = useCallback((a: PersistenceAttempt) => {
     setStatus(s => ({ ...s, attempts: [a, ...s.attempts].slice(0, MAX_ATTEMPTS) }));
@@ -109,8 +139,9 @@ export function useMetricsPersistence(
     };
 
     const queue = loadQueue();
+    const isReplay = queue.length > 0;
     queue.push(row);
-    setStatus(s => ({ ...s, isFlushing: true, queueDepth: queue.length }));
+    setStatus(s => ({ ...s, isFlushing: true, isReplaying: isReplay, queueDepth: queue.length }));
 
     try {
       if (wasFailing.current || opts.manual) {
@@ -119,6 +150,7 @@ export function useMetricsPersistence(
           toast.loading(opts.manual ? 'Flushing metrics buffer…' : 'Retrying metrics sync…', { id: 'metrics-persist' }),
         );
       }
+      // Queue is FIFO (push appends, insert preserves array order) — replayed in order.
       const { error } = await supabase.from('metrics_snapshots' as never).insert(queue as never);
       if (error) throw error;
       saveQueue([]);
@@ -130,12 +162,19 @@ export function useMetricsPersistence(
         );
       }
       wasFailing.current = false;
-      setStatus(s => ({ ...s, lastSavedAt: Date.now(), lastError: null, queueDepth: 0, isFlushing: false }));
+      retriesRef.current = 0;
+      const badge: LastFlushBadge = { status: 'ok', ts: Date.now(), count: queue.length, retries: 0 };
+      saveBadge(badge);
+      setStatus(s => ({
+        ...s, lastSavedAt: Date.now(), lastError: null, queueDepth: 0,
+        isFlushing: false, isReplaying: false, lastFlush: badge, retryCount: 0,
+      }));
     } catch (e) {
       saveQueue(queue);
       const delay = Math.min(300_000, 5_000 * Math.pow(2, Math.min(6, Math.floor(queue.length / 3))));
       backoff.current = Date.now() + delay;
       const msg = e instanceof Error ? e.message : String(e);
+      retriesRef.current += 1;
       pushAttempt({ ts: Date.now(), status: 'error', count: queue.length, message: msg });
       showToast('err', () =>
         toast.error(`Metrics sync failed · buffering (${queue.length})`, {
@@ -144,7 +183,12 @@ export function useMetricsPersistence(
         }),
       );
       wasFailing.current = true;
-      setStatus(s => ({ ...s, lastError: msg, queueDepth: queue.length, isFlushing: false }));
+      const badge: LastFlushBadge = { status: 'error', ts: Date.now(), count: queue.length, retries: retriesRef.current, message: msg };
+      saveBadge(badge);
+      setStatus(s => ({
+        ...s, lastError: msg, queueDepth: queue.length,
+        isFlushing: false, isReplaying: false, lastFlush: badge, retryCount: retriesRef.current,
+      }));
     } finally {
       inFlight.current = false;
     }

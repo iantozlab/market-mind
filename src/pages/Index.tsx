@@ -246,6 +246,35 @@ const NeuralBotDashboard: React.FC = () => {
                         : 'pending'
                   }
                 />
+                {persistence.lastFlush && (
+                  <div
+                    className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 ${
+                      persistence.lastFlush.status === 'ok'
+                        ? 'border-primary/30 bg-primary/5'
+                        : persistence.lastFlush.status === 'error'
+                          ? 'border-destructive/30 bg-destructive/5'
+                          : 'border-warning/30 bg-warning/5'
+                    }`}
+                    title={persistence.lastFlush.message || ''}
+                  >
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        persistence.lastFlush.status === 'ok'
+                          ? 'bg-primary'
+                          : persistence.lastFlush.status === 'error'
+                            ? 'bg-destructive'
+                            : 'bg-warning animate-pulse'
+                      }`}
+                    />
+                    <span className="text-[9px] uppercase tracking-widest text-muted-foreground">
+                      {persistence.isReplaying ? 'Replaying' : 'Last flush'}
+                    </span>
+                    <span className="text-[10px] font-mono text-foreground">
+                      {persistence.lastFlush.status.toUpperCase()} · {new Date(persistence.lastFlush.ts).toLocaleTimeString()}
+                      {persistence.retryCount > 0 && ` · ×${persistence.retryCount}`}
+                    </span>
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={() => { void persistence.flushNow(); }}
