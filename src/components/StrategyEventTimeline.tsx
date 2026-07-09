@@ -219,6 +219,24 @@ const StrategyEventTimeline: React.FC<Props> = ({ strategies, triggers, activePo
           >
             <Download className="h-3 w-3 mr-1" />JSON
           </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 text-[10px]"
+            onClick={async () => {
+              const settings = { filter, rangeMin, extras };
+              const text = JSON.stringify(settings, null, 2);
+              try {
+                await navigator.clipboard.writeText(text);
+                toast.success('Export settings copied', { description: text });
+              } catch {
+                toast.error('Copy failed');
+              }
+            }}
+            aria-label="Copy export settings to clipboard"
+          >
+            <ClipboardCopy className="h-3 w-3 mr-1" />Copy
+          </Button>
           <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setEvents([])} aria-label="Clear timeline">
             <Trash2 className="h-3 w-3" />
           </Button>
