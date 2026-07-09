@@ -125,9 +125,23 @@ const StrategyEventTimeline: React.FC<Props> = ({ strategies, triggers, activePo
   useEffect(() => { try { sessionStorage.setItem(EXTRA_KEY, extras ? '1' : '0'); } catch { /* noop */ } }, [extras]);
 
   const cutoff = rangeMin > 0 ? Date.now() - rangeMin * 60_000 : 0;
-  const visible = events
-    .filter(e => filter === 'all' || e.to === filter)
-    .filter(e => e.ts >= cutoff);
+  // Filters are fast (single pass, no allocations per event beyond the array).
+  const visible = useMemo(
+    () => events.filter(e => (filter === 'all' || e.to === filter) && e.ts >= cutoff),
+    [events, filter, cutoff],
+  );
+
+  // ---- Virtualization ----
+  const ROW_H = 22;
+  const VIEW_H = 256; // matches previous max-h-64
+  const OVERSCAN = 6;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const startIdx = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
+  const endIdx = Math.min(visible.length, Math.ceil((scrollTop + VIEW_H) / ROW_H) + OVERSCAN);
+  const virtualRows = visible.slice(startIdx, endIdx);
+  const totalHeight = visible.length * ROW_H;
+  const offsetY = startIdx * ROW_H;
 
   const buildRows = () => visible.map(e => {
     const base: Record<string, unknown> = {
