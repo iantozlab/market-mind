@@ -27,7 +27,7 @@ const ReplayQueueProgressPanel: React.FC<Props> = ({ isReplaying, isFlushing, pe
         </div>
       </div>
       <ul className="space-y-0.5 max-h-24 overflow-y-auto">
-        {pendingQueue.slice(0, 20).map((it, i) => (
+        {queue.slice(0, 20).map((it, i) => (
           <li key={`${it.queued_at}-${i}`} className="flex items-center gap-2 text-[10px] font-mono">
             <span
               className={`h-1.5 w-1.5 rounded-full ${
@@ -41,8 +41,8 @@ const ReplayQueueProgressPanel: React.FC<Props> = ({ isReplaying, isFlushing, pe
             <span className="text-muted-foreground truncate">{it.session_id.slice(0, 8)}</span>
           </li>
         ))}
-        {pendingQueue.length > 20 && (
-          <li className="text-[10px] text-muted-foreground font-mono">…and {pendingQueue.length - 20} more</li>
+        {queue.length > 20 && (
+          <li className="text-[10px] text-muted-foreground font-mono">…and {queue.length - 20} more</li>
         )}
       </ul>
     </div>
