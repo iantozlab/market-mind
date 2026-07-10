@@ -1,8 +1,8 @@
 import React, { useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from 'react';
-import { Radio, Trash2, Download, ClipboardCopy } from 'lucide-react';
+import { Radio, Trash2, Download, ClipboardCopy, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { streamingDownloadCSV, streamingDownloadJSON } from '@/lib/streaming-export';
+import { streamingDownloadCSV, streamingDownloadJSON, ExportCancelledError } from '@/lib/streaming-export';
 import { copyToClipboard } from '@/lib/clipboard';
 import type { StrategyStatus, StrategyTrigger } from '@/lib/neural-bot-engine';
 
