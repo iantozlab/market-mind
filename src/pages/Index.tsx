@@ -318,6 +318,11 @@ const NeuralBotDashboard: React.FC = () => {
                 </ul>
               </div>
             )}
+            <ReplayQueueProgressPanel
+              isReplaying={persistence.isReplaying}
+              isFlushing={persistence.isFlushing}
+              pendingQueue={persistence.pendingQueue}
+            />
 
           </div>
         </div>
