@@ -131,6 +131,7 @@ const StrategyEventTimeline: React.FC<Props> = ({ strategies, triggers, activePo
   const deferredCutoff = useDeferredValue(cutoff);
   const [, startTransition] = useTransition();
   const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(null);
+  const exportAbortRef = useRef<AbortController | null>(null);
   const visible = useMemo(
     () => events.filter(e => (deferredFilter === 'all' || e.to === deferredFilter) && e.ts >= deferredCutoff),
     [events, deferredFilter, deferredCutoff],
