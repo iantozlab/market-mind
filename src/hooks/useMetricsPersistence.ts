@@ -188,7 +188,7 @@ export function useMetricsPersistence(
       saveBadge(badge);
       setStatus(s => ({
         ...s, lastSavedAt: Date.now(), lastError: null, queueDepth: 0,
-        isFlushing: false, isReplaying: false, lastFlush: badge, retryCount: 0,
+        isFlushing: false, isReplaying: false, lastFlush: badge, retryCount: 0, pendingQueue: [],
       }));
     } catch (e) {
       saveQueue(queue);
