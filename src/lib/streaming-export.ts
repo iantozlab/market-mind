@@ -29,10 +29,19 @@ function triggerDownload(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+export class ExportCancelledError extends Error {
+  constructor() { super('Export cancelled'); this.name = 'ExportCancelledError'; }
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) throw new ExportCancelledError();
+}
+
 export async function streamingDownloadCSV(
   filename: string,
   rows: Row[],
   onProgress?: (done: number, total: number) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   if (rows.length === 0) {
     triggerDownload(new Blob([''], { type: 'text/csv;charset=utf-8;' }), filename);
@@ -42,6 +51,7 @@ export async function streamingDownloadCSV(
   const headers = Object.keys(rows[0]);
   const parts: string[] = [headers.join(',') + '\n'];
   for (let i = 0; i < rows.length; i += CHUNK) {
+    throwIfAborted(signal);
     const slice = rows.slice(i, i + CHUNK);
     let buf = '';
     for (const r of slice) buf += headers.map(h => escapeCSV(r[h])).join(',') + '\n';
@@ -49,6 +59,7 @@ export async function streamingDownloadCSV(
     onProgress?.(Math.min(i + CHUNK, rows.length), rows.length);
     await yieldToUI();
   }
+  throwIfAborted(signal);
   triggerDownload(new Blob(parts, { type: 'text/csv;charset=utf-8;' }), filename);
 }
 
@@ -57,6 +68,7 @@ export async function streamingDownloadJSON(
   rows: Row[],
   meta: Record<string, unknown> = {},
   onProgress?: (done: number, total: number) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   const parts: string[] = [];
   const header = { ...meta, exportedAt: new Date().toISOString(), count: rows.length };
@@ -64,6 +76,7 @@ export async function streamingDownloadJSON(
   for (const [k, v] of Object.entries(header)) parts.push(JSON.stringify(k) + ':' + JSON.stringify(v) + ',');
   parts.push('"events":[');
   for (let i = 0; i < rows.length; i += CHUNK) {
+    throwIfAborted(signal);
     const slice = rows.slice(i, i + CHUNK);
     let buf = '';
     for (let j = 0; j < slice.length; j++) {
@@ -74,6 +87,7 @@ export async function streamingDownloadJSON(
     onProgress?.(Math.min(i + CHUNK, rows.length), rows.length);
     await yieldToUI();
   }
+  throwIfAborted(signal);
   parts.push(']}');
   triggerDownload(new Blob(parts, { type: 'application/json' }), filename);
 }
