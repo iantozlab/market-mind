@@ -9,9 +9,10 @@ interface Props {
 }
 
 const ReplayQueueProgressPanel: React.FC<Props> = ({ isReplaying, isFlushing, pendingQueue }) => {
-  if (!isReplaying && pendingQueue.length === 0) return null;
-  const total = pendingQueue.length;
-  const inflight = pendingQueue.filter(i => i.status === 'inflight').length;
+  const queue = pendingQueue ?? [];
+  if (!isReplaying && queue.length === 0) return null;
+  const total = queue.length;
+  const inflight = queue.filter(i => i.status === 'inflight').length;
   const pending = total - inflight;
 
   return (
