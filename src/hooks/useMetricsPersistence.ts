@@ -162,7 +162,7 @@ export function useMetricsPersistence(
     const queue = loadQueue();
     const isReplay = queue.length > 0;
     queue.push(row);
-    setStatus(s => ({ ...s, isFlushing: true, isReplaying: isReplay, queueDepth: queue.length }));
+    setStatus(s => ({ ...s, isFlushing: true, isReplaying: isReplay, queueDepth: queue.length, pendingQueue: snapshotQueue(queue, 'inflight') }));
 
     try {
       if (wasFailing.current || opts.manual) {
