@@ -190,7 +190,7 @@ const StrategyEventTimeline: React.FC<Props> = ({ strategies, triggers, activePo
           ))}
           <select
             value={rangeMin}
-            onChange={e => setRangeMin(Number(e.target.value))}
+            onChange={e => { const v = Number(e.target.value); startTransition(() => setRangeMin(v)); }}
             className="text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded border border-border bg-background text-muted-foreground"
             aria-label="Time range"
           >
@@ -200,6 +200,9 @@ const StrategyEventTimeline: React.FC<Props> = ({ strategies, triggers, activePo
             <option value={60}>Last 1h</option>
             <option value={240}>Last 4h</option>
           </select>
+          {isFiltering && (
+            <span className="text-[9px] uppercase tracking-widest text-muted-foreground animate-pulse">filtering…</span>
+          )}
           <label className="flex items-center gap-1 text-[9px] uppercase tracking-widest text-muted-foreground px-1">
             <input
               type="checkbox"
@@ -213,9 +216,23 @@ const StrategyEventTimeline: React.FC<Props> = ({ strategies, triggers, activePo
             size="sm"
             variant="ghost"
             className="h-6 text-[10px]"
-            onClick={() => downloadCSV(`strategy-timeline-${Date.now()}.csv`, buildRows())}
+            onClick={async () => {
+              setExportProgress({ done: 0, total: visible.length });
+              try {
+                await streamingDownloadCSV(
+                  `strategy-timeline-${Date.now()}.csv`,
+                  buildRows(),
+                  (done, total) => setExportProgress({ done, total }),
+                );
+                toast.success(`Exported ${visible.length} rows`);
+              } catch (err) {
+                toast.error('CSV export failed');
+              } finally {
+                setExportProgress(null);
+              }
+            }}
             aria-label="Export timeline as CSV"
-            disabled={visible.length === 0}
+            disabled={visible.length === 0 || !!exportProgress}
           >
             <Download className="h-3 w-3 mr-1" />CSV
           </Button>
@@ -223,23 +240,32 @@ const StrategyEventTimeline: React.FC<Props> = ({ strategies, triggers, activePo
             size="sm"
             variant="ghost"
             className="h-6 text-[10px]"
-            onClick={() => {
-              const payload = { filter, rangeMin, exportedAt: new Date().toISOString(), events: visible };
-              const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `strategy-timeline-${Date.now()}.json`;
-              document.body.appendChild(a);
-              a.click();
-              a.remove();
-              URL.revokeObjectURL(url);
+            onClick={async () => {
+              setExportProgress({ done: 0, total: visible.length });
+              try {
+                await streamingDownloadJSON(
+                  `strategy-timeline-${Date.now()}.json`,
+                  buildRows(),
+                  { filter, rangeMin, extras },
+                  (done, total) => setExportProgress({ done, total }),
+                );
+                toast.success(`Exported ${visible.length} events`);
+              } catch (err) {
+                toast.error('JSON export failed');
+              } finally {
+                setExportProgress(null);
+              }
             }}
             aria-label="Export timeline as JSON"
-            disabled={visible.length === 0}
+            disabled={visible.length === 0 || !!exportProgress}
           >
             <Download className="h-3 w-3 mr-1" />JSON
           </Button>
+          {exportProgress && (
+            <span className="text-[9px] uppercase tracking-widest text-primary">
+              {exportProgress.done}/{exportProgress.total}
+            </span>
+          )}
           <Button
             size="sm"
             variant="ghost"
