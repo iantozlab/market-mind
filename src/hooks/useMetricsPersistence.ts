@@ -54,6 +54,13 @@ function saveBadge(b: LastFlushBadge | null) {
   } catch { /* noop */ }
 }
 
+export type QueueItemStatus = 'pending' | 'inflight';
+export interface QueueItem {
+  queued_at: number;
+  session_id: string;
+  status: QueueItemStatus;
+}
+
 export interface MetricsPersistenceStatus {
   sessionId: string;
   lastSavedAt: number | null;
@@ -64,12 +71,24 @@ export interface MetricsPersistenceStatus {
   attempts: PersistenceAttempt[];
   lastFlush: LastFlushBadge | null;
   retryCount: number;
+  pendingQueue: QueueItem[];
   flushNow: () => Promise<void>;
   clearAttempts: () => void;
 }
 
 const MAX_ATTEMPTS = 20;
 const TOAST_DEDUPE_MS = 15_000;
+
+function snapshotQueue(raw: Record<string, unknown>[], status: QueueItemStatus = 'pending'): QueueItem[] {
+  return raw.map(r => {
+    const extra = (r.extra as { queued_at?: number } | undefined) || {};
+    return {
+      queued_at: Number(extra.queued_at ?? 0),
+      session_id: String(r.session_id ?? ''),
+      status,
+    };
+  });
+}
 
 export function useMetricsPersistence(
   metrics: BotMetrics,
@@ -78,16 +97,18 @@ export function useMetricsPersistence(
 ): MetricsPersistenceStatus {
   const [status, setStatus] = useState<Omit<MetricsPersistenceStatus, 'flushNow' | 'clearAttempts'>>(() => {
     const badge = loadBadge();
+    const q = loadQueue();
     return {
       sessionId: getSessionId(),
       lastSavedAt: badge?.status === 'ok' ? badge.ts : null,
       lastError: badge?.status === 'error' ? badge.message ?? null : null,
-      queueDepth: loadQueue().length,
+      queueDepth: q.length,
       isFlushing: false,
       isReplaying: false,
       attempts: [],
       lastFlush: badge,
       retryCount: badge?.retries ?? 0,
+      pendingQueue: snapshotQueue(q),
     };
   });
 
