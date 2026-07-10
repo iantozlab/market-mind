@@ -125,11 +125,17 @@ const StrategyEventTimeline: React.FC<Props> = ({ strategies, triggers, activePo
   useEffect(() => { try { sessionStorage.setItem(EXTRA_KEY, extras ? '1' : '0'); } catch { /* noop */ } }, [extras]);
 
   const cutoff = rangeMin > 0 ? Date.now() - rangeMin * 60_000 : 0;
-  // Filters are fast (single pass, no allocations per event beyond the array).
+  // Debounce filter+range with a deferred value so heavy filtering doesn't block
+  // input handlers when the event log grows large.
+  const deferredFilter = useDeferredValue(filter);
+  const deferredCutoff = useDeferredValue(cutoff);
+  const [, startTransition] = useTransition();
+  const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(null);
   const visible = useMemo(
-    () => events.filter(e => (filter === 'all' || e.to === filter) && e.ts >= cutoff),
-    [events, filter, cutoff],
+    () => events.filter(e => (deferredFilter === 'all' || e.to === deferredFilter) && e.ts >= deferredCutoff),
+    [events, deferredFilter, deferredCutoff],
   );
+  const isFiltering = deferredFilter !== filter || deferredCutoff !== cutoff;
 
   // ---- Virtualization ----
   const ROW_H = 22;
