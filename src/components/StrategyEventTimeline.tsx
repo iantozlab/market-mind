@@ -179,7 +179,7 @@ const StrategyEventTimeline: React.FC<Props> = ({ strategies, triggers, activePo
           {(['all','armed','triggered','in-position','cooling'] as const).map(f => (
             <button
               key={f}
-              onClick={() => setFilter(f)}
+              onClick={() => startTransition(() => setFilter(f))}
               className={`text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded border ${
                 filter === f ? 'border-primary text-primary bg-primary/10' : 'border-border text-muted-foreground hover:text-foreground'
               }`}
