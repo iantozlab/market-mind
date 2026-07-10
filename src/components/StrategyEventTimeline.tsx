@@ -218,17 +218,22 @@ const StrategyEventTimeline: React.FC<Props> = ({ strategies, triggers, activePo
             variant="ghost"
             className="h-6 text-[10px]"
             onClick={async () => {
+              const ctrl = new AbortController();
+              exportAbortRef.current = ctrl;
               setExportProgress({ done: 0, total: visible.length });
               try {
                 await streamingDownloadCSV(
                   `strategy-timeline-${Date.now()}.csv`,
                   buildRows(),
                   (done, total) => setExportProgress({ done, total }),
+                  ctrl.signal,
                 );
                 toast.success(`Exported ${visible.length} rows`);
               } catch (err) {
-                toast.error('CSV export failed');
+                if (err instanceof ExportCancelledError) toast.message('CSV export cancelled');
+                else toast.error('CSV export failed');
               } finally {
+                exportAbortRef.current = null;
                 setExportProgress(null);
               }
             }}
@@ -242,6 +247,8 @@ const StrategyEventTimeline: React.FC<Props> = ({ strategies, triggers, activePo
             variant="ghost"
             className="h-6 text-[10px]"
             onClick={async () => {
+              const ctrl = new AbortController();
+              exportAbortRef.current = ctrl;
               setExportProgress({ done: 0, total: visible.length });
               try {
                 await streamingDownloadJSON(
@@ -249,11 +256,14 @@ const StrategyEventTimeline: React.FC<Props> = ({ strategies, triggers, activePo
                   buildRows(),
                   { filter, rangeMin, extras },
                   (done, total) => setExportProgress({ done, total }),
+                  ctrl.signal,
                 );
                 toast.success(`Exported ${visible.length} events`);
               } catch (err) {
-                toast.error('JSON export failed');
+                if (err instanceof ExportCancelledError) toast.message('JSON export cancelled');
+                else toast.error('JSON export failed');
               } finally {
+                exportAbortRef.current = null;
                 setExportProgress(null);
               }
             }}
@@ -263,9 +273,20 @@ const StrategyEventTimeline: React.FC<Props> = ({ strategies, triggers, activePo
             <Download className="h-3 w-3 mr-1" />JSON
           </Button>
           {exportProgress && (
-            <span className="text-[9px] uppercase tracking-widest text-primary">
-              {exportProgress.done}/{exportProgress.total}
-            </span>
+            <>
+              <span className="text-[9px] uppercase tracking-widest text-primary">
+                {exportProgress.done}/{exportProgress.total}
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 text-[10px] text-destructive hover:text-destructive"
+                onClick={() => exportAbortRef.current?.abort()}
+                aria-label="Cancel export"
+              >
+                <X className="h-3 w-3 mr-1" />Cancel
+              </Button>
+            </>
           )}
           <Button
             size="sm"
