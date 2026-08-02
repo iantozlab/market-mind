@@ -804,6 +804,12 @@ export class UnifiedNeuralBot {
     this.phantom = new PhantomLiquidityHarvester(CONFIG.INITIAL_CAPITAL);
     this.psychology = new MarketPsychologyEngine();
     this.rans = new RANSExecutionEngine(CONFIG.INITIAL_CAPITAL);
+
+    // --- Multi-market arbitrage + 50-agent swarm ---
+    buildDefaultSwarm(this.swarmIntegrator, 50);
+    this.arbitrageEngine.on('arbitrageExecuted', (signal) => this.logArbitrage(signal));
+    this.swarmIntegrator.on('latencyArbitrage', (event) => this.executeLatencyTrade(event));
+
     this.psychology.on('strategy_deprecated', ({ strategyName, winRate }) => {
       this.addLog(`⚠ STRATEGY DEPRECATED: ${strategyName} (WR ${(winRate * 100).toFixed(1)}%)`, 'warning');
       this.emitAlert({ severity: 'warning', title: `Strategy deprecated: ${strategyName}`, detail: `Win rate ${(winRate * 100).toFixed(1)}% below threshold` });
