@@ -9,9 +9,7 @@ let clicks = 0;
 beforeEach(() => {
   createdUrls = 0;
   clicks = 0;
-  // @ts-expect-error jsdom lacks these
   URL.createObjectURL = vi.fn(() => { createdUrls++; return 'blob:mock'; });
-  // @ts-expect-error jsdom lacks these
   URL.revokeObjectURL = vi.fn();
   vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () { clicks++; });
 });
