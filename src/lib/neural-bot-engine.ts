@@ -738,7 +738,18 @@ export class UnifiedNeuralBot {
     { name: 'rans_regime', active: true, label: 'RANS Regime Scaler' },
     { name: 'rans_arbitrage', active: true, label: 'RANS Structural Arb' },
     { name: 'rans_temporal', active: true, label: 'RANS 30-Day Window' },
+    { name: 'multi_market_arb', active: true, label: 'Multi-Market Arbitrage' },
+    { name: 'polyswarm', active: true, label: 'PolySwarm Consensus' },
   ];
+
+  // Multi-market arbitrage + LLM swarm
+  private arbitrageEngine = new MultiMarketArbitrageEngine();
+  private swarmIntegrator = new PolySwarmIntegrator();
+  private arbSignals: ArbitrageSignal[] = [];
+  private arbExecuted: ArbitrageSignal[] = [];
+  private arbRealized = 0;
+  private swarmSignals: SwarmPrediction[] = [];
+  private swarmEvents: LatencyArbEvent[] = [];
 
   private rans: RANSExecutionEngine | null = null;
   private lastRansPlan: RANSPlan | null = null;
