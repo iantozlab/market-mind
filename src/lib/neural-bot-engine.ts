@@ -8,6 +8,8 @@ import {
   type RansThresholds, type RansApplyResult, type RansClampDetail,
 } from './rans-engine';
 import { recordRansDiagEvent } from './rans-diag-events';
+import { MultiMarketArbitrageEngine, type ArbitrageSignal, type ArbMarket } from './multi-market-arbitrage';
+import { PolySwarmIntegrator, buildDefaultSwarm, type MarketDescription, type SwarmPrediction, type LatencyArbEvent } from './polyswarm-integrator';
 
 
 // ============================================
