@@ -16,6 +16,8 @@ import PsychologyHealthPanel, { type PsychologyHealthRow } from '@/components/Ps
 import PsychologyDiagnosticsPanel from '@/components/PsychologyDiagnosticsPanel';
 import RiskAlertsPanel from '@/components/RiskAlertsPanel';
 import AppNavbar from '@/components/AppNavbar';
+import type { ArbitrageSignal } from '@/lib/multi-market-arbitrage';
+import type { SwarmPrediction, LatencyArbEvent } from '@/lib/polyswarm-integrator';
 import MetaRegimeController from '@/components/MetaRegimeController';
 import StrategyStateMachineView from '@/components/StrategyStateMachineView';
 import CorrelationMatrixPanel from '@/components/CorrelationMatrixPanel';
@@ -68,6 +70,12 @@ const NeuralBotDashboard: React.FC = () => {
   const [ransWeightsAll, setRansWeightsAll] = useState<Record<MarketRegime, RegimeWeights>>(RANS_PARAMS.WEIGHTS as Record<MarketRegime, RegimeWeights>);
   const [ransDiagnostics, setRansDiagnostics] = useState<RansDiagnostics | null>(null);
   const [ransKillSwitch, setRansKillSwitchState] = useState<boolean>(false);
+  const [arbSignals, setArbSignals] = useState<ArbitrageSignal[]>([]);
+  const [arbExecuted, setArbExecuted] = useState<ArbitrageSignal[]>([]);
+  const [arbRealized, setArbRealized] = useState(0);
+  const [swarmSignals, setSwarmSignals] = useState<SwarmPrediction[]>([]);
+  const [swarmEvents, setSwarmEvents] = useState<LatencyArbEvent[]>([]);
+  const [swarmAgentCount, setSwarmAgentCount] = useState(0);
 
   const alerts = useAlertsCenter();
   const botRef = useRef<UnifiedNeuralBot | null>(null);
@@ -94,6 +102,12 @@ const NeuralBotDashboard: React.FC = () => {
     setRansHistory(botRef.current.getRansHistory());
     setRansDiagnostics(botRef.current.getRansDiagnostics());
     setRansKillSwitchState(botRef.current.isRansKillSwitch());
+    setArbSignals(botRef.current.getArbSignals());
+    setArbExecuted(botRef.current.getArbExecuted());
+    setArbRealized(botRef.current.getArbRealized());
+    setSwarmSignals(botRef.current.getSwarmSignals());
+    setSwarmEvents(botRef.current.getSwarmEvents());
+    setSwarmAgentCount(botRef.current.getSwarmAgentCount());
     setAnomalyHistory(prev => {
       const next = [...prev, { time: new Date().toLocaleTimeString(), score: m.anomalyScore * 100, threshold: 70 }];
       return next.slice(-30);
@@ -189,6 +203,12 @@ const NeuralBotDashboard: React.FC = () => {
         ransWeightsAll={ransWeightsAll}
         ransDiagnostics={ransDiagnostics}
         ransKillSwitch={ransKillSwitch}
+        arbSignals={arbSignals}
+        arbExecuted={arbExecuted}
+        arbRealized={arbRealized}
+        swarmSignals={swarmSignals}
+        swarmEvents={swarmEvents}
+        swarmAgentCount={swarmAgentCount}
         onApplyRansThresholds={applyRansThresholds}
         onApplyRansWeights={applyRansWeights}
         onToggleRansKillSwitch={toggleRansKillSwitch}
