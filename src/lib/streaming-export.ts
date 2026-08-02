@@ -77,24 +77,31 @@ export async function streamingDownloadJSON(
   onProgress?: (done: number, total: number) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  const parts: string[] = [];
-  const header = { ...meta, exportedAt: new Date().toISOString(), count: rows.length };
-  parts.push('{');
-  for (const [k, v] of Object.entries(header)) parts.push(JSON.stringify(k) + ':' + JSON.stringify(v) + ',');
-  parts.push('"events":[');
-  for (let i = 0; i < rows.length; i += CHUNK) {
-    throwIfAborted(signal);
-    const slice = rows.slice(i, i + CHUNK);
-    let buf = '';
-    for (let j = 0; j < slice.length; j++) {
-      const isLast = i + j === rows.length - 1;
-      buf += JSON.stringify(slice[j]) + (isLast ? '' : ',');
-    }
-    parts.push(buf);
-    onProgress?.(Math.min(i + CHUNK, rows.length), rows.length);
-    await yieldToUI();
-  }
   throwIfAborted(signal);
-  parts.push(']}');
-  triggerDownload(new Blob(parts, { type: 'application/json' }), filename);
+  let parts: string[] | null = [];
+  try {
+    const header = { ...meta, exportedAt: new Date().toISOString(), count: rows.length };
+    parts.push('{');
+    for (const [k, v] of Object.entries(header)) parts.push(JSON.stringify(k) + ':' + JSON.stringify(v) + ',');
+    parts.push('"events":[');
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      throwIfAborted(signal);
+      const slice = rows.slice(i, i + CHUNK);
+      let buf = '';
+      for (let j = 0; j < slice.length; j++) {
+        const isLast = i + j === rows.length - 1;
+        buf += JSON.stringify(slice[j]) + (isLast ? '' : ',');
+      }
+      parts.push(buf);
+      onProgress?.(Math.min(i + CHUNK, rows.length), rows.length);
+      await yieldToUI();
+    }
+    throwIfAborted(signal);
+    parts.push(']}');
+    triggerDownload(new Blob(parts, { type: 'application/json' }), filename);
+  } finally {
+    // Drop any partially built output so no incomplete file can be offered.
+    parts = null;
+  }
 }
+
