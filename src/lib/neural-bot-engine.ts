@@ -1354,6 +1354,13 @@ export class UnifiedNeuralBot {
           }
         }
 
+        // === MULTI-MARKET ARBITRAGE + POLYSWARM ===
+        try {
+          await this.runArbitrageAndSwarm(markets);
+        } catch {
+          // never let arbitrage/swarm errors kill the loop
+        }
+
         // === RANS — Regime-Adaptive Neural Scaling ===
         const ransStart = (typeof performance !== 'undefined' ? performance.now() : Date.now());
         try {
