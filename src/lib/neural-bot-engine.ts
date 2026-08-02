@@ -816,6 +816,95 @@ export class UnifiedNeuralBot {
     });
   }
 
+  // -------- Multi-market arbitrage + PolySwarm --------
+  private logArbitrage(signal: ArbitrageSignal) {
+    this.arbExecuted = [signal, ...this.arbExecuted].slice(0, 200);
+    this.arbRealized += signal.guaranteedProfit;
+    this.metrics.totalPnL += signal.guaranteedProfit;
+    this.metrics.dailyPnL += signal.guaranteedProfit;
+    this.metrics.tradesExecuted += signal.legs.length;
+    this.addLog(`🔒 ARBITRAGE ${signal.type.replace(/_/g, ' ').toUpperCase()}: +$${signal.guaranteedProfit.toFixed(2)} · ${signal.legs.length} legs · ${signal.label}`, 'trade');
+  }
+
+  private executeLatencyTrade(event: LatencyArbEvent) {
+    this.swarmEvents = [event, ...this.swarmEvents].slice(0, 200);
+    this.addLog(`⚡ SWARM LATENCY ARB: ${event.direction} ${(event.slug ?? event.marketId).slice(0, 24)} · swarm ${event.swarmProbability.toFixed(3)} vs mkt ${event.marketPrice.toFixed(3)}`, 'strategy');
+  }
+
+  private async runArbitrageAndSwarm(markets: Market[]) {
+    // 1. Multi-market arbitrage over every outcome leg of each condition.
+    const arbMarkets: ArbMarket[] = [];
+    for (const m of markets) {
+      m.outcomes.forEach((o, i) => {
+        arbMarkets.push({
+          id: `${m.id}:${i}`,
+          conditionId: m.id,
+          outcome: o,
+          price: m.outcomePrices[i] ?? 0,
+          negRisk: m.outcomes.length > 2,
+          parentConditionId: m.category ? `cat:${m.category}` : undefined,
+          slug: m.slug,
+        });
+      });
+    }
+    this.arbitrageEngine.updateMarkets(arbMarkets);
+    const signals = this.arbitrageEngine.scanAll();
+    this.arbSignals = signals.slice(0, 50);
+
+    let executedCount = 0;
+    for (const signal of signals) {
+      if (signal.confidence > 0.8 && signal.guaranteedProfit > 0) {
+        const ok = await this.arbitrageEngine.executeArbitrage(signal, this.getRANSCapital());
+        if (ok) executedCount++;
+      }
+      if (executedCount >= 3) break;
+    }
+    if (signals.length > 0) {
+      const top = signals[0];
+      this.routeSignal(`arb_${top.type}`, 'multi_market_arb', top.confidence, {
+        opportunities: signals.length, executed: executedCount, topProfit: top.guaranteedProfit.toFixed(3),
+      });
+      this.psychology.updateStrategyPerformance('multi_market_arb', executedCount > 0);
+    } else {
+      this.routeSignal('arb_scan', 'multi_market_arb', 0.5, { opportunities: 0 });
+      this.psychology.updateStrategyPerformance('multi_market_arb', Math.random() < 0.5);
+    }
+
+    // 2. Swarm predictions + inefficiency detection (bounded sample for latency).
+    const descriptions: MarketDescription[] = markets.slice(0, 12).map(m => ({
+      id: m.id, question: m.question, outcomes: m.outcomes,
+      currentPrice: m.outcomePrices[0], category: m.category, slug: m.slug,
+      timeToExpiry: new Date(m.endDate).getTime() - Date.now(),
+    }));
+    const inefficiencies = await this.swarmIntegrator.detectInefficiencies(descriptions, 0.05);
+    this.swarmSignals = inefficiencies;
+
+    if (inefficiencies.length > 0) {
+      const top = inefficiencies[0];
+      const mkt = descriptions.find(d => d.id === top.marketId);
+      if (mkt) await this.swarmIntegrator.latencyArbitrage(mkt, mkt.currentPrice);
+      this.routeSignal('swarm_divergence', 'polyswarm', top.swarmConfidence, {
+        inefficiencies: inefficiencies.length,
+        topDivergence: top.divergence.toFixed(4),
+        swarmProb: top.swarmProbability.toFixed(3),
+      });
+      this.psychology.updateStrategyPerformance('polyswarm', top.swarmConfidence > 0.5);
+      if (this.tickCount % 6 === 0) {
+        this.addLog(`🧠 SWARM: ${inefficiencies.length} inefficiencies · top ${(top.slug ?? top.marketId).slice(0, 22)} div ${top.divergence.toFixed(3)} (conf ${(top.swarmConfidence * 100).toFixed(0)}%)`, 'strategy');
+      }
+    } else {
+      this.routeSignal('swarm_scan', 'polyswarm', 0.5, { inefficiencies: 0 });
+      this.psychology.updateStrategyPerformance('polyswarm', Math.random() < 0.5);
+    }
+  }
+
+  getArbSignals(): ArbitrageSignal[] { return [...this.arbSignals]; }
+  getArbExecuted(): ArbitrageSignal[] { return [...this.arbExecuted]; }
+  getArbRealized(): number { return this.arbRealized; }
+  getSwarmSignals(): SwarmPrediction[] { return [...this.swarmSignals]; }
+  getSwarmEvents(): LatencyArbEvent[] { return [...this.swarmEvents]; }
+  getSwarmAgentCount(): number { return this.swarmIntegrator.getAgentCount(); }
+
   setOnUpdate(cb: () => void) { this.onUpdate = cb; }
 
   // -------- Signal-routing diagnostics + per-strategy "why active" --------
