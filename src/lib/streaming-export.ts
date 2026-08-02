@@ -43,25 +43,32 @@ export async function streamingDownloadCSV(
   onProgress?: (done: number, total: number) => void,
   signal?: AbortSignal,
 ): Promise<void> {
+  throwIfAborted(signal);
   if (rows.length === 0) {
     triggerDownload(new Blob([''], { type: 'text/csv;charset=utf-8;' }), filename);
     onProgress?.(0, 0);
     return;
   }
   const headers = Object.keys(rows[0]);
-  const parts: string[] = [headers.join(',') + '\n'];
-  for (let i = 0; i < rows.length; i += CHUNK) {
+  let parts: string[] | null = [headers.join(',') + '\n'];
+  try {
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      throwIfAborted(signal);
+      const slice = rows.slice(i, i + CHUNK);
+      let buf = '';
+      for (const r of slice) buf += headers.map(h => escapeCSV(r[h])).join(',') + '\n';
+      parts.push(buf);
+      onProgress?.(Math.min(i + CHUNK, rows.length), rows.length);
+      await yieldToUI();
+    }
     throwIfAborted(signal);
-    const slice = rows.slice(i, i + CHUNK);
-    let buf = '';
-    for (const r of slice) buf += headers.map(h => escapeCSV(r[h])).join(',') + '\n';
-    parts.push(buf);
-    onProgress?.(Math.min(i + CHUNK, rows.length), rows.length);
-    await yieldToUI();
+    triggerDownload(new Blob(parts, { type: 'text/csv;charset=utf-8;' }), filename);
+  } finally {
+    // Drop any partially built output so no incomplete file can be offered.
+    parts = null;
   }
-  throwIfAborted(signal);
-  triggerDownload(new Blob(parts, { type: 'text/csv;charset=utf-8;' }), filename);
 }
+
 
 export async function streamingDownloadJSON(
   filename: string,
