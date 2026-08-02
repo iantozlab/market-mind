@@ -20,13 +20,16 @@ import RiskDashboardPanel from './RiskDashboardPanel';
 import BacktestPanel from './BacktestPanel';
 import SettingsAuditPanel from './SettingsAuditPanel';
 import RansPanel from './RansPanel';
+import ArbSwarmPanel from './ArbSwarmPanel';
+import type { ArbitrageSignal } from '@/lib/multi-market-arbitrage';
+import type { SwarmPrediction, LatencyArbEvent } from '@/lib/polyswarm-integrator';
 import type {
   TradeSettings, MLInsights, BotMetrics, StrategyStatus, RansHistoryEntry, RansDiagnostics,
 } from '@/lib/neural-bot-engine';
 import type { RANSPlan, MarketRegime, RegimeWeights, RansThresholds } from '@/lib/rans-engine';
 import type { AlertItem } from '@/hooks/useAlertsCenter';
 
-type SheetKey = null | 'settings' | 'ml' | 'risk' | 'backtest' | 'rans';
+type SheetKey = null | 'settings' | 'ml' | 'risk' | 'backtest' | 'rans' | 'arb';
 const SHEET_STORAGE_KEY = 'app_last_sheet_v1';
 
 interface Props {
@@ -59,6 +62,13 @@ interface Props {
   onApplyRansWeights: (regime: MarketRegime, w: Partial<RegimeWeights>) => void;
   onToggleRansKillSwitch: (on: boolean) => void;
 
+  arbSignals: ArbitrageSignal[];
+  arbExecuted: ArbitrageSignal[];
+  arbRealized: number;
+  swarmSignals: SwarmPrediction[];
+  swarmEvents: LatencyArbEvent[];
+  swarmAgentCount: number;
+
   alerts: {
     items: AlertItem[];
     unread: number;
@@ -76,6 +86,7 @@ const NAV_ITEMS: { key: Exclude<SheetKey, null>; label: string; Icon: React.Comp
   { key: 'risk',     label: 'Risk',           Icon: Shield },
   { key: 'backtest', label: 'Backtest',       Icon: History },
   { key: 'rans',     label: 'RANS',           Icon: Cpu },
+  { key: 'arb',      label: 'Arb & Swarm',    Icon: Layers },
 ];
 
 const AppNavbar: React.FC<Props> = ({
@@ -86,13 +97,14 @@ const AppNavbar: React.FC<Props> = ({
   ransPlan, ransCapital, ransRealized, ransHistory,
   ransThresholds, ransWeightsAll, ransDiagnostics, ransKillSwitch,
   onApplyRansThresholds, onApplyRansWeights, onToggleRansKillSwitch,
+  arbSignals, arbExecuted, arbRealized, swarmSignals, swarmEvents, swarmAgentCount,
 }) => {
   const [sheet, setSheet] = useState<SheetKey>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [lastSheet, setLastSheet] = useState<SheetKey>(() => {
     try {
       const v = localStorage.getItem(SHEET_STORAGE_KEY);
-      if (v && ['settings','ml','risk','backtest','rans'].includes(v)) return v as SheetKey;
+      if (v && ['settings','ml','risk','backtest','rans','arb'].includes(v)) return v as SheetKey;
     } catch { /* noop */ }
     return null;
   });
@@ -355,6 +367,27 @@ const AppNavbar: React.FC<Props> = ({
               onApplyThresholds={onApplyRansThresholds}
               onApplyWeights={onApplyRansWeights}
               onToggleKillSwitch={onToggleRansKillSwitch}
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={sheet === 'arb'} onOpenChange={(o) => !o && close()}>
+        <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="font-display tracking-wide">Multi-Market Arbitrage &amp; PolySwarm</SheetTitle>
+            <SheetDescription className="text-xs">
+              Mutually exclusive / dependent / combinatorial arbitrage plus 50-agent swarm consensus.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="mt-4">
+            <ArbSwarmPanel
+              signals={arbSignals}
+              executed={arbExecuted}
+              realized={arbRealized}
+              swarmSignals={swarmSignals}
+              swarmEvents={swarmEvents}
+              agentCount={swarmAgentCount}
             />
           </div>
         </SheetContent>
