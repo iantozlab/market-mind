@@ -14,6 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
+      arb_execution_audit: {
+        Row: {
+          action: string
+          capital: number
+          confidence: number
+          created_at: string
+          detail: Json
+          id: string
+          label: string | null
+          legs: number
+          mode: string
+          profit: number
+          reason: string | null
+          session_id: string
+          source: string
+        }
+        Insert: {
+          action: string
+          capital?: number
+          confidence?: number
+          created_at?: string
+          detail?: Json
+          id?: string
+          label?: string | null
+          legs?: number
+          mode?: string
+          profit?: number
+          reason?: string | null
+          session_id?: string
+          source: string
+        }
+        Update: {
+          action?: string
+          capital?: number
+          confidence?: number
+          created_at?: string
+          detail?: Json
+          id?: string
+          label?: string | null
+          legs?: number
+          mode?: string
+          profit?: number
+          reason?: string | null
+          session_id?: string
+          source?: string
+        }
+        Relationships: []
+      }
       metrics_snapshots: {
         Row: {
           active_positions: number
