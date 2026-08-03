@@ -758,6 +758,8 @@ export class UnifiedNeuralBot {
   private lastRansRegime: MarketRegime | null = null;
   private ransHistory: RansHistoryEntry[] = [];
   private lastArbAlertTs = 0;
+  private lastArbHealthAlertTs = 0;
+  private lastAnomalyAlertTs = 0;
 
   // RANS diagnostics (telemetry)
   private ransDx = {
