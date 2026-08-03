@@ -10,6 +10,8 @@ import {
 import { recordRansDiagEvent } from './rans-diag-events';
 import { MultiMarketArbitrageEngine, type ArbitrageSignal, type ArbMarket } from './multi-market-arbitrage';
 import { PolySwarmIntegrator, buildDefaultSwarm, type MarketDescription, type SwarmPrediction, type LatencyArbEvent } from './polyswarm-integrator';
+import { getArbLimits, checkArbLimits } from './arb-risk-config';
+import { recordArbAudit } from './arb-audit';
 
 
 // ============================================
