@@ -851,13 +851,43 @@ export class UnifiedNeuralBot {
     const signals = this.arbitrageEngine.scanAll();
     this.arbSignals = signals.slice(0, 50);
 
+    const limits = getArbLimits();
+    const mode: 'paper' | 'live' = limits.paperMode || this.isPaperMode ? 'paper' : 'live';
+
     let executedCount = 0;
+    let capitalUsed = 0;
     for (const signal of signals) {
-      if (signal.confidence > 0.8 && signal.guaranteedProfit > 0) {
-        const ok = await this.arbitrageEngine.executeArbitrage(signal, this.getRANSCapital());
-        if (ok) executedCount++;
+      const reason = checkArbLimits({
+        profit: signal.guaranteedProfit,
+        confidence: signal.confidence,
+        legs: signal.legs.length,
+        capital: signal.requiredCapital,
+        capitalUsedThisTick: capitalUsed,
+        executionsThisTick: executedCount,
+        sessionArbPnL: this.arbRealized,
+      });
+      if (reason) {
+        if (signal.guaranteedProfit > 0 && this.tickCount % 4 === 0) {
+          recordArbAudit({
+            source: 'multi_market_arb', action: 'blocked', mode, label: signal.label,
+            legs: signal.legs.length, profit: signal.guaranteedProfit, capital: signal.requiredCapital,
+            confidence: signal.confidence, reason, detail: { type: signal.type, tick: this.tickCount },
+          });
+        }
+        if (executedCount >= limits.maxExecutionsPerTick) break;
+        continue;
       }
-      if (executedCount >= 3) break;
+      const ok = await this.arbitrageEngine.executeArbitrage(signal, this.getRANSCapital());
+      if (ok) {
+        executedCount++;
+        capitalUsed += signal.requiredCapital;
+        recordArbAudit({
+          source: 'multi_market_arb', action: 'executed', mode, label: signal.label,
+          legs: signal.legs.length, profit: signal.guaranteedProfit, capital: signal.requiredCapital,
+          confidence: signal.confidence, detail: { type: signal.type, tick: this.tickCount },
+        });
+      }
+      if (executedCount >= limits.maxExecutionsPerTick) break;
     }
     if (signals.length > 0) {
       const top = signals[0];
@@ -882,7 +912,36 @@ export class UnifiedNeuralBot {
     if (inefficiencies.length > 0) {
       const top = inefficiencies[0];
       const mkt = descriptions.find(d => d.id === top.marketId);
-      if (mkt) await this.swarmIntegrator.latencyArbitrage(mkt, mkt.currentPrice);
+      const edge = mkt ? Math.abs(top.swarmProbability - mkt.currentPrice) : 0;
+      if (mkt && limits.executionEnabled && edge >= limits.minSwarmEdge) {
+        const ev = await this.swarmIntegrator.latencyArbitrage(mkt, mkt.currentPrice);
+        if (ev) {
+          recordArbAudit({
+            source: 'polyswarm', action: 'executed', mode,
+            label: `${ev.direction} ${ev.slug ?? ev.marketId}`, legs: 1,
+            profit: ev.edge, capital: limits.maxCapitalPerArb, confidence: top.swarmConfidence,
+            detail: { divergence: top.divergence, swarmProb: ev.swarmProbability, marketPrice: ev.marketPrice, tick: this.tickCount },
+          });
+        }
+      } else if (mkt) {
+        const reason = !limits.executionEnabled ? 'execution disabled' : `swarm edge < ${limits.minSwarmEdge}`;
+        if (this.tickCount % 6 === 0) {
+          recordArbAudit({
+            source: 'polyswarm', action: 'blocked', mode, label: top.slug ?? top.marketId, legs: 1,
+            profit: edge, capital: 0, confidence: top.swarmConfidence, reason,
+            detail: { divergence: top.divergence, tick: this.tickCount },
+          });
+        }
+      }
+      // Strategy health alerts: divergence threshold breach.
+      if (top.divergence >= limits.divergenceAlertThreshold && Date.now() - this.lastArbHealthAlertTs > 60_000) {
+        this.lastArbHealthAlertTs = Date.now();
+        this.emitAlert({
+          severity: top.divergence >= limits.divergenceAlertThreshold * 1.5 ? 'critical' : 'warning',
+          title: `Swarm divergence ${top.divergence.toFixed(3)} above threshold`,
+          detail: `${top.slug ?? top.marketId} · swarm ${top.swarmProbability.toFixed(3)} · conf ${(top.swarmConfidence * 100).toFixed(0)}%`,
+        });
+      }
       this.routeSignal('swarm_divergence', 'polyswarm', top.swarmConfidence, {
         inefficiencies: inefficiencies.length,
         topDivergence: top.divergence.toFixed(4),
@@ -896,7 +955,18 @@ export class UnifiedNeuralBot {
       this.routeSignal('swarm_scan', 'polyswarm', 0.5, { inefficiencies: 0 });
       this.psychology.updateStrategyPerformance('polyswarm', Math.random() < 0.5);
     }
+
+    // Strategy health alert: anomaly score threshold breach.
+    if (this.metrics.anomalyScore >= limits.anomalyAlertThreshold && Date.now() - this.lastAnomalyAlertTs > 60_000) {
+      this.lastAnomalyAlertTs = Date.now();
+      this.emitAlert({
+        severity: 'warning',
+        title: `Anomaly score ${(this.metrics.anomalyScore * 100).toFixed(0)}% above threshold`,
+        detail: `Threshold ${(limits.anomalyAlertThreshold * 100).toFixed(0)}% · strategies may be operating in unstable regime`,
+      });
+    }
   }
+
 
   getArbSignals(): ArbitrageSignal[] { return [...this.arbSignals]; }
   getArbExecuted(): ArbitrageSignal[] { return [...this.arbExecuted]; }
