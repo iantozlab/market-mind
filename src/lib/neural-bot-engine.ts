@@ -1381,8 +1381,8 @@ export class UnifiedNeuralBot {
             this.metrics.totalPnL += pnl;
             this.metrics.dailyPnL += pnl;
             this.pnlHistory.push(this.metrics.totalPnL);
-            if (this.metrics.totalPnL > this.peakPnL) this.peakPnL = this.metrics.totalPnL;
-            this.metrics.maxDrawdown = Math.max(this.metrics.maxDrawdown, (this.peakPnL - this.metrics.totalPnL) / (this.peakPnL + 1));
+            this.updateDrawdown();
+
 
             if (pnl > 0) this.metrics.winRate = this.metrics.winRate * 0.95 + 0.05;
             else this.metrics.winRate = this.metrics.winRate * 0.95;
