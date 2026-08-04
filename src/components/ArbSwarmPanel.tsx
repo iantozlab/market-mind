@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Layers, Brain, Zap, ShieldAlert, ScrollText, FlaskConical, RotateCcw, Download, Play, Trash2 } from 'lucide-react';
+import { Layers, Brain, Zap, ShieldAlert, ScrollText, FlaskConical, RotateCcw, Download, Play, Trash2, GitCompareArrows, Save, X } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,9 +17,14 @@ import {
   fetchArbAudit, subscribeArbAudit, getLocalArbAudit, purgeArbAudit, arbAuditToCsv, type ArbAuditEntry,
 } from '@/lib/arb-audit';
 import {
-  runArbBacktest, arbBacktestToCsv, DEFAULT_ARB_BACKTEST,
+  runArbBacktest, arbBacktestToCsv, DEFAULT_ARB_BACKTEST, ticksFromWindow,
   type ArbBacktestConfig, type ArbBacktestResult,
 } from '@/lib/arb-backtest';
+import {
+  listArbPresets, applyArbPreset, saveCurrentAsPreset, deleteArbPreset,
+  getActivePresetName, subscribeArbPresets,
+} from '@/lib/arb-risk-presets';
+import LivePaperComparePanel from './LivePaperComparePanel';
 
 interface Props {
   signals: ArbitrageSignal[];
@@ -41,6 +46,12 @@ function download(name: string, content: string, type = 'text/csv') {
   const a = document.createElement('a');
   a.href = url; a.download = name; a.click();
   URL.revokeObjectURL(url);
+}
+
+function toLocalInput(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 const NumberField: React.FC<{
@@ -67,8 +78,12 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
   const [btRunning, setBtRunning] = useState(false);
   const [btProgress, setBtProgress] = useState(0);
   const [btResult, setBtResult] = useState<ArbBacktestResult | null>(null);
+  const [presets, setPresets] = useState(() => listArbPresets());
+  const [activePreset, setActivePreset] = useState(() => getActivePresetName());
+  const [newPresetName, setNewPresetName] = useState('');
 
   useEffect(() => subscribeArbLimits(setLimits), []);
+  useEffect(() => subscribeArbPresets(() => { setPresets(listArbPresets()); setActivePreset(getActivePresetName()); }), []);
   useEffect(() => subscribeArbAudit(rows => setAudit(prev => (prev.length && prev[0]?.id ? rows : rows))), []);
 
   const loadAudit = useCallback(async () => {
@@ -106,10 +121,11 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
 
   return (
     <Tabs defaultValue="live" className="space-y-4">
-      <TabsList className="grid w-full grid-cols-4">
+      <TabsList className="grid w-full grid-cols-5">
         <TabsTrigger value="live" className="text-xs"><Layers className="h-3 w-3 mr-1" />Live</TabsTrigger>
         <TabsTrigger value="risk" className="text-xs"><ShieldAlert className="h-3 w-3 mr-1" />Risk</TabsTrigger>
         <TabsTrigger value="audit" className="text-xs"><ScrollText className="h-3 w-3 mr-1" />Audit</TabsTrigger>
+        <TabsTrigger value="compare" className="text-xs"><GitCompareArrows className="h-3 w-3 mr-1" />Compare</TabsTrigger>
         <TabsTrigger value="backtest" className="text-xs"><FlaskConical className="h-3 w-3 mr-1" />Backtest</TabsTrigger>
       </TabsList>
 
@@ -217,6 +233,54 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
       {/* ---------------- RISK LIMITS ---------------- */}
       <TabsContent value="risk" className="space-y-4">
         <section className="rounded-lg border border-border bg-card p-3 space-y-3">
+          <h3 className="font-display text-sm font-semibold">Risk Presets</h3>
+          <div className="flex flex-wrap items-center gap-2">
+            {presets.map(p => (
+              <div key={p.name} className="flex items-center">
+                <Button
+                  size="sm"
+                  variant={activePreset === p.name ? 'default' : 'outline'}
+                  className="h-7 text-xs capitalize"
+                  title={p.description}
+                  aria-label={`Apply ${p.name} risk preset`}
+                  onClick={() => {
+                    const next = applyArbPreset(p.name);
+                    if (next) { setLimits(next); setActivePreset(p.name); toast.success(`Preset "${p.name}" applied`); }
+                  }}
+                >{p.name}</Button>
+                {!p.builtin && (
+                  <Button
+                    size="icon" variant="ghost" className="h-7 w-6"
+                    aria-label={`Delete preset ${p.name}`}
+                    onClick={() => { deleteArbPreset(p.name); setPresets(listArbPresets()); toast.message(`Preset "${p.name}" deleted`); }}
+                  ><X className="h-3 w-3" /></Button>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <Input
+              value={newPresetName}
+              onChange={e => setNewPresetName(e.target.value)}
+              placeholder="Save current limits as…"
+              className="h-8 text-xs"
+              aria-label="New preset name"
+            />
+            <Button
+              size="sm" variant="outline" className="h-8 text-xs"
+              disabled={!newPresetName.trim()}
+              onClick={() => {
+                const p = saveCurrentAsPreset(newPresetName);
+                setPresets(listArbPresets()); setActivePreset(p.name); setNewPresetName('');
+                toast.success(`Preset "${p.name}" saved`);
+              }}
+            ><Save className="h-3 w-3 mr-1" />Save</Button>
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            Presets persist locally. Applying one never flips paper/live — that switch stays under your control.
+          </p>
+        </section>
+        <section className="rounded-lg border border-border bg-card p-3 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="flex items-center gap-2 font-display text-sm font-semibold">
               <ShieldAlert className="h-4 w-4 text-warning" /> Execution Risk Limits
@@ -323,16 +387,67 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
         </section>
       </TabsContent>
 
+      {/* ---------------- LIVE VS PAPER ---------------- */}
+      <TabsContent value="compare" className="space-y-3">
+        <LivePaperComparePanel />
+      </TabsContent>
+
       {/* ---------------- BACKTEST ---------------- */}
       <TabsContent value="backtest" className="space-y-3">
         <section className="rounded-lg border border-border bg-card p-3 space-y-3">
           <h3 className="flex items-center gap-2 font-display text-sm font-semibold">
             <FlaskConical className="h-4 w-4 text-info" /> Strategy Backtest Runner
           </h3>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Start</Label>
+              <Input
+                type="datetime-local" className="h-8 font-mono text-xs" aria-label="Backtest start time"
+                value={toLocalInput(btConfig.startTime)}
+                onChange={e => setBtConfig(c => ({ ...c, startTime: new Date(e.target.value).getTime() || c.startTime }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">End</Label>
+              <Input
+                type="datetime-local" className="h-8 font-mono text-xs" aria-label="Backtest end time"
+                value={toLocalInput(btConfig.endTime)}
+                onChange={e => setBtConfig(c => ({ ...c, endTime: new Date(e.target.value).getTime() || c.endTime }))}
+              />
+            </div>
+          </div>
           <div className="grid grid-cols-3 gap-3">
-            <NumberField label="Ticks" value={btConfig.ticks} step={50} onChange={v => setBtConfig(c => ({ ...c, ticks: Math.max(10, v) }))} />
+            <NumberField label="Tick interval" suffix="s" value={Math.round(btConfig.tickIntervalMs / 1000)} step={30}
+              onChange={v => setBtConfig(c => ({ ...c, tickIntervalMs: Math.max(1, v) * 1000 }))} />
             <NumberField label="Markets / tick" value={btConfig.marketsPerTick} onChange={v => setBtConfig(c => ({ ...c, marketsPerTick: Math.max(2, v) }))} />
             <NumberField label="Seed" value={btConfig.seed} onChange={v => setBtConfig(c => ({ ...c, seed: v }))} />
+            <NumberField label="Fee" suffix="bps" value={btConfig.feeBps} step={5} onChange={v => setBtConfig(c => ({ ...c, feeBps: Math.max(0, v) }))} />
+            <NumberField label="Slippage" suffix="bps" value={btConfig.slippageBps} step={5} onChange={v => setBtConfig(c => ({ ...c, slippageBps: Math.max(0, v) }))} />
+            <div className="space-y-1">
+              <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Resolved ticks</Label>
+              <div className="h-8 flex items-center font-mono text-xs text-primary">{ticksFromWindow(btConfig)}</div>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3 border-t border-border/40 pt-3">
+            <NumberField label="Cap / arb override" suffix="$" step={50}
+              value={btConfig.riskOverrides.maxCapitalPerArb ?? limits.maxCapitalPerArb}
+              onChange={v => setBtConfig(c => ({ ...c, riskOverrides: { ...c.riskOverrides, maxCapitalPerArb: v } }))} />
+            <NumberField label="Cap / tick override" suffix="$" step={100}
+              value={btConfig.riskOverrides.maxCapitalPerTick ?? limits.maxCapitalPerTick}
+              onChange={v => setBtConfig(c => ({ ...c, riskOverrides: { ...c.riskOverrides, maxCapitalPerTick: v } }))} />
+            <NumberField label="Max exec / tick override"
+              value={btConfig.riskOverrides.maxExecutionsPerTick ?? limits.maxExecutionsPerTick}
+              onChange={v => setBtConfig(c => ({ ...c, riskOverrides: { ...c.riskOverrides, maxExecutionsPerTick: v } }))} />
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="ghost" className="h-7 text-[11px]"
+              onClick={() => setBtConfig(c => ({ ...c, riskOverrides: {} }))}
+              aria-label="Clear risk caps overrides">
+              <RotateCcw className="h-3 w-3 mr-1" />Use saved risk limits
+            </Button>
+            <span className="text-[10px] text-muted-foreground">
+              {Object.keys(btConfig.riskOverrides).length ? 'Run-scoped caps active' : 'Running with the saved limits above'}
+            </span>
           </div>
           <div className="flex flex-wrap items-center gap-4">
             <label className="flex items-center gap-2 text-xs">

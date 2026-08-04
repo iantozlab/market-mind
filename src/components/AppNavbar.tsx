@@ -28,6 +28,7 @@ import type {
 } from '@/lib/neural-bot-engine';
 import type { RANSPlan, MarketRegime, RegimeWeights, RansThresholds } from '@/lib/rans-engine';
 import type { AlertItem } from '@/hooks/useAlertsCenter';
+import type { AlertRules } from '@/lib/alert-rules';
 
 type SheetKey = null | 'settings' | 'ml' | 'risk' | 'backtest' | 'rans' | 'arb';
 const SHEET_STORAGE_KEY = 'app_last_sheet_v1';
@@ -77,6 +78,9 @@ interface Props {
     clear: () => void;
     markRead: (id: string) => void;
     markAllRead: () => void;
+    rules: AlertRules;
+    suppressed: number;
+    clearSuppressed: () => void;
   };
 }
 
@@ -261,6 +265,9 @@ const AppNavbar: React.FC<Props> = ({
               clear={alerts.clear}
               markRead={alerts.markRead}
               markAllRead={alerts.markAllRead}
+              rules={alerts.rules}
+              suppressed={alerts.suppressed}
+              clearSuppressed={alerts.clearSuppressed}
             />
             <ThemeToggle />
           </div>

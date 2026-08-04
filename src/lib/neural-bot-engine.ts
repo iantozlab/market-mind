@@ -793,6 +793,9 @@ export class UnifiedNeuralBot {
   private lastMarkets: Market[] = [];
   private pnlHistory: number[] = [];
   private peakPnL = 0;
+  private peakEquity = 0;
+  private currentDrawdown = 0;
+
 
   constructor(paperMode = true) {
     this.isPaperMode = paperMode;
@@ -816,7 +819,7 @@ export class UnifiedNeuralBot {
 
     this.psychology.on('strategy_deprecated', ({ strategyName, winRate }) => {
       this.addLog(`⚠ STRATEGY DEPRECATED: ${strategyName} (WR ${(winRate * 100).toFixed(1)}%)`, 'warning');
-      this.emitAlert({ severity: 'warning', title: `Strategy deprecated: ${strategyName}`, detail: `Win rate ${(winRate * 100).toFixed(1)}% below threshold` });
+      this.emitAlert({ severity: 'warning', strategy: strategyName, title: `Strategy deprecated: ${strategyName}`, detail: `Win rate ${(winRate * 100).toFixed(1)}% below threshold` });
     });
   }
 
@@ -942,6 +945,7 @@ export class UnifiedNeuralBot {
         this.lastArbHealthAlertTs = Date.now();
         this.emitAlert({
           severity: top.divergence >= limits.divergenceAlertThreshold * 1.5 ? 'critical' : 'warning',
+          strategy: 'polyswarm',
           title: `Swarm divergence ${top.divergence.toFixed(3)} above threshold`,
           detail: `${top.slug ?? top.marketId} · swarm ${top.swarmProbability.toFixed(3)} · conf ${(top.swarmConfidence * 100).toFixed(0)}%`,
         });
@@ -965,6 +969,7 @@ export class UnifiedNeuralBot {
       this.lastAnomalyAlertTs = Date.now();
       this.emitAlert({
         severity: 'warning',
+        strategy: 'bot_exhaustion',
         title: `Anomaly score ${(this.metrics.anomalyScore * 100).toFixed(0)}% above threshold`,
         detail: `Threshold ${(limits.anomalyAlertThreshold * 100).toFixed(0)}% · strategies may be operating in unstable regime`,
       });
@@ -1012,9 +1017,9 @@ export class UnifiedNeuralBot {
   // -------- Cooldown / risk gating --------
   private cooldownUntil = 0;
   private cooldownReason = '';
-  private alertSink: ((a: { severity: 'info' | 'warning' | 'critical'; title: string; detail?: string }) => void) | null = null;
+  private alertSink: ((a: { severity: 'info' | 'warning' | 'critical'; title: string; detail?: string; strategy?: string }) => void) | null = null;
   setAlertSink(cb: typeof this.alertSink) { this.alertSink = cb; }
-  private emitAlert(a: { severity: 'info' | 'warning' | 'critical'; title: string; detail?: string }) {
+  private emitAlert(a: { severity: 'info' | 'warning' | 'critical'; title: string; detail?: string; strategy?: string }) {
     try { this.alertSink?.(a); } catch { /* noop */ }
     // Auto-engage RANS kill switch on critical alerts (excluding our own kill-switch alert).
     if (a.severity === 'critical' && !isRansKillSwitchActive() && a.title !== 'RANS kill switch engaged') {
@@ -1035,18 +1040,38 @@ export class UnifiedNeuralBot {
     const remaining = Math.max(0, this.cooldownUntil - now);
     return { active: remaining > 0, remainingSec: Math.ceil(remaining / 1000), reason: this.cooldownReason };
   }
+
+  /**
+   * Equity-based drawdown. Previously the denominator was `peakPnL + 1`, which made a
+   * tiny peak profit explode into hundreds of percent of "drawdown". Drawdown is now
+   * measured against account equity (capital + P&L) with the peak floored at the
+   * starting capital, so it is always a sane 0..1 fraction of the account.
+   */
+  private updateDrawdown() {
+    const equity = CONFIG.INITIAL_CAPITAL + this.metrics.totalPnL;
+    this.peakEquity = Math.max(this.peakEquity || CONFIG.INITIAL_CAPITAL, CONFIG.INITIAL_CAPITAL, equity);
+    if (this.metrics.totalPnL > this.peakPnL) this.peakPnL = this.metrics.totalPnL;
+    const raw = (this.peakEquity - equity) / this.peakEquity;
+    const dd = Math.max(0, Math.min(1, raw));
+    // Smooth so a single noisy fill cannot spike the gauge; still monotonic upward.
+    this.currentDrawdown = this.currentDrawdown * 0.7 + dd * 0.3;
+    this.metrics.maxDrawdown = Math.max(this.metrics.maxDrawdown, this.currentDrawdown);
+  }
+
+  getCurrentDrawdown(): number { return this.currentDrawdown; }
+
   private checkRiskCooldown() {
     if (this.cooldownUntil > Date.now()) return; // already cooling down
     if (this.metrics.maxDrawdown >= CONFIG.RISK.MAX_DRAWDOWN) {
       this.cooldownUntil = Date.now() + 15 * 60 * 1000;
       this.cooldownReason = 'max-drawdown';
       this.addLog(`❄️ COOLDOWN engaged — drawdown ${(this.metrics.maxDrawdown * 100).toFixed(1)}% exceeded cap`, 'warning');
-      this.emitAlert({ severity: 'critical', title: 'Risk cooldown engaged', detail: `Drawdown ${(this.metrics.maxDrawdown * 100).toFixed(1)}% ≥ ${(CONFIG.RISK.MAX_DRAWDOWN * 100).toFixed(0)}%` });
+      this.emitAlert({ severity: 'critical', strategy: 'risk', title: 'Risk cooldown engaged', detail: `Drawdown ${(this.metrics.maxDrawdown * 100).toFixed(1)}% ≥ ${(CONFIG.RISK.MAX_DRAWDOWN * 100).toFixed(0)}%` });
     } else if (-this.metrics.dailyPnL >= CONFIG.RISK.MAX_DAILY_LOSS) {
       this.cooldownUntil = Date.now() + 15 * 60 * 1000;
       this.cooldownReason = 'daily-loss-limit';
       this.addLog(`❄️ COOLDOWN engaged — daily loss $${(-this.metrics.dailyPnL).toFixed(2)} exceeded cap`, 'warning');
-      this.emitAlert({ severity: 'critical', title: 'Daily loss limit hit', detail: `Loss $${(-this.metrics.dailyPnL).toFixed(2)} ≥ $${CONFIG.RISK.MAX_DAILY_LOSS.toFixed(0)}` });
+      this.emitAlert({ severity: 'critical', strategy: 'risk', title: 'Daily loss limit hit', detail: `Loss $${(-this.metrics.dailyPnL).toFixed(2)} ≥ $${CONFIG.RISK.MAX_DAILY_LOSS.toFixed(0)}` });
     }
   }
 
@@ -1381,8 +1406,8 @@ export class UnifiedNeuralBot {
             this.metrics.totalPnL += pnl;
             this.metrics.dailyPnL += pnl;
             this.pnlHistory.push(this.metrics.totalPnL);
-            if (this.metrics.totalPnL > this.peakPnL) this.peakPnL = this.metrics.totalPnL;
-            this.metrics.maxDrawdown = Math.max(this.metrics.maxDrawdown, (this.peakPnL - this.metrics.totalPnL) / (this.peakPnL + 1));
+            this.updateDrawdown();
+
 
             if (pnl > 0) this.metrics.winRate = this.metrics.winRate * 0.95 + 0.05;
             else this.metrics.winRate = this.metrics.winRate * 0.95;
@@ -1602,6 +1627,7 @@ export class UnifiedNeuralBot {
         }
 
         // Risk cooldown gate
+        this.updateDrawdown();
         this.checkRiskCooldown();
 
         this.metrics.activePositions = Math.floor(3 + Math.random() * 5);
@@ -1657,7 +1683,7 @@ export class UnifiedNeuralBot {
     this.recordGuardrailResult('thresholds', undefined, result);
     if (result.clampedFields.length > 0) {
       this.addLog(`⚙️ RANS thresholds applied — clamped: ${result.clampedFields.join(', ')}`, 'warning');
-      this.emitAlert({ severity: 'warning', title: 'RANS guardrail clamped', detail: `Fields: ${result.clampedFields.join(', ')}` });
+      this.emitAlert({ severity: 'warning', strategy: 'rans', title: 'RANS guardrail clamped', detail: `Fields: ${result.clampedFields.join(', ')}` });
     } else {
       this.addLog(`⚙️ RANS thresholds updated`, 'info');
     }
@@ -1668,7 +1694,7 @@ export class UnifiedNeuralBot {
     this.recordGuardrailResult('weights', regime, result);
     if (result.clampedFields.length > 0) {
       this.addLog(`⚙️ RANS weights applied for ${regime} — clamped: ${result.clampedFields.join(', ')}`, 'warning');
-      this.emitAlert({ severity: 'warning', title: 'RANS weight clamped', detail: `${regime}: ${result.clampedFields.join(', ')}` });
+      this.emitAlert({ severity: 'warning', strategy: 'rans', title: 'RANS weight clamped', detail: `${regime}: ${result.clampedFields.join(', ')}` });
     } else {
       this.addLog(`⚙️ RANS weights updated for ${regime}`, 'info');
     }
@@ -1730,7 +1756,7 @@ export class UnifiedNeuralBot {
       this.ransDx.killSwitchAt = 0;
       this.ransDx.killSwitchMetrics = {};
       this.addLog(`✅ RANS RESUMED — scaling re-enabled`, 'info');
-      this.emitAlert({ severity: 'info', title: 'RANS resumed', detail: 'Regime scaling re-enabled' });
+      this.emitAlert({ severity: 'info', strategy: 'rans', title: 'RANS resumed', detail: 'Regime scaling re-enabled' });
       recordRansDiagEvent({ event_type: 'kill_switch_resume', severity: 'info', detail: { reason } });
     }
   }
