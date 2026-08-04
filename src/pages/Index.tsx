@@ -220,6 +220,9 @@ const NeuralBotDashboard: React.FC = () => {
           clear: alerts.clear,
           markRead: alerts.markRead,
           markAllRead: alerts.markAllRead,
+          rules: alerts.rules,
+          suppressed: alerts.suppressed,
+          clearSuppressed: alerts.clearSuppressed,
         }}
       />
 
