@@ -1035,6 +1035,26 @@ export class UnifiedNeuralBot {
     const remaining = Math.max(0, this.cooldownUntil - now);
     return { active: remaining > 0, remainingSec: Math.ceil(remaining / 1000), reason: this.cooldownReason };
   }
+
+  /**
+   * Equity-based drawdown. Previously the denominator was `peakPnL + 1`, which made a
+   * tiny peak profit explode into hundreds of percent of "drawdown". Drawdown is now
+   * measured against account equity (capital + P&L) with the peak floored at the
+   * starting capital, so it is always a sane 0..1 fraction of the account.
+   */
+  private updateDrawdown() {
+    const equity = CONFIG.INITIAL_CAPITAL + this.metrics.totalPnL;
+    this.peakEquity = Math.max(this.peakEquity || CONFIG.INITIAL_CAPITAL, CONFIG.INITIAL_CAPITAL, equity);
+    if (this.metrics.totalPnL > this.peakPnL) this.peakPnL = this.metrics.totalPnL;
+    const raw = (this.peakEquity - equity) / this.peakEquity;
+    const dd = Math.max(0, Math.min(1, raw));
+    // Smooth so a single noisy fill cannot spike the gauge; still monotonic upward.
+    this.currentDrawdown = this.currentDrawdown * 0.7 + dd * 0.3;
+    this.metrics.maxDrawdown = Math.max(this.metrics.maxDrawdown, this.currentDrawdown);
+  }
+
+  getCurrentDrawdown(): number { return this.currentDrawdown; }
+
   private checkRiskCooldown() {
     if (this.cooldownUntil > Date.now()) return; // already cooling down
     if (this.metrics.maxDrawdown >= CONFIG.RISK.MAX_DRAWDOWN) {
