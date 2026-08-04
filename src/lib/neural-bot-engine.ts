@@ -1015,9 +1015,9 @@ export class UnifiedNeuralBot {
   // -------- Cooldown / risk gating --------
   private cooldownUntil = 0;
   private cooldownReason = '';
-  private alertSink: ((a: { severity: 'info' | 'warning' | 'critical'; title: string; detail?: string }) => void) | null = null;
+  private alertSink: ((a: { severity: 'info' | 'warning' | 'critical'; title: string; detail?: string; strategy?: string }) => void) | null = null;
   setAlertSink(cb: typeof this.alertSink) { this.alertSink = cb; }
-  private emitAlert(a: { severity: 'info' | 'warning' | 'critical'; title: string; detail?: string }) {
+  private emitAlert(a: { severity: 'info' | 'warning' | 'critical'; title: string; detail?: string; strategy?: string }) {
     try { this.alertSink?.(a); } catch { /* noop */ }
     // Auto-engage RANS kill switch on critical alerts (excluding our own kill-switch alert).
     if (a.severity === 'critical' && !isRansKillSwitchActive() && a.title !== 'RANS kill switch engaged') {
