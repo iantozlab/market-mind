@@ -3,13 +3,37 @@
 // configured risk limits are evaluated exactly as they are live.
 import { MultiMarketArbitrageEngine, type ArbMarket, type ArbitrageSignal } from './multi-market-arbitrage';
 import { PolySwarmIntegrator, buildDefaultSwarm, type MarketDescription } from './polyswarm-integrator';
-import { checkArbLimits, getArbLimits, type ArbRiskLimits } from './arb-risk-config';
+import { getArbLimits, type ArbRiskLimits, type LimitCheckInput } from './arb-risk-config';
+
+/** Same rules as checkArbLimits, but evaluated against a run-scoped limit set. */
+function localLimitCheck(l: ArbRiskLimits, i: LimitCheckInput): string | null {
+  if (!l.executionEnabled) return 'execution disabled';
+  if (i.sessionArbPnL <= -l.maxDailyArbLoss) return `daily arb loss limit ($${l.maxDailyArbLoss})`;
+  if (i.profit < l.minProfit) return `profit < $${l.minProfit}`;
+  if (i.confidence < l.minConfidence) return `confidence < ${(l.minConfidence * 100).toFixed(0)}%`;
+  if (i.legs > l.maxLegs) return `legs > ${l.maxLegs}`;
+  if (i.capital > l.maxCapitalPerArb) return `capital > $${l.maxCapitalPerArb} per arb`;
+  if (i.capitalUsedThisTick + i.capital > l.maxCapitalPerTick) return `tick capital cap $${l.maxCapitalPerTick}`;
+  if (i.executionsThisTick >= l.maxExecutionsPerTick) return `max ${l.maxExecutionsPerTick} executions/tick`;
+  return null;
+}
 
 export interface ArbBacktestConfig {
   ticks: number;
   marketsPerTick: number;
   seed: number;
   strategies: { multiMarketArb: boolean; polyswarm: boolean };
+  /** Scenario window (epoch ms). Ticks are stamped across this range. */
+  startTime: number;
+  endTime: number;
+  /** Simulated interval between ticks (ms). Derives tick count when the window is set. */
+  tickIntervalMs: number;
+  /** Round-trip taker fee in basis points, charged on deployed capital. */
+  feeBps: number;
+  /** Slippage in basis points, charged on deployed capital. */
+  slippageBps: number;
+  /** Optional overrides for the saved risk limits, applied for this run only. */
+  riskOverrides: Partial<ArbRiskLimits>;
 }
 
 export interface ArbStrategyResult {
@@ -35,12 +59,27 @@ export interface ArbBacktestResult {
   blockedReasons: Record<string, number>;
 }
 
+const NOW = Date.now();
+
 export const DEFAULT_ARB_BACKTEST: ArbBacktestConfig = {
   ticks: 250,
   marketsPerTick: 14,
   seed: 42,
   strategies: { multiMarketArb: true, polyswarm: true },
+  startTime: NOW - 24 * 3600e3,
+  endTime: NOW,
+  tickIntervalMs: 5 * 60e3,
+  feeBps: 20,
+  slippageBps: 15,
+  riskOverrides: {},
 };
+
+/** Ticks implied by the scenario window, clamped so a run stays responsive. */
+export function ticksFromWindow(c: ArbBacktestConfig): number {
+  const span = Math.max(0, c.endTime - c.startTime);
+  if (!span || !c.tickIntervalMs) return c.ticks;
+  return Math.max(10, Math.min(5000, Math.round(span / c.tickIntervalMs)));
+}
 
 function mulberry32(seed: number) {
   let a = seed >>> 0;
@@ -71,7 +110,9 @@ export async function runArbBacktest(
   config: ArbBacktestConfig = DEFAULT_ARB_BACKTEST,
   onProgress?: (pct: number) => void,
 ): Promise<ArbBacktestResult> {
-  const limits = getArbLimits();
+  const limits: ArbRiskLimits = { ...getArbLimits(), ...(config.riskOverrides ?? {}) };
+  const totalTicks = ticksFromWindow(config);
+  const costRate = ((config.feeBps ?? 0) + (config.slippageBps ?? 0)) / 10_000;
   const rand = mulberry32(config.seed);
   const arbEngine = new MultiMarketArbitrageEngine();
   const swarm = new PolySwarmIntegrator();
@@ -83,7 +124,7 @@ export async function runArbBacktest(
   let arbSignals = 0, arbExec = 0, arbBlocked = 0, arbGross = 0, arbWins = 0;
   let swarmSignals = 0, swarmExec = 0, swarmBlocked = 0, swarmGross = 0, swarmWins = 0;
 
-  for (let tick = 0; tick < config.ticks; tick++) {
+  for (let tick = 0; tick < totalTicks; tick++) {
     // --- synthetic market snapshot -------------------------------------
     const arbMarkets: ArbMarket[] = [];
     const descriptions: MarketDescription[] = [];
@@ -116,7 +157,7 @@ export async function runArbBacktest(
       arbSignals += signals.length;
       let capitalUsed = 0, execs = 0;
       for (const s of signals) {
-        const reason = checkArbLimits({
+        const reason = localLimitCheck(limits, {
           profit: s.guaranteedProfit, confidence: s.confidence, legs: s.legs.length,
           capital: s.requiredCapital, capitalUsedThisTick: capitalUsed,
           executionsThisTick: execs, sessionArbPnL: arbGross,
@@ -127,7 +168,7 @@ export async function runArbBacktest(
           continue;
         }
         // Slippage / partial-fill haircut keeps results honest.
-        const realized = s.guaranteedProfit * (0.6 + rand() * 0.5);
+        const realized = s.guaranteedProfit * (0.6 + rand() * 0.5) - s.requiredCapital * costRate;
         capitalUsed += s.requiredCapital;
         execs++; arbExec++;
         arbGross += realized;
@@ -150,7 +191,7 @@ export async function runArbBacktest(
         }
         const size = Math.min(limits.maxCapitalPerArb, 100 + rand() * 400);
         const won = rand() < 0.5 + Math.min(0.25, edge * 2);
-        const realized = won ? size * edge * 0.9 : -size * edge * 0.7;
+        const realized = (won ? size * edge * 0.9 : -size * edge * 0.7) - size * costRate;
         swarmExec++; swarmGross += realized; tickSwarm += realized;
         if (won) swarmWins++;
       }
@@ -158,7 +199,7 @@ export async function runArbBacktest(
 
     arbPnl.push(tickArb);
     swarmPnl.push(tickSwarm);
-    if (onProgress && tick % 10 === 0) onProgress(Math.round((tick / config.ticks) * 100));
+    if (onProgress && tick % 10 === 0) onProgress(Math.round((tick / totalTicks) * 100));
     if (tick % 25 === 0) await new Promise(r => setTimeout(r, 0)); // keep the UI responsive
   }
 
@@ -203,6 +244,11 @@ export function arbBacktestToCsv(r: ArbBacktestResult): string {
     `# ticks,${r.config.ticks}`,
     `# markets_per_tick,${r.config.marketsPerTick}`,
     `# seed,${r.config.seed}`,
+    `# start_time,${new Date(r.config.startTime).toISOString()}`,
+    `# end_time,${new Date(r.config.endTime).toISOString()}`,
+    `# tick_interval_ms,${r.config.tickIntervalMs}`,
+    `# fee_bps,${r.config.feeBps}`,
+    `# slippage_bps,${r.config.slippageBps}`,
     ...Object.entries(r.limits).map(([k, v]) => `# limit_${k},${v}`),
   ];
   return [head.join(','), ...rows, ...meta].join('\n');
