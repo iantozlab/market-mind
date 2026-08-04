@@ -819,7 +819,7 @@ export class UnifiedNeuralBot {
 
     this.psychology.on('strategy_deprecated', ({ strategyName, winRate }) => {
       this.addLog(`⚠ STRATEGY DEPRECATED: ${strategyName} (WR ${(winRate * 100).toFixed(1)}%)`, 'warning');
-      this.emitAlert({ severity: 'warning', title: `Strategy deprecated: ${strategyName}`, detail: `Win rate ${(winRate * 100).toFixed(1)}% below threshold` });
+      this.emitAlert({ severity: 'warning', strategy: strategyName, title: `Strategy deprecated: ${strategyName}`, detail: `Win rate ${(winRate * 100).toFixed(1)}% below threshold` });
     });
   }
 
@@ -945,6 +945,7 @@ export class UnifiedNeuralBot {
         this.lastArbHealthAlertTs = Date.now();
         this.emitAlert({
           severity: top.divergence >= limits.divergenceAlertThreshold * 1.5 ? 'critical' : 'warning',
+          strategy: 'polyswarm',
           title: `Swarm divergence ${top.divergence.toFixed(3)} above threshold`,
           detail: `${top.slug ?? top.marketId} · swarm ${top.swarmProbability.toFixed(3)} · conf ${(top.swarmConfidence * 100).toFixed(0)}%`,
         });
@@ -968,6 +969,7 @@ export class UnifiedNeuralBot {
       this.lastAnomalyAlertTs = Date.now();
       this.emitAlert({
         severity: 'warning',
+        strategy: 'bot_exhaustion',
         title: `Anomaly score ${(this.metrics.anomalyScore * 100).toFixed(0)}% above threshold`,
         detail: `Threshold ${(limits.anomalyAlertThreshold * 100).toFixed(0)}% · strategies may be operating in unstable regime`,
       });
@@ -1064,12 +1066,12 @@ export class UnifiedNeuralBot {
       this.cooldownUntil = Date.now() + 15 * 60 * 1000;
       this.cooldownReason = 'max-drawdown';
       this.addLog(`❄️ COOLDOWN engaged — drawdown ${(this.metrics.maxDrawdown * 100).toFixed(1)}% exceeded cap`, 'warning');
-      this.emitAlert({ severity: 'critical', title: 'Risk cooldown engaged', detail: `Drawdown ${(this.metrics.maxDrawdown * 100).toFixed(1)}% ≥ ${(CONFIG.RISK.MAX_DRAWDOWN * 100).toFixed(0)}%` });
+      this.emitAlert({ severity: 'critical', strategy: 'risk', title: 'Risk cooldown engaged', detail: `Drawdown ${(this.metrics.maxDrawdown * 100).toFixed(1)}% ≥ ${(CONFIG.RISK.MAX_DRAWDOWN * 100).toFixed(0)}%` });
     } else if (-this.metrics.dailyPnL >= CONFIG.RISK.MAX_DAILY_LOSS) {
       this.cooldownUntil = Date.now() + 15 * 60 * 1000;
       this.cooldownReason = 'daily-loss-limit';
       this.addLog(`❄️ COOLDOWN engaged — daily loss $${(-this.metrics.dailyPnL).toFixed(2)} exceeded cap`, 'warning');
-      this.emitAlert({ severity: 'critical', title: 'Daily loss limit hit', detail: `Loss $${(-this.metrics.dailyPnL).toFixed(2)} ≥ $${CONFIG.RISK.MAX_DAILY_LOSS.toFixed(0)}` });
+      this.emitAlert({ severity: 'critical', strategy: 'risk', title: 'Daily loss limit hit', detail: `Loss $${(-this.metrics.dailyPnL).toFixed(2)} ≥ $${CONFIG.RISK.MAX_DAILY_LOSS.toFixed(0)}` });
     }
   }
 
@@ -1681,7 +1683,7 @@ export class UnifiedNeuralBot {
     this.recordGuardrailResult('thresholds', undefined, result);
     if (result.clampedFields.length > 0) {
       this.addLog(`⚙️ RANS thresholds applied — clamped: ${result.clampedFields.join(', ')}`, 'warning');
-      this.emitAlert({ severity: 'warning', title: 'RANS guardrail clamped', detail: `Fields: ${result.clampedFields.join(', ')}` });
+      this.emitAlert({ severity: 'warning', strategy: 'rans', title: 'RANS guardrail clamped', detail: `Fields: ${result.clampedFields.join(', ')}` });
     } else {
       this.addLog(`⚙️ RANS thresholds updated`, 'info');
     }
@@ -1692,7 +1694,7 @@ export class UnifiedNeuralBot {
     this.recordGuardrailResult('weights', regime, result);
     if (result.clampedFields.length > 0) {
       this.addLog(`⚙️ RANS weights applied for ${regime} — clamped: ${result.clampedFields.join(', ')}`, 'warning');
-      this.emitAlert({ severity: 'warning', title: 'RANS weight clamped', detail: `${regime}: ${result.clampedFields.join(', ')}` });
+      this.emitAlert({ severity: 'warning', strategy: 'rans', title: 'RANS weight clamped', detail: `${regime}: ${result.clampedFields.join(', ')}` });
     } else {
       this.addLog(`⚙️ RANS weights updated for ${regime}`, 'info');
     }
@@ -1754,7 +1756,7 @@ export class UnifiedNeuralBot {
       this.ransDx.killSwitchAt = 0;
       this.ransDx.killSwitchMetrics = {};
       this.addLog(`✅ RANS RESUMED — scaling re-enabled`, 'info');
-      this.emitAlert({ severity: 'info', title: 'RANS resumed', detail: 'Regime scaling re-enabled' });
+      this.emitAlert({ severity: 'info', strategy: 'rans', title: 'RANS resumed', detail: 'Regime scaling re-enabled' });
       recordRansDiagEvent({ event_type: 'kill_switch_resume', severity: 'info', detail: { reason } });
     }
   }
