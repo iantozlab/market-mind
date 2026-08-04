@@ -793,6 +793,9 @@ export class UnifiedNeuralBot {
   private lastMarkets: Market[] = [];
   private pnlHistory: number[] = [];
   private peakPnL = 0;
+  private peakEquity = 0;
+  private currentDrawdown = 0;
+
 
   constructor(paperMode = true) {
     this.isPaperMode = paperMode;
