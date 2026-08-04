@@ -1625,6 +1625,7 @@ export class UnifiedNeuralBot {
         }
 
         // Risk cooldown gate
+        this.updateDrawdown();
         this.checkRiskCooldown();
 
         this.metrics.activePositions = Math.floor(3 + Math.random() * 5);
