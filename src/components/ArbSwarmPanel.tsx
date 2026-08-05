@@ -394,10 +394,59 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
 
       {/* ---------------- BACKTEST ---------------- */}
       <TabsContent value="backtest" className="space-y-3">
+        <section className="rounded-lg border border-border bg-card p-3 space-y-2">
+          <h3 className="font-display text-sm font-semibold">Saved scenarios</h3>
+          <div className="flex flex-wrap items-center gap-2">
+            {btPresets.length === 0 && <span className="text-[11px] text-muted-foreground">No saved scenarios yet.</span>}
+            {btPresets.map(p => (
+              <div key={p.name} className="flex items-center">
+                <Button
+                  size="sm" variant={activeBtPreset === p.name ? 'default' : 'outline'} className="h-7 text-xs"
+                  aria-label={`Load and run scenario ${p.name}`}
+                  onClick={() => {
+                    const cfg = getBacktestPreset(p.name);
+                    if (!cfg) return;
+                    setBtConfig(cfg);
+                    setActiveBacktestPreset(p.name);
+                    setActiveBtPreset(p.name);
+                    toast.success(`Scenario "${p.name}" loaded — running`);
+                    void runBacktest(cfg);
+                  }}
+                >{p.name}</Button>
+                <Button
+                  size="icon" variant="ghost" className="h-7 w-6"
+                  aria-label={`Delete scenario ${p.name}`}
+                  onClick={() => { deleteBacktestPreset(p.name); setBtPresets(listBacktestPresets()); setActiveBtPreset(getActiveBacktestPreset()); }}
+                ><X className="h-3 w-3" /></Button>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <Input
+              value={newScenarioName}
+              onChange={e => setNewScenarioName(e.target.value)}
+              placeholder="Save current backtest config as…"
+              className="h-8 text-xs"
+              aria-label="New scenario name"
+            />
+            <Button
+              size="sm" variant="outline" className="h-8 text-xs" disabled={!newScenarioName.trim()}
+              onClick={() => {
+                const p = saveBacktestPreset(newScenarioName, btConfig);
+                setBtPresets(listBacktestPresets()); setActiveBtPreset(p.name); setNewScenarioName('');
+                toast.success(`Scenario "${p.name}" saved`);
+              }}
+            ><Save className="h-3 w-3 mr-1" />Save</Button>
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            Scenarios store the window, tick interval, fee/slippage and risk caps so a run is reproducible.
+          </p>
+        </section>
         <section className="rounded-lg border border-border bg-card p-3 space-y-3">
           <h3 className="flex items-center gap-2 font-display text-sm font-semibold">
             <FlaskConical className="h-4 w-4 text-info" /> Strategy Backtest Runner
           </h3>
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Start</Label>
