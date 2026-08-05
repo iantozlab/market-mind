@@ -943,7 +943,11 @@ export class UnifiedNeuralBot {
             source: 'polyswarm', action: 'executed', mode,
             label: `${ev.direction} ${ev.slug ?? ev.marketId}`, legs: 1,
             profit: ev.edge, capital: limits.maxCapitalPerArb, confidence: top.swarmConfidence,
-            detail: { divergence: top.divergence, swarmProb: ev.swarmProbability, marketPrice: ev.marketPrice, tick: this.tickCount },
+            detail: {
+              divergence: top.divergence, swarmProb: ev.swarmProbability, marketPrice: ev.marketPrice,
+              tick: this.tickCount, strategy: 'polyswarm',
+              ...this.fillContext(mode, ev.marketPrice),
+            },
           });
         }
       } else if (mkt) {
@@ -952,9 +956,17 @@ export class UnifiedNeuralBot {
           recordArbAudit({
             source: 'polyswarm', action: 'blocked', mode, label: top.slug ?? top.marketId, legs: 1,
             profit: edge, capital: 0, confidence: top.swarmConfidence, reason,
-            detail: { divergence: top.divergence, tick: this.tickCount },
+            detail: {
+              divergence: top.divergence, tick: this.tickCount, strategy: 'polyswarm',
+              rule: reason, edge: Number(edge.toFixed(4)),
+              limit_minSwarmEdge: limits.minSwarmEdge,
+              limit_executionEnabled: limits.executionEnabled,
+              limit_divergenceAlertThreshold: limits.divergenceAlertThreshold,
+              paperMode: limits.paperMode,
+            },
           });
         }
+
       }
       // Strategy health alerts: divergence threshold breach.
       if (top.divergence >= limits.divergenceAlertThreshold && Date.now() - this.lastArbHealthAlertTs > 60_000) {
