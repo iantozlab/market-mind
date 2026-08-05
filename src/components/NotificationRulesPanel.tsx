@@ -1,12 +1,13 @@
 import React from 'react';
-import { BellOff, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { BellOff, RotateCcw, SlidersHorizontal, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
-  getAlertRules, setAlertRules, resetAlertRules, KNOWN_ALERT_STRATEGIES, type AlertRules,
+  getAlertRules, setAlertRules, resetAlertRules, KNOWN_ALERT_STRATEGIES,
+  snoozeStrategy, nextUnmuteAt, type AlertRules,
 } from '@/lib/alert-rules';
 
 interface Props {
@@ -21,9 +22,30 @@ const SNOOZE = [
   ['2h', 2 * 3600e3],
 ] as [string, number][];
 
+const STRATEGY_SNOOZE = [
+  ['15m', 15 * 60e3],
+  ['1h', 3600e3],
+  ['8h', 8 * 3600e3],
+] as [string, number][];
+
+function remaining(untilMs: number): string {
+  const ms = Math.max(0, untilMs - Date.now());
+  if (ms < 60e3) return `${Math.ceil(ms / 1000)}s`;
+  if (ms < 3600e3) return `${Math.ceil(ms / 60e3)}m`;
+  return `${(ms / 3600e3).toFixed(1)}h`;
+}
+
 const NotificationRulesPanel: React.FC<Props> = ({ rules, suppressed, clearSuppressed }) => {
   const update = (patch: Partial<AlertRules>) => setAlertRules(patch);
   const snoozedFor = Math.max(0, rules.muteUntil - Date.now());
+  // Re-render each second so countdowns stay accurate.
+  const [, tick] = React.useState(0);
+  React.useEffect(() => {
+    const id = setInterval(() => tick(t => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const nextUnmute = nextUnmuteAt();
+
 
   return (
     <div className="p-3 space-y-3 text-xs">
@@ -99,27 +121,61 @@ const NotificationRulesPanel: React.FC<Props> = ({ rules, suppressed, clearSuppr
       </div>
 
       <div className="space-y-1.5">
-        <p className="text-[9px] uppercase tracking-widest text-muted-foreground">Per-strategy alerts</p>
-        <ul className="space-y-1">
-          {KNOWN_ALERT_STRATEGIES.map(s => (
-            <li key={s} className="flex items-center justify-between gap-2">
-              <span className="font-mono text-[11px] truncate">{s}</span>
-              <Switch
-                checked={rules.strategies[s] !== false}
-                onCheckedChange={v => update({ strategies: { [s]: v } })}
-                aria-label={`Toggle alerts for ${s}`}
-              />
-            </li>
-          ))}
+        <p className="text-[9px] uppercase tracking-widest text-muted-foreground">Per-strategy alerts &amp; snooze</p>
+        <ul className="space-y-1.5">
+          {KNOWN_ALERT_STRATEGIES.map(s => {
+            const until = rules.strategySnooze?.[s] ?? 0;
+            const active = until > Date.now();
+            return (
+              <li key={s} className="rounded-md border border-border/50 p-1.5 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-[11px] truncate">{s}</span>
+                  <Switch
+                    checked={rules.strategies[s] !== false}
+                    onCheckedChange={v => update({ strategies: { [s]: v } })}
+                    aria-label={`Toggle alerts for ${s}`}
+                  />
+                </div>
+                <div className="flex items-center gap-1">
+                  {STRATEGY_SNOOZE.map(([lbl, ms]) => (
+                    <Button
+                      key={lbl} size="sm" variant="outline" className="h-5 px-1.5 text-[9px]"
+                      onClick={() => snoozeStrategy(s, ms)}
+                      aria-label={`Snooze ${s} alerts for ${lbl}`}
+                    >{lbl}</Button>
+                  ))}
+                  {active ? (
+                    <>
+                      <span className="ml-1 font-mono text-[9px] text-warning">
+                        unmutes {new Date(until).toLocaleTimeString()} ({remaining(until)})
+                      </span>
+                      <Button
+                        size="sm" variant="ghost" className="h-5 px-1.5 text-[9px]"
+                        onClick={() => snoozeStrategy(s, 0)}
+                        aria-label={`Cancel snooze for ${s}`}
+                      >clear</Button>
+                    </>
+                  ) : (
+                    <span className="ml-1 text-[9px] text-muted-foreground">live</span>
+                  )}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       </div>
 
       <div className="flex items-center justify-between border-t border-border/40 pt-2">
         <Badge variant="outline" className="font-mono text-[10px]">{suppressed} suppressed</Badge>
+        <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+          <Clock className="h-3 w-3" aria-hidden />
+          {nextUnmute ? `next unmute ${new Date(nextUnmute).toLocaleTimeString()}` : 'all channels live'}
+        </span>
         <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={clearSuppressed} disabled={!suppressed}>
           Reset counter
         </Button>
       </div>
+
     </div>
   );
 };

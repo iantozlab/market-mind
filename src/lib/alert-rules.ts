@@ -15,7 +15,10 @@ export interface AlertRules {
   dedupeWindowSec: number;
   /** Per-strategy enable map. Missing key = enabled. */
   strategies: Record<string, boolean>;
+  /** Per-strategy snooze schedule: strategy -> epoch ms until which alerts are muted. */
+  strategySnooze: Record<string, number>;
 }
+
 
 export const KNOWN_ALERT_STRATEGIES = [
   'polyswarm',
@@ -34,7 +37,9 @@ export const DEFAULT_ALERT_RULES: AlertRules = {
   maxPerMinute: 12,
   dedupeWindowSec: 45,
   strategies: {},
+  strategySnooze: {},
 };
+
 
 const KEY = 'alert-rules-v1';
 const SEV_RANK = { info: 0, warning: 1, critical: 2 } as const;
@@ -50,17 +55,24 @@ function load(): AlertRules {
 let rules: AlertRules = load();
 const subs = new Set<(r: AlertRules) => void>();
 
-export function getAlertRules(): AlertRules { return { ...rules, strategies: { ...rules.strategies } }; }
+export function getAlertRules(): AlertRules {
+  return { ...rules, strategies: { ...rules.strategies }, strategySnooze: { ...rules.strategySnooze } };
+}
 
 export function setAlertRules(patch: Partial<AlertRules>): AlertRules {
-  rules = { ...rules, ...patch, strategies: { ...rules.strategies, ...(patch.strategies ?? {}) } };
+  rules = {
+    ...rules,
+    ...patch,
+    strategies: { ...rules.strategies, ...(patch.strategies ?? {}) },
+    strategySnooze: { ...rules.strategySnooze, ...(patch.strategySnooze ?? {}) },
+  };
   try { localStorage.setItem(KEY, JSON.stringify(rules)); } catch { /* ignore */ }
   subs.forEach(fn => { try { fn(getAlertRules()); } catch { /* ignore */ } });
   return getAlertRules();
 }
 
 export function resetAlertRules(): AlertRules {
-  rules = { ...DEFAULT_ALERT_RULES, strategies: {} };
+  rules = { ...DEFAULT_ALERT_RULES, strategies: {}, strategySnooze: {} };
   try { localStorage.setItem(KEY, JSON.stringify(rules)); } catch { /* ignore */ }
   subs.forEach(fn => { try { fn(getAlertRules()); } catch { /* ignore */ } });
   return getAlertRules();
@@ -76,6 +88,24 @@ export function isStrategyEnabled(strategy?: string): boolean {
   return rules.strategies[strategy] !== false;
 }
 
+/** Snooze a single strategy for `ms` milliseconds (0 clears the snooze). */
+export function snoozeStrategy(strategy: string, ms: number): AlertRules {
+  return setAlertRules({ strategySnooze: { [strategy]: ms > 0 ? Date.now() + ms : 0 } });
+}
+
+/** Epoch ms when the strategy un-mutes, or 0 when it is not snoozed. */
+export function strategySnoozedUntil(strategy?: string): number {
+  if (!strategy) return 0;
+  const until = rules.strategySnooze?.[strategy] ?? 0;
+  return until > Date.now() ? until : 0;
+}
+
+/** Next moment the notification center becomes fully audible again, 0 if already live. */
+export function nextUnmuteAt(): number {
+  const times = [rules.muteUntil, ...Object.values(rules.strategySnooze ?? {})].filter(t => t > Date.now());
+  return times.length ? Math.min(...times) : 0;
+}
+
 /** Rolling-window state for rate limiting + dedupe. */
 let recentTs: number[] = [];
 const lastTitleTs = new Map<string, number>();
@@ -87,6 +117,10 @@ export function evaluateAlert(a: { severity: 'info' | 'warning' | 'critical'; ti
   if (rules.muted || rules.muteUntil > now) return { allowed: false, reason: 'muted' };
   if (SEV_RANK[a.severity] < SEV_RANK[rules.minSeverity]) return { allowed: false, reason: 'below severity floor' };
   if (!isStrategyEnabled(a.strategy)) return { allowed: false, reason: `strategy ${a.strategy} disabled` };
+  const snoozedUntil = strategySnoozedUntil(a.strategy);
+  if (snoozedUntil) return { allowed: false, reason: `strategy ${a.strategy} snoozed until ${new Date(snoozedUntil).toLocaleTimeString()}` };
+
+
 
   const last = lastTitleTs.get(a.title) ?? 0;
   if (rules.dedupeWindowSec > 0 && now - last < rules.dedupeWindowSec * 1000) {
