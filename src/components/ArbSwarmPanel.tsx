@@ -24,6 +24,10 @@ import {
   listArbPresets, applyArbPreset, saveCurrentAsPreset, deleteArbPreset,
   getActivePresetName, subscribeArbPresets,
 } from '@/lib/arb-risk-presets';
+import {
+  listBacktestPresets, saveBacktestPreset, deleteBacktestPreset, getBacktestPreset,
+  getActiveBacktestPreset, setActiveBacktestPreset, subscribeBacktestPresets,
+} from '@/lib/arb-backtest-presets';
 import LivePaperComparePanel from './LivePaperComparePanel';
 
 interface Props {
@@ -81,6 +85,9 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
   const [presets, setPresets] = useState(() => listArbPresets());
   const [activePreset, setActivePreset] = useState(() => getActivePresetName());
   const [newPresetName, setNewPresetName] = useState('');
+  const [btPresets, setBtPresets] = useState(() => listBacktestPresets());
+  const [activeBtPreset, setActiveBtPreset] = useState<string | null>(() => getActiveBacktestPreset());
+  const [newScenarioName, setNewScenarioName] = useState('');
 
   useEffect(() => subscribeArbLimits(setLimits), []);
   useEffect(() => subscribeArbPresets(() => { setPresets(listArbPresets()); setActivePreset(getActivePresetName()); }), []);
@@ -513,7 +520,7 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
               polyswarm
             </label>
             <span className="flex-1" />
-            <Button size="sm" className="h-8 text-xs" disabled={btRunning} onClick={runBacktest}>
+            <Button size="sm" className="h-8 text-xs" disabled={btRunning} onClick={() => runBacktest()}>
               <Play className="h-3 w-3 mr-1" />{btRunning ? 'Running…' : 'Run backtest'}
             </Button>
             {btResult && (
