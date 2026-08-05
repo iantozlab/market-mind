@@ -15,7 +15,10 @@ export interface AlertRules {
   dedupeWindowSec: number;
   /** Per-strategy enable map. Missing key = enabled. */
   strategies: Record<string, boolean>;
+  /** Per-strategy snooze schedule: strategy -> epoch ms until which alerts are muted. */
+  strategySnooze: Record<string, number>;
 }
+
 
 export const KNOWN_ALERT_STRATEGIES = [
   'polyswarm',
@@ -34,7 +37,9 @@ export const DEFAULT_ALERT_RULES: AlertRules = {
   maxPerMinute: 12,
   dedupeWindowSec: 45,
   strategies: {},
+  strategySnooze: {},
 };
+
 
 const KEY = 'alert-rules-v1';
 const SEV_RANK = { info: 0, warning: 1, critical: 2 } as const;
