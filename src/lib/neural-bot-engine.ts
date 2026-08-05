@@ -1048,32 +1048,52 @@ export class UnifiedNeuralBot {
    * starting capital, so it is always a sane 0..1 fraction of the account.
    */
   private updateDrawdown() {
+    const g = getDrawdownGuard();
     const equity = CONFIG.INITIAL_CAPITAL + this.metrics.totalPnL;
     this.peakEquity = Math.max(this.peakEquity || CONFIG.INITIAL_CAPITAL, CONFIG.INITIAL_CAPITAL, equity);
     if (this.metrics.totalPnL > this.peakPnL) this.peakPnL = this.metrics.totalPnL;
     const raw = (this.peakEquity - equity) / this.peakEquity;
     const dd = Math.max(0, Math.min(1, raw));
-    // Smooth so a single noisy fill cannot spike the gauge; still monotonic upward.
-    this.currentDrawdown = this.currentDrawdown * 0.7 + dd * 0.3;
+    // EMA over the configured smoothing window so a single noisy fill cannot spike the gauge.
+    const alpha = 2 / (Math.max(1, g.smoothingWindow) + 1);
+    this.currentDrawdown = this.currentDrawdown * (1 - alpha) + dd * alpha;
     this.metrics.maxDrawdown = Math.max(this.metrics.maxDrawdown, this.currentDrawdown);
   }
 
   getCurrentDrawdown(): number { return this.currentDrawdown; }
 
+  private ddBreachStreak = 0;
+
   private checkRiskCooldown() {
-    if (this.cooldownUntil > Date.now()) return; // already cooling down
-    if (this.metrics.maxDrawdown >= CONFIG.RISK.MAX_DRAWDOWN) {
-      this.cooldownUntil = Date.now() + 15 * 60 * 1000;
-      this.cooldownReason = 'max-drawdown';
-      this.addLog(`❄️ COOLDOWN engaged — drawdown ${(this.metrics.maxDrawdown * 100).toFixed(1)}% exceeded cap`, 'warning');
-      this.emitAlert({ severity: 'critical', strategy: 'risk', title: 'Risk cooldown engaged', detail: `Drawdown ${(this.metrics.maxDrawdown * 100).toFixed(1)}% ≥ ${(CONFIG.RISK.MAX_DRAWDOWN * 100).toFixed(0)}%` });
-    } else if (-this.metrics.dailyPnL >= CONFIG.RISK.MAX_DAILY_LOSS) {
-      this.cooldownUntil = Date.now() + 15 * 60 * 1000;
-      this.cooldownReason = 'daily-loss-limit';
-      this.addLog(`❄️ COOLDOWN engaged — daily loss $${(-this.metrics.dailyPnL).toFixed(2)} exceeded cap`, 'warning');
-      this.emitAlert({ severity: 'critical', strategy: 'risk', title: 'Daily loss limit hit', detail: `Loss $${(-this.metrics.dailyPnL).toFixed(2)} ≥ $${CONFIG.RISK.MAX_DAILY_LOSS.toFixed(0)}` });
+    const g = getDrawdownGuard();
+    const now = Date.now();
+    if (this.cooldownUntil > now) return; // already cooling down
+    const cooldownMs = g.cooldownMinutes * 60 * 1000;
+
+    if (this.currentDrawdown >= g.maxDrawdownPct) {
+      this.ddBreachStreak++;
+      if (this.ddBreachStreak >= g.breachTicks) {
+        this.ddBreachStreak = 0;
+        this.cooldownUntil = now + cooldownMs;
+        this.cooldownReason = 'max-drawdown';
+        // Re-arm from the resume buffer so the guard does not immediately re-trip.
+        this.metrics.maxDrawdown = Math.max(0, g.maxDrawdownPct - g.resumeBufferPct);
+        this.currentDrawdown = this.metrics.maxDrawdown;
+        this.peakEquity = CONFIG.INITIAL_CAPITAL + this.metrics.totalPnL;
+        this.addLog(`❄️ COOLDOWN ${g.cooldownMinutes}m — smoothed drawdown ${(g.maxDrawdownPct * 100).toFixed(1)}% cap breached ${g.breachTicks}× in a row`, 'warning');
+        this.emitAlert({ severity: 'critical', strategy: 'risk', title: 'Risk cooldown engaged', detail: `Drawdown ≥ ${(g.maxDrawdownPct * 100).toFixed(0)}% · pausing ${g.cooldownMinutes}m` });
+      }
+    } else {
+      this.ddBreachStreak = 0;
+      if (-this.metrics.dailyPnL >= CONFIG.RISK.MAX_DAILY_LOSS) {
+        this.cooldownUntil = now + cooldownMs;
+        this.cooldownReason = 'daily-loss-limit';
+        this.addLog(`❄️ COOLDOWN engaged — daily loss $${(-this.metrics.dailyPnL).toFixed(2)} exceeded cap`, 'warning');
+        this.emitAlert({ severity: 'critical', strategy: 'risk', title: 'Daily loss limit hit', detail: `Loss $${(-this.metrics.dailyPnL).toFixed(2)} ≥ $${CONFIG.RISK.MAX_DAILY_LOSS.toFixed(0)}` });
+      }
     }
   }
+
 
   private addLog(message: string, type: LogEntry['type'] = 'info') {
     const time = new Date().toLocaleTimeString();
