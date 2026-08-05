@@ -12,6 +12,8 @@ import { MultiMarketArbitrageEngine, type ArbitrageSignal, type ArbMarket } from
 import { PolySwarmIntegrator, buildDefaultSwarm, type MarketDescription, type SwarmPrediction, type LatencyArbEvent } from './polyswarm-integrator';
 import { getArbLimits, checkArbLimits } from './arb-risk-config';
 import { recordArbAudit } from './arb-audit';
+import { getDrawdownGuard, setDrawdownGuard } from './drawdown-guard';
+
 
 
 // ============================================
