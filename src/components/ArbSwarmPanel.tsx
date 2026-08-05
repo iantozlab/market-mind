@@ -84,6 +84,8 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
 
   useEffect(() => subscribeArbLimits(setLimits), []);
   useEffect(() => subscribeArbPresets(() => { setPresets(listArbPresets()); setActivePreset(getActivePresetName()); }), []);
+  useEffect(() => subscribeBacktestPresets(() => { setBtPresets(listBacktestPresets()); setActiveBtPreset(getActiveBacktestPreset()); }), []);
+
   useEffect(() => subscribeArbAudit(rows => setAudit(prev => (prev.length && prev[0]?.id ? rows : rows))), []);
 
   const loadAudit = useCallback(async () => {
@@ -106,10 +108,11 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
     return { executions: ex.length, blocked: audit.filter(a => a.action === 'blocked').length, profit };
   }, [audit]);
 
-  const runBacktest = async () => {
+  const runBacktest = async (cfg: ArbBacktestConfig = btConfig) => {
     setBtRunning(true); setBtProgress(0);
     try {
-      const res = await runArbBacktest(btConfig, setBtProgress);
+      const res = await runArbBacktest(cfg, setBtProgress);
+
       setBtResult(res);
       toast.success(`Backtest complete · net $${res.combinedNet.toFixed(2)}`);
     } catch {
