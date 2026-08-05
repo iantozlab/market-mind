@@ -880,7 +880,15 @@ export class UnifiedNeuralBot {
           recordArbAudit({
             source: 'multi_market_arb', action: 'blocked', mode, label: signal.label,
             legs: signal.legs.length, profit: signal.guaranteedProfit, capital: signal.requiredCapital,
-            confidence: signal.confidence, reason, detail: { type: signal.type, tick: this.tickCount },
+            confidence: signal.confidence, reason,
+            detail: {
+              type: signal.type, tick: this.tickCount, strategy: 'multi_market_arb',
+              ...this.ruleContext(limits, {
+                profit: signal.guaranteedProfit, confidence: signal.confidence,
+                legs: signal.legs.length, capital: signal.requiredCapital,
+                capitalUsedThisTick: capitalUsed, executionsThisTick: executedCount,
+              }),
+            },
           });
         }
         if (executedCount >= limits.maxExecutionsPerTick) break;
@@ -890,12 +898,18 @@ export class UnifiedNeuralBot {
       if (ok) {
         executedCount++;
         capitalUsed += signal.requiredCapital;
+        const refPrice = signal.legs.reduce((s, l: { price?: number }) => s + (l.price ?? 0), 0) / Math.max(1, signal.legs.length);
         recordArbAudit({
           source: 'multi_market_arb', action: 'executed', mode, label: signal.label,
           legs: signal.legs.length, profit: signal.guaranteedProfit, capital: signal.requiredCapital,
-          confidence: signal.confidence, detail: { type: signal.type, tick: this.tickCount },
+          confidence: signal.confidence,
+          detail: {
+            type: signal.type, tick: this.tickCount, strategy: 'multi_market_arb',
+            ...this.fillContext(mode, refPrice),
+          },
         });
       }
+
       if (executedCount >= limits.maxExecutionsPerTick) break;
     }
     if (signals.length > 0) {
