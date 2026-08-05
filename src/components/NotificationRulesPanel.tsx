@@ -1,12 +1,13 @@
 import React from 'react';
-import { BellOff, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { BellOff, RotateCcw, SlidersHorizontal, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
-  getAlertRules, setAlertRules, resetAlertRules, KNOWN_ALERT_STRATEGIES, type AlertRules,
+  getAlertRules, setAlertRules, resetAlertRules, KNOWN_ALERT_STRATEGIES,
+  snoozeStrategy, nextUnmuteAt, type AlertRules,
 } from '@/lib/alert-rules';
 
 interface Props {
@@ -21,9 +22,30 @@ const SNOOZE = [
   ['2h', 2 * 3600e3],
 ] as [string, number][];
 
+const STRATEGY_SNOOZE = [
+  ['15m', 15 * 60e3],
+  ['1h', 3600e3],
+  ['8h', 8 * 3600e3],
+] as [string, number][];
+
+function remaining(untilMs: number): string {
+  const ms = Math.max(0, untilMs - Date.now());
+  if (ms < 60e3) return `${Math.ceil(ms / 1000)}s`;
+  if (ms < 3600e3) return `${Math.ceil(ms / 60e3)}m`;
+  return `${(ms / 3600e3).toFixed(1)}h`;
+}
+
 const NotificationRulesPanel: React.FC<Props> = ({ rules, suppressed, clearSuppressed }) => {
   const update = (patch: Partial<AlertRules>) => setAlertRules(patch);
   const snoozedFor = Math.max(0, rules.muteUntil - Date.now());
+  // Re-render each second so countdowns stay accurate.
+  const [, tick] = React.useState(0);
+  React.useEffect(() => {
+    const id = setInterval(() => tick(t => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const nextUnmute = nextUnmuteAt();
+
 
   return (
     <div className="p-3 space-y-3 text-xs">
