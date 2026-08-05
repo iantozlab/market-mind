@@ -121,27 +121,61 @@ const NotificationRulesPanel: React.FC<Props> = ({ rules, suppressed, clearSuppr
       </div>
 
       <div className="space-y-1.5">
-        <p className="text-[9px] uppercase tracking-widest text-muted-foreground">Per-strategy alerts</p>
-        <ul className="space-y-1">
-          {KNOWN_ALERT_STRATEGIES.map(s => (
-            <li key={s} className="flex items-center justify-between gap-2">
-              <span className="font-mono text-[11px] truncate">{s}</span>
-              <Switch
-                checked={rules.strategies[s] !== false}
-                onCheckedChange={v => update({ strategies: { [s]: v } })}
-                aria-label={`Toggle alerts for ${s}`}
-              />
-            </li>
-          ))}
+        <p className="text-[9px] uppercase tracking-widest text-muted-foreground">Per-strategy alerts &amp; snooze</p>
+        <ul className="space-y-1.5">
+          {KNOWN_ALERT_STRATEGIES.map(s => {
+            const until = rules.strategySnooze?.[s] ?? 0;
+            const active = until > Date.now();
+            return (
+              <li key={s} className="rounded-md border border-border/50 p-1.5 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-[11px] truncate">{s}</span>
+                  <Switch
+                    checked={rules.strategies[s] !== false}
+                    onCheckedChange={v => update({ strategies: { [s]: v } })}
+                    aria-label={`Toggle alerts for ${s}`}
+                  />
+                </div>
+                <div className="flex items-center gap-1">
+                  {STRATEGY_SNOOZE.map(([lbl, ms]) => (
+                    <Button
+                      key={lbl} size="sm" variant="outline" className="h-5 px-1.5 text-[9px]"
+                      onClick={() => snoozeStrategy(s, ms)}
+                      aria-label={`Snooze ${s} alerts for ${lbl}`}
+                    >{lbl}</Button>
+                  ))}
+                  {active ? (
+                    <>
+                      <span className="ml-1 font-mono text-[9px] text-warning">
+                        unmutes {new Date(until).toLocaleTimeString()} ({remaining(until)})
+                      </span>
+                      <Button
+                        size="sm" variant="ghost" className="h-5 px-1.5 text-[9px]"
+                        onClick={() => snoozeStrategy(s, 0)}
+                        aria-label={`Cancel snooze for ${s}`}
+                      >clear</Button>
+                    </>
+                  ) : (
+                    <span className="ml-1 text-[9px] text-muted-foreground">live</span>
+                  )}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       </div>
 
       <div className="flex items-center justify-between border-t border-border/40 pt-2">
         <Badge variant="outline" className="font-mono text-[10px]">{suppressed} suppressed</Badge>
+        <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+          <Clock className="h-3 w-3" aria-hidden />
+          {nextUnmute ? `next unmute ${new Date(nextUnmute).toLocaleTimeString()}` : 'all channels live'}
+        </span>
         <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={clearSuppressed} disabled={!suppressed}>
           Reset counter
         </Button>
       </div>
+
     </div>
   );
 };
