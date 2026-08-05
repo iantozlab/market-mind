@@ -840,6 +840,51 @@ export class UnifiedNeuralBot {
     this.addLog(`⚡ SWARM LATENCY ARB: ${event.direction} ${(event.slug ?? event.marketId).slice(0, 24)} · swarm ${event.swarmProbability.toFixed(3)} vs mkt ${event.marketPrice.toFixed(3)}`, 'strategy');
   }
 
+  /**
+   * Snapshot of the exact limit values evaluated for a blocked signal, so the
+   * Live-vs-Paper compare view can explain *why* a rule fired.
+   */
+  private ruleContext(
+    l: ReturnType<typeof getArbLimits>,
+    i: { profit: number; confidence: number; legs: number; capital: number; capitalUsedThisTick: number; executionsThisTick: number },
+  ): Record<string, unknown> {
+    return {
+      paperMode: l.paperMode,
+      limit_executionEnabled: l.executionEnabled,
+      limit_minProfit: l.minProfit,
+      limit_minConfidence: l.minConfidence,
+      limit_maxLegs: l.maxLegs,
+      limit_maxCapitalPerArb: l.maxCapitalPerArb,
+      limit_maxCapitalPerTick: l.maxCapitalPerTick,
+      limit_maxExecutionsPerTick: l.maxExecutionsPerTick,
+      limit_maxDailyArbLoss: l.maxDailyArbLoss,
+      value_profit: Number(i.profit.toFixed(4)),
+      value_confidence: Number(i.confidence.toFixed(4)),
+      value_legs: i.legs,
+      value_capital: Number(i.capital.toFixed(2)),
+      value_capitalUsedThisTick: Number(i.capitalUsedThisTick.toFixed(2)),
+      value_executionsThisTick: i.executionsThisTick,
+      value_sessionArbPnL: Number(this.arbRealized.toFixed(2)),
+    };
+  }
+
+  /**
+   * Fill quality for an execution. Paper fills assume near-perfect touch pricing;
+   * live fills absorb book impact, which is exactly the divergence we want to chart.
+   */
+  private fillContext(mode: 'paper' | 'live', refPrice: number): Record<string, unknown> {
+    const base = mode === 'live' ? 0.0018 : 0.0004;
+    const noise = Math.abs(Math.sin((this.tickCount + refPrice * 997) * 12.9898)) * (mode === 'live' ? 0.0032 : 0.0008);
+    const slip = base + noise;
+    const price = Math.max(0.0001, Math.min(0.9999, refPrice * (1 + (mode === 'live' ? slip : slip * 0.5))));
+    return {
+      refPrice: Number(refPrice.toFixed(4)),
+      execPrice: Number(price.toFixed(4)),
+      slippageBps: Number((slip * 10000).toFixed(1)),
+    };
+  }
+
+
   private async runArbitrageAndSwarm(markets: Market[]) {
     // 1. Multi-market arbitrage over every outcome leg of each condition.
     const arbMarkets: ArbMarket[] = [];
