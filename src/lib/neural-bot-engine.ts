@@ -1841,7 +1841,7 @@ export class UnifiedNeuralBot {
       stopLossPct: this.tradeOverrides.stopLossPct,
       takeProfitPct: this.tradeOverrides.takeProfitPct,
       maxDailyLoss: CONFIG.RISK.MAX_DAILY_LOSS,
-      maxDrawdown: CONFIG.RISK.MAX_DRAWDOWN,
+      maxDrawdown: getDrawdownGuard().maxDrawdownPct,
     };
   }
   setTradeSettings(s: Partial<TradeSettings>) {
@@ -1850,7 +1850,7 @@ export class UnifiedNeuralBot {
     if (s.kellyFraction != null) CONFIG.RISK.KELLY_FRACTION = s.kellyFraction;
     if (s.maxPositionPct != null) CONFIG.RISK.MAX_POSITION_PCT = s.maxPositionPct;
     if (s.maxDailyLoss != null) CONFIG.RISK.MAX_DAILY_LOSS = s.maxDailyLoss;
-    if (s.maxDrawdown != null) CONFIG.RISK.MAX_DRAWDOWN = s.maxDrawdown;
+    if (s.maxDrawdown != null) { CONFIG.RISK.MAX_DRAWDOWN = s.maxDrawdown; setDrawdownGuard({ maxDrawdownPct: s.maxDrawdown }); }
     if (s.stopLossPct != null) this.tradeOverrides.stopLossPct = s.stopLossPct;
     if (s.takeProfitPct != null) this.tradeOverrides.takeProfitPct = s.takeProfitPct;
     this.addLog(`⚙️ Trade settings updated`, 'info');
