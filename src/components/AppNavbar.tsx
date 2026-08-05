@@ -17,6 +17,8 @@ import AlertsBell from './AlertsBell';
 import TradeSettingsPanel from './TradeSettingsPanel';
 import MLInsightsPanel from './MLInsightsPanel';
 import RiskDashboardPanel from './RiskDashboardPanel';
+import DrawdownGuardPanel from './DrawdownGuardPanel';
+
 import BacktestPanel from './BacktestPanel';
 import SettingsAuditPanel from './SettingsAuditPanel';
 import RansPanel from './RansPanel';
@@ -326,7 +328,7 @@ const AppNavbar: React.FC<Props> = ({
               Drawdown, daily loss, and position exposure with hard caps.
             </SheetDescription>
           </SheetHeader>
-          <div className="mt-4">
+          <div className="mt-4 space-y-4">
             <RiskDashboardPanel
               metrics={metrics}
               initialCapital={initialCapital}
@@ -335,7 +337,9 @@ const AppNavbar: React.FC<Props> = ({
               isRunning={isRunning}
               onEmergencyStop={onStop}
             />
+            <DrawdownGuardPanel currentDrawdown={metrics.maxDrawdown} />
           </div>
+
         </SheetContent>
       </Sheet>
 
