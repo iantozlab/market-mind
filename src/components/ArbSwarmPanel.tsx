@@ -678,9 +678,15 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
               polyswarm
             </label>
             <span className="flex-1" />
-            <Button size="sm" className="h-8 text-xs" disabled={btRunning} onClick={() => runBacktest()}>
+            <Button
+              size="sm" className="h-8 text-xs"
+              disabled={btRunning || !validation.ok || (validation.warnings.length > 0 && !ignoreWarnings)}
+              title={!validation.ok ? 'Fix the configuration errors above first' : undefined}
+              onClick={() => runBacktest()}
+            >
               <Play className="h-3 w-3 mr-1" />{btRunning ? 'Running…' : 'Run backtest'}
             </Button>
+
             {btResult && (
               <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => download(`arb-backtest-${btResult.ranAt}.csv`, arbBacktestToCsv(btResult))}>
                 <Download className="h-3 w-3 mr-1" />CSV
