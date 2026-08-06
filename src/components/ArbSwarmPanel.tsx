@@ -524,6 +524,16 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
                 >{p.name}</Button>
                 <Button
                   size="icon" variant="ghost" className="h-7 w-6"
+                  aria-label={`Copy share link for scenario ${p.name}`}
+                  onClick={async () => {
+                    const cfg = getBacktestPreset(p.name);
+                    if (!cfg) return;
+                    const ok = await copyToClipboard(scenarioShareLink(p.name, cfg));
+                    ok ? toast.success(`Share link for "${p.name}" copied`) : toast.error('Copy failed');
+                  }}
+                ><Link2 className="h-3 w-3" /></Button>
+                <Button
+                  size="icon" variant="ghost" className="h-7 w-6"
                   aria-label={`Delete scenario ${p.name}`}
                   onClick={() => { deleteBacktestPreset(p.name); setBtPresets(listBacktestPresets()); setActiveBtPreset(getActiveBacktestPreset()); }}
                 ><X className="h-3 w-3" /></Button>
@@ -546,11 +556,60 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
                 toast.success(`Scenario "${p.name}" saved`);
               }}
             ><Save className="h-3 w-3 mr-1" />Save</Button>
+            <Button
+              size="sm" variant="outline" className="h-8 text-xs"
+              aria-label="Copy share link for the current backtest configuration"
+              onClick={async () => {
+                const name = newScenarioName.trim() || activeBtPreset || 'shared scenario';
+                const ok = await copyToClipboard(scenarioShareLink(name, btConfig));
+                ok ? toast.success('Shareable scenario link copied') : toast.error('Copy failed');
+              }}
+            ><Link2 className="h-3 w-3 mr-1" />Share link</Button>
           </div>
           <p className="text-[10px] text-muted-foreground">
-            Scenarios store the window, tick interval, fee/slippage and risk caps so a run is reproducible.
+            Scenarios store the window, tick interval, fee/slippage and risk caps so a run is reproducible. A share link encodes the whole
+            configuration in the URL — opening it loads the scenario in one click.
           </p>
         </section>
+
+        {/* Pre-run validation */}
+        <section
+          className={`rounded-lg border p-3 space-y-2 ${
+            validation.errors.length ? 'border-destructive/60 bg-destructive/5'
+              : validation.warnings.length ? 'border-warning/50 bg-warning/5' : 'border-border bg-card'
+          }`}
+          aria-live="polite"
+        >
+          <h3 className="flex items-center gap-2 font-display text-sm font-semibold">
+            {validation.ok
+              ? <ShieldCheck className="h-4 w-4 text-primary" aria-hidden />
+              : <AlertTriangle className="h-4 w-4 text-destructive" aria-hidden />}
+            Pre-run validation
+          </h3>
+          {validation.issues.length === 0 ? (
+            <p className="text-[11px] text-muted-foreground">
+              Risk limits, cooldown/smoothing settings and the active scenario are consistent — safe to run.
+            </p>
+          ) : (
+            <ul className="space-y-1">
+              {validation.issues.map((iss, i) => (
+                <li key={`${iss.field}-${i}`} className="flex items-start gap-2 text-[11px] font-mono">
+                  <Badge variant={iss.level === 'error' ? 'destructive' : 'outline'} className="mt-0.5 shrink-0 text-[9px]">
+                    {iss.level}
+                  </Badge>
+                  <span className="text-muted-foreground"><span className="text-foreground">{iss.field}</span> — {iss.message}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {validation.warnings.length > 0 && validation.errors.length === 0 && (
+            <label className="flex items-center gap-2 text-[11px]">
+              <Switch checked={ignoreWarnings} onCheckedChange={setIgnoreWarnings} aria-label="Run anyway despite warnings" />
+              Run anyway (acknowledge {validation.warnings.length} warning{validation.warnings.length > 1 ? 's' : ''})
+            </label>
+          )}
+        </section>
+
         <section className="rounded-lg border border-border bg-card p-3 space-y-3">
           <h3 className="flex items-center gap-2 font-display text-sm font-semibold">
             <FlaskConical className="h-4 w-4 text-info" /> Strategy Backtest Runner
