@@ -13,6 +13,8 @@ import { PolySwarmIntegrator, buildDefaultSwarm, type MarketDescription, type Sw
 import { getArbLimits, checkArbLimits } from './arb-risk-config';
 import { recordArbAudit } from './arb-audit';
 import { getDrawdownGuard, setDrawdownGuard } from './drawdown-guard';
+import { recordDrawdownIncident } from './drawdown-incidents';
+
 
 
 
@@ -847,9 +849,12 @@ export class UnifiedNeuralBot {
   private ruleContext(
     l: ReturnType<typeof getArbLimits>,
     i: { profit: number; confidence: number; legs: number; capital: number; capitalUsedThisTick: number; executionsThisTick: number },
+    matchedRule?: string,
   ): Record<string, unknown> {
     return {
       paperMode: l.paperMode,
+      rule: matchedRule ?? '',
+      matched_rule: matchedRule ?? '',
       limit_executionEnabled: l.executionEnabled,
       limit_minProfit: l.minProfit,
       limit_minConfidence: l.minConfidence,
@@ -867,6 +872,7 @@ export class UnifiedNeuralBot {
       value_sessionArbPnL: Number(this.arbRealized.toFixed(2)),
     };
   }
+
 
   /**
    * Fill quality for an execution. Paper fills assume near-perfect touch pricing;
@@ -932,7 +938,8 @@ export class UnifiedNeuralBot {
                 profit: signal.guaranteedProfit, confidence: signal.confidence,
                 legs: signal.legs.length, capital: signal.requiredCapital,
                 capitalUsedThisTick: capitalUsed, executionsThisTick: executedCount,
-              }),
+              }, reason),
+
             },
           });
         }
@@ -1003,12 +1010,19 @@ export class UnifiedNeuralBot {
             profit: edge, capital: 0, confidence: top.swarmConfidence, reason,
             detail: {
               divergence: top.divergence, tick: this.tickCount, strategy: 'polyswarm',
-              rule: reason, edge: Number(edge.toFixed(4)),
+              rule: reason, matched_rule: reason, edge: Number(edge.toFixed(4)),
               limit_minSwarmEdge: limits.minSwarmEdge,
               limit_executionEnabled: limits.executionEnabled,
+              limit_minConfidence: limits.minConfidence,
               limit_divergenceAlertThreshold: limits.divergenceAlertThreshold,
+              value_edge: Number(edge.toFixed(4)),
+              value_swarmProbability: Number(top.swarmProbability.toFixed(4)),
+              value_marketPrice: Number((mkt.currentPrice ?? 0).toFixed(4)),
+              value_swarmConfidence: Number(top.swarmConfidence.toFixed(4)),
+              value_divergence: Number(top.divergence.toFixed(4)),
               paperMode: limits.paperMode,
             },
+
           });
         }
 
@@ -1136,6 +1150,7 @@ export class UnifiedNeuralBot {
   getCurrentDrawdown(): number { return this.currentDrawdown; }
 
   private ddBreachStreak = 0;
+  private ddBreachStartTs = 0;
 
   private checkRiskCooldown() {
     const g = getDrawdownGuard();
@@ -1144,8 +1159,11 @@ export class UnifiedNeuralBot {
     const cooldownMs = g.cooldownMinutes * 60 * 1000;
 
     if (this.currentDrawdown >= g.maxDrawdownPct) {
+      if (this.ddBreachStreak === 0) this.ddBreachStartTs = now;
       this.ddBreachStreak++;
       if (this.ddBreachStreak >= g.breachTicks) {
+        const confirmations = this.ddBreachStreak;
+        const drawdownAtTrip = this.currentDrawdown;
         this.ddBreachStreak = 0;
         this.cooldownUntil = now + cooldownMs;
         this.cooldownReason = 'max-drawdown';
@@ -1153,19 +1171,38 @@ export class UnifiedNeuralBot {
         this.metrics.maxDrawdown = Math.max(0, g.maxDrawdownPct - g.resumeBufferPct);
         this.currentDrawdown = this.metrics.maxDrawdown;
         this.peakEquity = CONFIG.INITIAL_CAPITAL + this.metrics.totalPnL;
+        recordDrawdownIncident({
+          breachStartTs: this.ddBreachStartTs || now,
+          cooldownStart: now, cooldownEnd: this.cooldownUntil,
+          reason: 'max-drawdown', confirmations, drawdownAtTrip,
+          resumeLevel: this.currentDrawdown,
+          maxDrawdownPct: g.maxDrawdownPct, breachTicks: g.breachTicks,
+          smoothingWindow: g.smoothingWindow, resumeBufferPct: g.resumeBufferPct,
+          cooldownMinutes: g.cooldownMinutes, tick: this.tickCount,
+        });
         this.addLog(`❄️ COOLDOWN ${g.cooldownMinutes}m — smoothed drawdown ${(g.maxDrawdownPct * 100).toFixed(1)}% cap breached ${g.breachTicks}× in a row`, 'warning');
         this.emitAlert({ severity: 'critical', strategy: 'risk', title: 'Risk cooldown engaged', detail: `Drawdown ≥ ${(g.maxDrawdownPct * 100).toFixed(0)}% · pausing ${g.cooldownMinutes}m` });
       }
     } else {
       this.ddBreachStreak = 0;
+      this.ddBreachStartTs = 0;
       if (-this.metrics.dailyPnL >= CONFIG.RISK.MAX_DAILY_LOSS) {
         this.cooldownUntil = now + cooldownMs;
         this.cooldownReason = 'daily-loss-limit';
+        recordDrawdownIncident({
+          breachStartTs: now, cooldownStart: now, cooldownEnd: this.cooldownUntil,
+          reason: 'daily-loss-limit', confirmations: 1, drawdownAtTrip: this.currentDrawdown,
+          resumeLevel: this.currentDrawdown,
+          maxDrawdownPct: g.maxDrawdownPct, breachTicks: g.breachTicks,
+          smoothingWindow: g.smoothingWindow, resumeBufferPct: g.resumeBufferPct,
+          cooldownMinutes: g.cooldownMinutes, tick: this.tickCount,
+        });
         this.addLog(`❄️ COOLDOWN engaged — daily loss $${(-this.metrics.dailyPnL).toFixed(2)} exceeded cap`, 'warning');
         this.emitAlert({ severity: 'critical', strategy: 'risk', title: 'Daily loss limit hit', detail: `Loss $${(-this.metrics.dailyPnL).toFixed(2)} ≥ $${CONFIG.RISK.MAX_DAILY_LOSS.toFixed(0)}` });
       }
     }
   }
+
 
 
   private addLog(message: string, type: LogEntry['type'] = 'info') {

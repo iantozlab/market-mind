@@ -261,8 +261,14 @@ const LivePaperComparePanel: React.FC = () => {
                       <ul className="space-y-2">
                         {list.slice(0, 6).map((r, i) => {
                           const d = (r.detail ?? {}) as Record<string, unknown>;
+                          const matched = String(d.matched_rule ?? d.rule ?? r.reason ?? '');
                           const limitsShown = Object.entries(d).filter(([k]) => k.startsWith('limit_'));
                           const valuesShown = Object.entries(d).filter(([k]) => k.startsWith('value_'));
+                          const hot = (k: string) => {
+                            const base = k.replace(/^(limit_|value_)/, '').toLowerCase();
+                            return matched.toLowerCase().includes(base.replace(/^(max|min)/, '')) ||
+                              matched.toLowerCase().includes(base);
+                          };
                           return (
                             <li key={r.id ?? `${m}-${i}`} className="border-t border-border/30 pt-1 text-[10px] font-mono">
                               <div className="flex flex-wrap items-center gap-2">
@@ -271,23 +277,35 @@ const LivePaperComparePanel: React.FC = () => {
                                 <span className="truncate max-w-[14rem]">{r.label}</span>
                                 <span className="text-muted-foreground">conf {(r.confidence * 100).toFixed(0)}% · {r.legs} legs · ${r.capital.toFixed(0)}</span>
                               </div>
+                              {matched && (
+                                <p className="mt-1 text-[10px]">
+                                  <span className="text-[9px] uppercase tracking-widest text-muted-foreground">matched rule </span>
+                                  <span className="text-destructive">{matched}</span>
+                                  {d.tick != null && <span className="text-muted-foreground"> · tick {String(d.tick)}</span>}
+                                </p>
+                              )}
                               <div className="mt-1 grid grid-cols-2 gap-x-4">
                                 <div>
-                                  <p className="text-[9px] uppercase tracking-widest text-muted-foreground">rule params</p>
+                                  <p className="text-[9px] uppercase tracking-widest text-muted-foreground">thresholds</p>
                                   {limitsShown.length === 0 ? <p className="text-muted-foreground">—</p> : limitsShown.map(([k, v]) => (
-                                    <p key={k}>{k.replace('limit_', '')}: <span className="text-info">{String(v)}</span></p>
+                                    <p key={k} className={hot(k) ? 'bg-destructive/10 rounded px-1' : ''}>
+                                      {k.replace('limit_', '')}: <span className="text-info">{String(v)}</span>
+                                    </p>
                                   ))}
                                 </div>
                                 <div>
-                                  <p className="text-[9px] uppercase tracking-widest text-muted-foreground">observed</p>
+                                  <p className="text-[9px] uppercase tracking-widest text-muted-foreground">observed inputs</p>
                                   {valuesShown.length === 0 ? <p className="text-muted-foreground">—</p> : valuesShown.map(([k, v]) => (
-                                    <p key={k}>{k.replace('value_', '')}: <span className="text-warning">{String(v)}</span></p>
+                                    <p key={k} className={hot(k) ? 'bg-destructive/10 rounded px-1' : ''}>
+                                      {k.replace('value_', '')}: <span className="text-warning">{String(v)}</span>
+                                    </p>
                                   ))}
                                 </div>
                               </div>
                             </li>
                           );
                         })}
+
                       </ul>
                     )}
                   </div>

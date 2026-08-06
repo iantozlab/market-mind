@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Layers, Brain, Zap, ShieldAlert, ScrollText, FlaskConical, RotateCcw, Download, Play, Trash2, GitCompareArrows, Save, X } from 'lucide-react';
+import { Layers, Brain, Zap, ShieldAlert, ScrollText, FlaskConical, RotateCcw, Download, Play, Trash2, GitCompareArrows, Save, X, Link2, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,7 +14,8 @@ import {
   getArbLimits, setArbLimits, resetArbLimits, subscribeArbLimits, type ArbRiskLimits,
 } from '@/lib/arb-risk-config';
 import {
-  fetchArbAudit, subscribeArbAudit, getLocalArbAudit, purgeArbAudit, arbAuditToCsv, type ArbAuditEntry,
+  fetchArbAudit, subscribeArbAudit, getLocalArbAudit, purgeArbAudit,
+  filterArbAudit, arbAuditExportRows, type ArbAuditEntry,
 } from '@/lib/arb-audit';
 import {
   runArbBacktest, arbBacktestToCsv, DEFAULT_ARB_BACKTEST, ticksFromWindow,
@@ -27,8 +28,14 @@ import {
 import {
   listBacktestPresets, saveBacktestPreset, deleteBacktestPreset, getBacktestPreset,
   getActiveBacktestPreset, setActiveBacktestPreset, subscribeBacktestPresets,
+  scenarioShareLink, readSharedScenario, SHARE_PARAM,
 } from '@/lib/arb-backtest-presets';
+import { validateBacktestRun } from '@/lib/backtest-validation';
+import { getDrawdownGuard, subscribeDrawdownGuard, type DrawdownGuardConfig } from '@/lib/drawdown-guard';
+import { streamingDownloadCSV, streamingDownloadJSON } from '@/lib/streaming-export';
+import { copyToClipboard } from '@/lib/clipboard';
 import LivePaperComparePanel from './LivePaperComparePanel';
+
 
 interface Props {
   signals: ArbitrageSignal[];
@@ -78,6 +85,10 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
   const [audit, setAudit] = useState<ArbAuditEntry[]>(() => getLocalArbAudit());
   const [auditRange, setAuditRange] = useState(24 * 60 * 60 * 1000);
   const [auditFilter, setAuditFilter] = useState<'all' | 'executed' | 'blocked'>('all');
+  const [auditStrategy, setAuditStrategy] = useState<'all' | 'multi_market_arb' | 'polyswarm'>('all');
+  const [auditMode, setAuditMode] = useState<'all' | 'paper' | 'live'>('all');
+  const [auditReason, setAuditReason] = useState('');
+  const [exporting, setExporting] = useState(false);
   const [btConfig, setBtConfig] = useState<ArbBacktestConfig>(DEFAULT_ARB_BACKTEST);
   const [btRunning, setBtRunning] = useState(false);
   const [btProgress, setBtProgress] = useState(0);
@@ -88,12 +99,29 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
   const [btPresets, setBtPresets] = useState(() => listBacktestPresets());
   const [activeBtPreset, setActiveBtPreset] = useState<string | null>(() => getActiveBacktestPreset());
   const [newScenarioName, setNewScenarioName] = useState('');
+  const [guard, setGuard] = useState<DrawdownGuardConfig>(() => getDrawdownGuard());
+  const [ignoreWarnings, setIgnoreWarnings] = useState(false);
 
   useEffect(() => subscribeArbLimits(setLimits), []);
+  useEffect(() => subscribeDrawdownGuard(setGuard), []);
   useEffect(() => subscribeArbPresets(() => { setPresets(listArbPresets()); setActivePreset(getActivePresetName()); }), []);
   useEffect(() => subscribeBacktestPresets(() => { setBtPresets(listBacktestPresets()); setActiveBtPreset(getActiveBacktestPreset()); }), []);
 
   useEffect(() => subscribeArbAudit(rows => setAudit(prev => (prev.length && prev[0]?.id ? rows : rows))), []);
+
+  // Shared scenario deep link: ?scenario=<token>
+  useEffect(() => {
+    const shared = readSharedScenario();
+    if (!shared) return;
+    setBtConfig(shared.config);
+    setActiveBtPreset(shared.name);
+    toast.success(`Shared scenario "${shared.name}" loaded from link`);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete(SHARE_PARAM);
+      window.history.replaceState({}, '', url.toString());
+    } catch { /* ignore */ }
+  }, []);
 
   const loadAudit = useCallback(async () => {
     const rows = await fetchArbAudit(auditRange, 300);
@@ -105,8 +133,11 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
   const update = (patch: Partial<ArbRiskLimits>) => setLimits(setArbLimits(patch));
 
   const filteredAudit = useMemo(
-    () => (auditFilter === 'all' ? audit : audit.filter(a => a.action === auditFilter)),
-    [audit, auditFilter],
+    () => filterArbAudit(audit, {
+      sinceMs: auditRange, action: auditFilter, strategy: auditStrategy,
+      mode: auditMode, reason: auditFilter === 'executed' ? '' : auditReason,
+    }),
+    [audit, auditRange, auditFilter, auditStrategy, auditMode, auditReason],
   );
 
   const paperStats = useMemo(() => {
@@ -115,7 +146,38 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
     return { executions: ex.length, blocked: audit.filter(a => a.action === 'blocked').length, profit };
   }, [audit]);
 
+  const exportAudit = async (fmt: 'csv' | 'json') => {
+    const rows = arbAuditExportRows(filteredAudit);
+    setExporting(true);
+    try {
+      const stamp = Date.now();
+      if (fmt === 'csv') await streamingDownloadCSV(`arb-audit-${stamp}.csv`, rows);
+      else await streamingDownloadJSON(`arb-audit-${stamp}.json`, rows, {
+        rangeMs: auditRange, action: auditFilter, strategy: auditStrategy, mode: auditMode, reason: auditReason,
+      });
+      toast.success(`Exported ${rows.length} audited actions (${fmt.toUpperCase()})`);
+    } catch {
+      toast.error('Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const validation = useMemo(
+    () => validateBacktestRun(btConfig, limits, guard, activeBtPreset, activeBtPreset ? getBacktestPreset(activeBtPreset) : null),
+    [btConfig, limits, guard, activeBtPreset],
+  );
+
   const runBacktest = async (cfg: ArbBacktestConfig = btConfig) => {
+    const report = validateBacktestRun(cfg, limits, guard, activeBtPreset, activeBtPreset ? getBacktestPreset(activeBtPreset) : null);
+    if (!report.ok) {
+      toast.error(`Run blocked — ${report.errors.length} configuration error${report.errors.length > 1 ? 's' : ''}`);
+      return;
+    }
+    if (report.warnings.length && !ignoreWarnings) {
+      toast.warning(`${report.warnings.length} warning(s) — tick "Run anyway" to proceed`);
+      return;
+    }
     setBtRunning(true); setBtProgress(0);
     try {
       const res = await runArbBacktest(cfg, setBtProgress);
@@ -128,6 +190,7 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
       setBtRunning(false);
     }
   };
+
 
   return (
     <Tabs defaultValue="live" className="space-y-4">
@@ -357,24 +420,60 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {([['1h', 3600e3], ['24h', 86400e3], ['7d', 604800e3], ['All', 0]] as [string, number][]).map(([lbl, ms]) => (
-            <Button key={lbl} size="sm" variant={auditRange === ms ? 'default' : 'outline'} className="h-7 text-xs"
-              onClick={() => setAuditRange(ms)}>{lbl}</Button>
-          ))}
-          <span className="mx-1 h-4 w-px bg-border" />
-          {(['all', 'executed', 'blocked'] as const).map(f => (
-            <Button key={f} size="sm" variant={auditFilter === f ? 'default' : 'outline'} className="h-7 text-xs capitalize"
-              onClick={() => setAuditFilter(f)}>{f}</Button>
-          ))}
-          <span className="flex-1" />
-          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => download(`arb-audit-${Date.now()}.csv`, arbAuditToCsv(filteredAudit))}>
-            <Download className="h-3 w-3 mr-1" />CSV
-          </Button>
-          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={async () => { await purgeArbAudit(); await loadAudit(); toast.message('Audit log cleared'); }}>
-            <Trash2 className="h-3 w-3 mr-1" />Clear
-          </Button>
+        <div className="space-y-2 rounded-lg border border-border bg-card p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Time</span>
+            {([['1h', 3600e3], ['24h', 86400e3], ['7d', 604800e3], ['All', 0]] as [string, number][]).map(([lbl, ms]) => (
+              <Button key={lbl} size="sm" variant={auditRange === ms ? 'default' : 'outline'} className="h-7 text-xs"
+                aria-label={`Audit window ${lbl}`} onClick={() => setAuditRange(ms)}>{lbl}</Button>
+            ))}
+            <span className="mx-1 h-4 w-px bg-border" />
+            <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Action</span>
+            {(['all', 'executed', 'blocked'] as const).map(f => (
+              <Button key={f} size="sm" variant={auditFilter === f ? 'default' : 'outline'} className="h-7 text-xs capitalize"
+                aria-label={`Filter action ${f}`} onClick={() => setAuditFilter(f)}>{f}</Button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Strategy</span>
+            {(['all', 'multi_market_arb', 'polyswarm'] as const).map(s => (
+              <Button key={s} size="sm" variant={auditStrategy === s ? 'default' : 'outline'} className="h-7 text-xs"
+                aria-label={`Filter strategy ${s}`} onClick={() => setAuditStrategy(s)}>{s}</Button>
+            ))}
+            <span className="mx-1 h-4 w-px bg-border" />
+            <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Mode</span>
+            {(['all', 'paper', 'live'] as const).map(m => (
+              <Button key={m} size="sm" variant={auditMode === m ? 'default' : 'outline'} className="h-7 text-xs"
+                aria-label={`Filter mode ${m}`} onClick={() => setAuditMode(m)}>{m}</Button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={auditReason}
+              onChange={e => setAuditReason(e.target.value)}
+              placeholder="Filter by blocked reason (e.g. confidence, capital)…"
+              className="h-8 flex-1 min-w-[12rem] text-xs"
+              aria-label="Filter by blocked reason"
+              disabled={auditFilter === 'executed'}
+            />
+            <Button size="sm" variant="outline" className="h-8 text-xs" disabled={exporting}
+              aria-label="Export filtered audit log as CSV" onClick={() => exportAudit('csv')}>
+              <Download className="h-3 w-3 mr-1" />CSV
+            </Button>
+            <Button size="sm" variant="outline" className="h-8 text-xs" disabled={exporting}
+              aria-label="Export filtered audit log as JSON" onClick={() => exportAudit('json')}>
+              <Download className="h-3 w-3 mr-1" />JSON
+            </Button>
+            <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label="Clear audit log"
+              onClick={async () => { await purgeArbAudit(); await loadAudit(); toast.message('Audit log cleared'); }}>
+              <Trash2 className="h-3 w-3 mr-1" />Clear
+            </Button>
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            Exporting {filteredAudit.length} of {audit.length} audited actions with the filters above. JSON keeps the full rule-evaluation detail.
+          </p>
         </div>
+
 
         <section className="rounded-lg border border-border bg-card p-3">
           {filteredAudit.length === 0 ? (
@@ -425,6 +524,16 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
                 >{p.name}</Button>
                 <Button
                   size="icon" variant="ghost" className="h-7 w-6"
+                  aria-label={`Copy share link for scenario ${p.name}`}
+                  onClick={async () => {
+                    const cfg = getBacktestPreset(p.name);
+                    if (!cfg) return;
+                    const ok = await copyToClipboard(scenarioShareLink(p.name, cfg));
+                    ok ? toast.success(`Share link for "${p.name}" copied`) : toast.error('Copy failed');
+                  }}
+                ><Link2 className="h-3 w-3" /></Button>
+                <Button
+                  size="icon" variant="ghost" className="h-7 w-6"
                   aria-label={`Delete scenario ${p.name}`}
                   onClick={() => { deleteBacktestPreset(p.name); setBtPresets(listBacktestPresets()); setActiveBtPreset(getActiveBacktestPreset()); }}
                 ><X className="h-3 w-3" /></Button>
@@ -447,11 +556,60 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
                 toast.success(`Scenario "${p.name}" saved`);
               }}
             ><Save className="h-3 w-3 mr-1" />Save</Button>
+            <Button
+              size="sm" variant="outline" className="h-8 text-xs"
+              aria-label="Copy share link for the current backtest configuration"
+              onClick={async () => {
+                const name = newScenarioName.trim() || activeBtPreset || 'shared scenario';
+                const ok = await copyToClipboard(scenarioShareLink(name, btConfig));
+                ok ? toast.success('Shareable scenario link copied') : toast.error('Copy failed');
+              }}
+            ><Link2 className="h-3 w-3 mr-1" />Share link</Button>
           </div>
           <p className="text-[10px] text-muted-foreground">
-            Scenarios store the window, tick interval, fee/slippage and risk caps so a run is reproducible.
+            Scenarios store the window, tick interval, fee/slippage and risk caps so a run is reproducible. A share link encodes the whole
+            configuration in the URL — opening it loads the scenario in one click.
           </p>
         </section>
+
+        {/* Pre-run validation */}
+        <section
+          className={`rounded-lg border p-3 space-y-2 ${
+            validation.errors.length ? 'border-destructive/60 bg-destructive/5'
+              : validation.warnings.length ? 'border-warning/50 bg-warning/5' : 'border-border bg-card'
+          }`}
+          aria-live="polite"
+        >
+          <h3 className="flex items-center gap-2 font-display text-sm font-semibold">
+            {validation.ok
+              ? <ShieldCheck className="h-4 w-4 text-primary" aria-hidden />
+              : <AlertTriangle className="h-4 w-4 text-destructive" aria-hidden />}
+            Pre-run validation
+          </h3>
+          {validation.issues.length === 0 ? (
+            <p className="text-[11px] text-muted-foreground">
+              Risk limits, cooldown/smoothing settings and the active scenario are consistent — safe to run.
+            </p>
+          ) : (
+            <ul className="space-y-1">
+              {validation.issues.map((iss, i) => (
+                <li key={`${iss.field}-${i}`} className="flex items-start gap-2 text-[11px] font-mono">
+                  <Badge variant={iss.level === 'error' ? 'destructive' : 'outline'} className="mt-0.5 shrink-0 text-[9px]">
+                    {iss.level}
+                  </Badge>
+                  <span className="text-muted-foreground"><span className="text-foreground">{iss.field}</span> — {iss.message}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {validation.warnings.length > 0 && validation.errors.length === 0 && (
+            <label className="flex items-center gap-2 text-[11px]">
+              <Switch checked={ignoreWarnings} onCheckedChange={setIgnoreWarnings} aria-label="Run anyway despite warnings" />
+              Run anyway (acknowledge {validation.warnings.length} warning{validation.warnings.length > 1 ? 's' : ''})
+            </label>
+          )}
+        </section>
+
         <section className="rounded-lg border border-border bg-card p-3 space-y-3">
           <h3 className="flex items-center gap-2 font-display text-sm font-semibold">
             <FlaskConical className="h-4 w-4 text-info" /> Strategy Backtest Runner
@@ -520,9 +678,15 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
               polyswarm
             </label>
             <span className="flex-1" />
-            <Button size="sm" className="h-8 text-xs" disabled={btRunning} onClick={() => runBacktest()}>
+            <Button
+              size="sm" className="h-8 text-xs"
+              disabled={btRunning || !validation.ok || (validation.warnings.length > 0 && !ignoreWarnings)}
+              title={!validation.ok ? 'Fix the configuration errors above first' : undefined}
+              onClick={() => runBacktest()}
+            >
               <Play className="h-3 w-3 mr-1" />{btRunning ? 'Running…' : 'Run backtest'}
             </Button>
+
             {btResult && (
               <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => download(`arb-backtest-${btResult.ranAt}.csv`, arbBacktestToCsv(btResult))}>
                 <Download className="h-3 w-3 mr-1" />CSV
