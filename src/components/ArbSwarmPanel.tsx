@@ -14,7 +14,8 @@ import {
   getArbLimits, setArbLimits, resetArbLimits, subscribeArbLimits, type ArbRiskLimits,
 } from '@/lib/arb-risk-config';
 import {
-  fetchArbAudit, subscribeArbAudit, getLocalArbAudit, purgeArbAudit, arbAuditToCsv, type ArbAuditEntry,
+  fetchArbAudit, subscribeArbAudit, getLocalArbAudit, purgeArbAudit, arbAuditToCsv,
+  filterArbAudit, arbAuditExportRows, type ArbAuditEntry,
 } from '@/lib/arb-audit';
 import {
   runArbBacktest, arbBacktestToCsv, DEFAULT_ARB_BACKTEST, ticksFromWindow,
@@ -27,8 +28,14 @@ import {
 import {
   listBacktestPresets, saveBacktestPreset, deleteBacktestPreset, getBacktestPreset,
   getActiveBacktestPreset, setActiveBacktestPreset, subscribeBacktestPresets,
+  scenarioShareLink, readSharedScenario, SHARE_PARAM,
 } from '@/lib/arb-backtest-presets';
+import { validateBacktestRun } from '@/lib/backtest-validation';
+import { getDrawdownGuard, subscribeDrawdownGuard, type DrawdownGuardConfig } from '@/lib/drawdown-guard';
+import { streamingDownloadCSV, streamingDownloadJSON } from '@/lib/streaming-export';
+import { copyToClipboard } from '@/lib/clipboard';
 import LivePaperComparePanel from './LivePaperComparePanel';
+
 
 interface Props {
   signals: ArbitrageSignal[];
