@@ -1010,12 +1010,19 @@ export class UnifiedNeuralBot {
             profit: edge, capital: 0, confidence: top.swarmConfidence, reason,
             detail: {
               divergence: top.divergence, tick: this.tickCount, strategy: 'polyswarm',
-              rule: reason, edge: Number(edge.toFixed(4)),
+              rule: reason, matched_rule: reason, edge: Number(edge.toFixed(4)),
               limit_minSwarmEdge: limits.minSwarmEdge,
               limit_executionEnabled: limits.executionEnabled,
+              limit_minConfidence: limits.minConfidence,
               limit_divergenceAlertThreshold: limits.divergenceAlertThreshold,
+              value_edge: Number(edge.toFixed(4)),
+              value_swarmProbability: Number(top.swarmProbability.toFixed(4)),
+              value_marketPrice: Number((mkt.currentPrice ?? 0).toFixed(4)),
+              value_swarmConfidence: Number(top.swarmConfidence.toFixed(4)),
+              value_divergence: Number(top.divergence.toFixed(4)),
               paperMode: limits.paperMode,
             },
+
           });
         }
 
