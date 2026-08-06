@@ -96,3 +96,46 @@ export function arbAuditToCsv(rows: ArbAuditEntry[]): string {
   ].join(','));
   return [head.join(','), ...body].join('\n');
 }
+
+export interface ArbAuditFilter {
+  /** Lookback window in ms; 0 = everything held. */
+  sinceMs?: number;
+  /** 'all' or a specific source tag. */
+  strategy?: string;
+  action?: 'all' | 'executed' | 'blocked' | 'signal';
+  mode?: 'all' | 'paper' | 'live';
+  /** Only blocked rows whose reason matches (substring, case-insensitive). */
+  reason?: string;
+}
+
+export function filterArbAudit(rows: ArbAuditEntry[], f: ArbAuditFilter): ArbAuditEntry[] {
+  const cutoff = f.sinceMs && f.sinceMs > 0 ? Date.now() - f.sinceMs : 0;
+  const needle = (f.reason ?? '').trim().toLowerCase();
+  return rows.filter(r => {
+    if (cutoff && new Date(r.created_at).getTime() < cutoff) return false;
+    if (f.strategy && f.strategy !== 'all' && r.source !== f.strategy) return false;
+    if (f.action && f.action !== 'all' && r.action !== f.action) return false;
+    if (f.mode && f.mode !== 'all' && r.mode !== f.mode) return false;
+    if (needle && !(r.reason ?? '').toLowerCase().includes(needle)) return false;
+    return true;
+  });
+}
+
+/** Flat, export-friendly rows (detail expanded) for CSV/JSON downloads. */
+export function arbAuditExportRows(rows: ArbAuditEntry[]): Record<string, unknown>[] {
+  return rows.map(r => ({
+    created_at: r.created_at,
+    mode: r.mode,
+    strategy: (r.detail as Record<string, unknown> | undefined)?.strategy ?? r.source,
+    source: r.source,
+    action: r.action,
+    label: r.label,
+    legs: r.legs,
+    profit: Number(r.profit.toFixed(4)),
+    capital: Number(r.capital.toFixed(2)),
+    confidence: Number(r.confidence.toFixed(3)),
+    reason: r.reason ?? '',
+    detail: JSON.stringify(r.detail ?? {}),
+  }));
+}
+
