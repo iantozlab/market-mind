@@ -18,6 +18,8 @@ import TradeSettingsPanel from './TradeSettingsPanel';
 import MLInsightsPanel from './MLInsightsPanel';
 import RiskDashboardPanel from './RiskDashboardPanel';
 import DrawdownGuardPanel from './DrawdownGuardPanel';
+import DrawdownIncidentsPanel from './DrawdownIncidentsPanel';
+
 
 import BacktestPanel from './BacktestPanel';
 import SettingsAuditPanel from './SettingsAuditPanel';
@@ -338,6 +340,8 @@ const AppNavbar: React.FC<Props> = ({
               onEmergencyStop={onStop}
             />
             <DrawdownGuardPanel currentDrawdown={metrics.maxDrawdown} />
+            <DrawdownIncidentsPanel />
+
           </div>
 
         </SheetContent>
