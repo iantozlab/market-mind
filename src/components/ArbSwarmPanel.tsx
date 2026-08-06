@@ -420,24 +420,60 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {([['1h', 3600e3], ['24h', 86400e3], ['7d', 604800e3], ['All', 0]] as [string, number][]).map(([lbl, ms]) => (
-            <Button key={lbl} size="sm" variant={auditRange === ms ? 'default' : 'outline'} className="h-7 text-xs"
-              onClick={() => setAuditRange(ms)}>{lbl}</Button>
-          ))}
-          <span className="mx-1 h-4 w-px bg-border" />
-          {(['all', 'executed', 'blocked'] as const).map(f => (
-            <Button key={f} size="sm" variant={auditFilter === f ? 'default' : 'outline'} className="h-7 text-xs capitalize"
-              onClick={() => setAuditFilter(f)}>{f}</Button>
-          ))}
-          <span className="flex-1" />
-          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => download(`arb-audit-${Date.now()}.csv`, arbAuditToCsv(filteredAudit))}>
-            <Download className="h-3 w-3 mr-1" />CSV
-          </Button>
-          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={async () => { await purgeArbAudit(); await loadAudit(); toast.message('Audit log cleared'); }}>
-            <Trash2 className="h-3 w-3 mr-1" />Clear
-          </Button>
+        <div className="space-y-2 rounded-lg border border-border bg-card p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Time</span>
+            {([['1h', 3600e3], ['24h', 86400e3], ['7d', 604800e3], ['All', 0]] as [string, number][]).map(([lbl, ms]) => (
+              <Button key={lbl} size="sm" variant={auditRange === ms ? 'default' : 'outline'} className="h-7 text-xs"
+                aria-label={`Audit window ${lbl}`} onClick={() => setAuditRange(ms)}>{lbl}</Button>
+            ))}
+            <span className="mx-1 h-4 w-px bg-border" />
+            <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Action</span>
+            {(['all', 'executed', 'blocked'] as const).map(f => (
+              <Button key={f} size="sm" variant={auditFilter === f ? 'default' : 'outline'} className="h-7 text-xs capitalize"
+                aria-label={`Filter action ${f}`} onClick={() => setAuditFilter(f)}>{f}</Button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Strategy</span>
+            {(['all', 'multi_market_arb', 'polyswarm'] as const).map(s => (
+              <Button key={s} size="sm" variant={auditStrategy === s ? 'default' : 'outline'} className="h-7 text-xs"
+                aria-label={`Filter strategy ${s}`} onClick={() => setAuditStrategy(s)}>{s}</Button>
+            ))}
+            <span className="mx-1 h-4 w-px bg-border" />
+            <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Mode</span>
+            {(['all', 'paper', 'live'] as const).map(m => (
+              <Button key={m} size="sm" variant={auditMode === m ? 'default' : 'outline'} className="h-7 text-xs"
+                aria-label={`Filter mode ${m}`} onClick={() => setAuditMode(m)}>{m}</Button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={auditReason}
+              onChange={e => setAuditReason(e.target.value)}
+              placeholder="Filter by blocked reason (e.g. confidence, capital)…"
+              className="h-8 flex-1 min-w-[12rem] text-xs"
+              aria-label="Filter by blocked reason"
+              disabled={auditFilter === 'executed'}
+            />
+            <Button size="sm" variant="outline" className="h-8 text-xs" disabled={exporting}
+              aria-label="Export filtered audit log as CSV" onClick={() => exportAudit('csv')}>
+              <Download className="h-3 w-3 mr-1" />CSV
+            </Button>
+            <Button size="sm" variant="outline" className="h-8 text-xs" disabled={exporting}
+              aria-label="Export filtered audit log as JSON" onClick={() => exportAudit('json')}>
+              <Download className="h-3 w-3 mr-1" />JSON
+            </Button>
+            <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label="Clear audit log"
+              onClick={async () => { await purgeArbAudit(); await loadAudit(); toast.message('Audit log cleared'); }}>
+              <Trash2 className="h-3 w-3 mr-1" />Clear
+            </Button>
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            Exporting {filteredAudit.length} of {audit.length} audited actions with the filters above. JSON keeps the full rule-evaluation detail.
+          </p>
         </div>
+
 
         <section className="rounded-lg border border-border bg-card p-3">
           {filteredAudit.length === 0 ? (
