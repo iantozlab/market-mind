@@ -85,6 +85,10 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
   const [audit, setAudit] = useState<ArbAuditEntry[]>(() => getLocalArbAudit());
   const [auditRange, setAuditRange] = useState(24 * 60 * 60 * 1000);
   const [auditFilter, setAuditFilter] = useState<'all' | 'executed' | 'blocked'>('all');
+  const [auditStrategy, setAuditStrategy] = useState<'all' | 'multi_market_arb' | 'polyswarm'>('all');
+  const [auditMode, setAuditMode] = useState<'all' | 'paper' | 'live'>('all');
+  const [auditReason, setAuditReason] = useState('');
+  const [exporting, setExporting] = useState(false);
   const [btConfig, setBtConfig] = useState<ArbBacktestConfig>(DEFAULT_ARB_BACKTEST);
   const [btRunning, setBtRunning] = useState(false);
   const [btProgress, setBtProgress] = useState(0);
@@ -95,12 +99,29 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
   const [btPresets, setBtPresets] = useState(() => listBacktestPresets());
   const [activeBtPreset, setActiveBtPreset] = useState<string | null>(() => getActiveBacktestPreset());
   const [newScenarioName, setNewScenarioName] = useState('');
+  const [guard, setGuard] = useState<DrawdownGuardConfig>(() => getDrawdownGuard());
+  const [ignoreWarnings, setIgnoreWarnings] = useState(false);
 
   useEffect(() => subscribeArbLimits(setLimits), []);
+  useEffect(() => subscribeDrawdownGuard(setGuard), []);
   useEffect(() => subscribeArbPresets(() => { setPresets(listArbPresets()); setActivePreset(getActivePresetName()); }), []);
   useEffect(() => subscribeBacktestPresets(() => { setBtPresets(listBacktestPresets()); setActiveBtPreset(getActiveBacktestPreset()); }), []);
 
   useEffect(() => subscribeArbAudit(rows => setAudit(prev => (prev.length && prev[0]?.id ? rows : rows))), []);
+
+  // Shared scenario deep link: ?scenario=<token>
+  useEffect(() => {
+    const shared = readSharedScenario();
+    if (!shared) return;
+    setBtConfig(shared.config);
+    setActiveBtPreset(shared.name);
+    toast.success(`Shared scenario "${shared.name}" loaded from link`);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete(SHARE_PARAM);
+      window.history.replaceState({}, '', url.toString());
+    } catch { /* ignore */ }
+  }, []);
 
   const loadAudit = useCallback(async () => {
     const rows = await fetchArbAudit(auditRange, 300);
@@ -112,8 +133,11 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
   const update = (patch: Partial<ArbRiskLimits>) => setLimits(setArbLimits(patch));
 
   const filteredAudit = useMemo(
-    () => (auditFilter === 'all' ? audit : audit.filter(a => a.action === auditFilter)),
-    [audit, auditFilter],
+    () => filterArbAudit(audit, {
+      sinceMs: auditRange, action: auditFilter, strategy: auditStrategy,
+      mode: auditMode, reason: auditFilter === 'executed' ? '' : auditReason,
+    }),
+    [audit, auditRange, auditFilter, auditStrategy, auditMode, auditReason],
   );
 
   const paperStats = useMemo(() => {
@@ -122,7 +146,38 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
     return { executions: ex.length, blocked: audit.filter(a => a.action === 'blocked').length, profit };
   }, [audit]);
 
+  const exportAudit = async (fmt: 'csv' | 'json') => {
+    const rows = arbAuditExportRows(filteredAudit);
+    setExporting(true);
+    try {
+      const stamp = Date.now();
+      if (fmt === 'csv') await streamingDownloadCSV(`arb-audit-${stamp}.csv`, rows);
+      else await streamingDownloadJSON(`arb-audit-${stamp}.json`, rows, {
+        rangeMs: auditRange, action: auditFilter, strategy: auditStrategy, mode: auditMode, reason: auditReason,
+      });
+      toast.success(`Exported ${rows.length} audited actions (${fmt.toUpperCase()})`);
+    } catch {
+      toast.error('Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const validation = useMemo(
+    () => validateBacktestRun(btConfig, limits, guard, activeBtPreset, activeBtPreset ? getBacktestPreset(activeBtPreset) : null),
+    [btConfig, limits, guard, activeBtPreset],
+  );
+
   const runBacktest = async (cfg: ArbBacktestConfig = btConfig) => {
+    const report = validateBacktestRun(cfg, limits, guard, activeBtPreset, activeBtPreset ? getBacktestPreset(activeBtPreset) : null);
+    if (!report.ok) {
+      toast.error(`Run blocked — ${report.errors.length} configuration error${report.errors.length > 1 ? 's' : ''}`);
+      return;
+    }
+    if (report.warnings.length && !ignoreWarnings) {
+      toast.warning(`${report.warnings.length} warning(s) — tick "Run anyway" to proceed`);
+      return;
+    }
     setBtRunning(true); setBtProgress(0);
     try {
       const res = await runArbBacktest(cfg, setBtProgress);
@@ -135,6 +190,7 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
       setBtRunning(false);
     }
   };
+
 
   return (
     <Tabs defaultValue="live" className="space-y-4">
