@@ -938,7 +938,8 @@ export class UnifiedNeuralBot {
                 profit: signal.guaranteedProfit, confidence: signal.confidence,
                 legs: signal.legs.length, capital: signal.requiredCapital,
                 capitalUsedThisTick: capitalUsed, executionsThisTick: executedCount,
-              }),
+              }, reason),
+
             },
           });
         }
