@@ -13,6 +13,8 @@ import { PolySwarmIntegrator, buildDefaultSwarm, type MarketDescription, type Sw
 import { getArbLimits, checkArbLimits } from './arb-risk-config';
 import { recordArbAudit } from './arb-audit';
 import { getDrawdownGuard, setDrawdownGuard } from './drawdown-guard';
+import { recordDrawdownIncident } from './drawdown-incidents';
+
 
 
 
@@ -847,9 +849,12 @@ export class UnifiedNeuralBot {
   private ruleContext(
     l: ReturnType<typeof getArbLimits>,
     i: { profit: number; confidence: number; legs: number; capital: number; capitalUsedThisTick: number; executionsThisTick: number },
+    matchedRule?: string,
   ): Record<string, unknown> {
     return {
       paperMode: l.paperMode,
+      rule: matchedRule ?? '',
+      matched_rule: matchedRule ?? '',
       limit_executionEnabled: l.executionEnabled,
       limit_minProfit: l.minProfit,
       limit_minConfidence: l.minConfidence,
@@ -867,6 +872,7 @@ export class UnifiedNeuralBot {
       value_sessionArbPnL: Number(this.arbRealized.toFixed(2)),
     };
   }
+
 
   /**
    * Fill quality for an execution. Paper fills assume near-perfect touch pricing;
