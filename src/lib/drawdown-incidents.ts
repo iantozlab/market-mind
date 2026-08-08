@@ -24,7 +24,30 @@ export interface DrawdownIncident {
   resumeBufferPct: number;
   cooldownMinutes: number;
   tick: number;
+  /** Strategy scope that tripped the guard; 'global' when the portfolio guard fired. */
+  strategy?: string;
 }
+
+export interface DrawdownIncidentFilter {
+  /** Incident type / reason, or 'all'. */
+  reason?: string;
+  /** Strategy tag, or 'all'. */
+  strategy?: string;
+  /** Inclusive epoch-ms bounds on cooldownStart. */
+  fromMs?: number;
+  toMs?: number;
+}
+
+export function filterDrawdownIncidents(rows: DrawdownIncident[], f: DrawdownIncidentFilter): DrawdownIncident[] {
+  return rows.filter(r => {
+    if (f.reason && f.reason !== 'all' && r.reason !== f.reason) return false;
+    if (f.strategy && f.strategy !== 'all' && (r.strategy ?? 'global') !== f.strategy) return false;
+    if (f.fromMs && r.cooldownStart < f.fromMs) return false;
+    if (f.toMs && r.cooldownStart > f.toMs) return false;
+    return true;
+  });
+}
+
 
 const KEY = 'drawdown-incidents-v1';
 const MAX = 200;
