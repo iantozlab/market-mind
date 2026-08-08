@@ -15,8 +15,9 @@ import {
 } from '@/lib/arb-risk-config';
 import {
   fetchArbAudit, subscribeArbAudit, getLocalArbAudit, purgeArbAudit,
-  filterArbAudit, arbAuditExportRows, type ArbAuditEntry,
+  filterArbAudit, arbAuditExportRows, searchArbAudit, type ArbAuditEntry,
 } from '@/lib/arb-audit';
+import { loadAuditPrefs, saveAuditPrefs } from '@/lib/audit-export-prefs';
 import {
   runArbBacktest, arbBacktestToCsv, DEFAULT_ARB_BACKTEST, ticksFromWindow,
   type ArbBacktestConfig, type ArbBacktestResult,
@@ -34,6 +35,7 @@ import { validateBacktestRun } from '@/lib/backtest-validation';
 import { getDrawdownGuard, subscribeDrawdownGuard, type DrawdownGuardConfig } from '@/lib/drawdown-guard';
 import { streamingDownloadCSV, streamingDownloadJSON } from '@/lib/streaming-export';
 import { copyToClipboard } from '@/lib/clipboard';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import LivePaperComparePanel from './LivePaperComparePanel';
 
 
@@ -83,11 +85,17 @@ const NumberField: React.FC<{
 const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSignals, swarmEvents, agentCount }) => {
   const [limits, setLimits] = useState<ArbRiskLimits>(() => getArbLimits());
   const [audit, setAudit] = useState<ArbAuditEntry[]>(() => getLocalArbAudit());
-  const [auditRange, setAuditRange] = useState(24 * 60 * 60 * 1000);
-  const [auditFilter, setAuditFilter] = useState<'all' | 'executed' | 'blocked'>('all');
-  const [auditStrategy, setAuditStrategy] = useState<'all' | 'multi_market_arb' | 'polyswarm'>('all');
-  const [auditMode, setAuditMode] = useState<'all' | 'paper' | 'live'>('all');
-  const [auditReason, setAuditReason] = useState('');
+  const [prefs0] = useState(() => loadAuditPrefs());
+  const [auditRange, setAuditRange] = useState(prefs0.rangeMs);
+  const [auditFilter, setAuditFilter] = useState<'all' | 'executed' | 'blocked'>(prefs0.action);
+  const [auditStrategy, setAuditStrategy] = useState<'all' | 'multi_market_arb' | 'polyswarm'>(prefs0.strategy);
+  const [auditMode, setAuditMode] = useState<'all' | 'paper' | 'live'>(prefs0.mode);
+  const [auditReason, setAuditReason] = useState(prefs0.reason);
+  const [auditSearch, setAuditSearch] = useState(prefs0.search);
+  const [auditFormat, setAuditFormat] = useState<'csv' | 'json'>(prefs0.format);
+  const [auditPageSize, setAuditPageSize] = useState(prefs0.pageSize);
+  const [auditPage, setAuditPage] = useState(1);
+  const [sharedPreview, setSharedPreview] = useState<{ name: string; config: ArbBacktestConfig } | null>(null);
   const [exporting, setExporting] = useState(false);
   const [btConfig, setBtConfig] = useState<ArbBacktestConfig>(DEFAULT_ARB_BACKTEST);
   const [btRunning, setBtRunning] = useState(false);
@@ -102,6 +110,15 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
   const [guard, setGuard] = useState<DrawdownGuardConfig>(() => getDrawdownGuard());
   const [ignoreWarnings, setIgnoreWarnings] = useState(false);
 
+  useEffect(() => {
+    saveAuditPrefs({
+      rangeMs: auditRange, action: auditFilter, strategy: auditStrategy, mode: auditMode,
+      reason: auditReason, search: auditSearch, format: auditFormat, pageSize: auditPageSize,
+    });
+  }, [auditRange, auditFilter, auditStrategy, auditMode, auditReason, auditSearch, auditFormat, auditPageSize]);
+
+  useEffect(() => { setAuditPage(1); }, [auditRange, auditFilter, auditStrategy, auditMode, auditReason, auditSearch, auditPageSize]);
+
   useEffect(() => subscribeArbLimits(setLimits), []);
   useEffect(() => subscribeDrawdownGuard(setGuard), []);
   useEffect(() => subscribeArbPresets(() => { setPresets(listArbPresets()); setActivePreset(getActivePresetName()); }), []);
@@ -113,14 +130,7 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
   useEffect(() => {
     const shared = readSharedScenario();
     if (!shared) return;
-    setBtConfig(shared.config);
-    setActiveBtPreset(shared.name);
-    toast.success(`Shared scenario "${shared.name}" loaded from link`);
-    try {
-      const url = new URL(window.location.href);
-      url.searchParams.delete(SHARE_PARAM);
-      window.history.replaceState({}, '', url.toString());
-    } catch { /* ignore */ }
+    setSharedPreview(shared);
   }, []);
 
   const loadAudit = useCallback(async () => {
@@ -133,11 +143,18 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
   const update = (patch: Partial<ArbRiskLimits>) => setLimits(setArbLimits(patch));
 
   const filteredAudit = useMemo(
-    () => filterArbAudit(audit, {
+    () => searchArbAudit(filterArbAudit(audit, {
       sinceMs: auditRange, action: auditFilter, strategy: auditStrategy,
       mode: auditMode, reason: auditFilter === 'executed' ? '' : auditReason,
-    }),
-    [audit, auditRange, auditFilter, auditStrategy, auditMode, auditReason],
+    }), auditSearch),
+    [audit, auditRange, auditFilter, auditStrategy, auditMode, auditReason, auditSearch],
+  );
+
+  const auditPages = Math.max(1, Math.ceil(filteredAudit.length / auditPageSize));
+  const auditPageSafe = Math.min(auditPage, auditPages);
+  const pagedAudit = useMemo(
+    () => filteredAudit.slice((auditPageSafe - 1) * auditPageSize, auditPageSafe * auditPageSize),
+    [filteredAudit, auditPageSafe, auditPageSize],
   );
 
   const paperStats = useMemo(() => {
@@ -167,6 +184,19 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
     () => validateBacktestRun(btConfig, limits, guard, activeBtPreset, activeBtPreset ? getBacktestPreset(activeBtPreset) : null),
     [btConfig, limits, guard, activeBtPreset],
   );
+
+  const sharedValidation = useMemo(
+    () => (sharedPreview ? validateBacktestRun(sharedPreview.config, limits, guard, null, null) : null),
+    [sharedPreview, limits, guard],
+  );
+
+  const clearShareParam = useCallback(() => {
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete(SHARE_PARAM);
+      window.history.replaceState({}, '', url.toString());
+    } catch { /* ignore */ }
+  }, []);
 
   const runBacktest = async (cfg: ArbBacktestConfig = btConfig) => {
     const report = validateBacktestRun(cfg, limits, guard, activeBtPreset, activeBtPreset ? getBacktestPreset(activeBtPreset) : null);
@@ -449,6 +479,19 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Input
+              value={auditSearch}
+              onChange={e => setAuditSearch(e.target.value)}
+              placeholder="Search execution id, label, price, slippage, reason…"
+              className="h-8 flex-1 min-w-[14rem] text-xs"
+              aria-label="Search audit log"
+            />
+            <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label="Clear audit search"
+              disabled={!auditSearch} onClick={() => setAuditSearch('')}>
+              <X className="h-3 w-3 mr-1" />Clear search
+            </Button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
               value={auditReason}
               onChange={e => setAuditReason(e.target.value)}
               placeholder="Filter by blocked reason (e.g. confidence, capital)…"
@@ -456,12 +499,12 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
               aria-label="Filter by blocked reason"
               disabled={auditFilter === 'executed'}
             />
-            <Button size="sm" variant="outline" className="h-8 text-xs" disabled={exporting}
-              aria-label="Export filtered audit log as CSV" onClick={() => exportAudit('csv')}>
+            <Button size="sm" variant={auditFormat === 'csv' ? 'default' : 'outline'} className="h-8 text-xs" disabled={exporting}
+              aria-label="Export filtered audit log as CSV" onClick={() => { setAuditFormat('csv'); exportAudit('csv'); }}>
               <Download className="h-3 w-3 mr-1" />CSV
             </Button>
-            <Button size="sm" variant="outline" className="h-8 text-xs" disabled={exporting}
-              aria-label="Export filtered audit log as JSON" onClick={() => exportAudit('json')}>
+            <Button size="sm" variant={auditFormat === 'json' ? 'default' : 'outline'} className="h-8 text-xs" disabled={exporting}
+              aria-label="Export filtered audit log as JSON" onClick={() => { setAuditFormat('json'); exportAudit('json'); }}>
               <Download className="h-3 w-3 mr-1" />JSON
             </Button>
             <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label="Clear audit log"
@@ -470,7 +513,8 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
             </Button>
           </div>
           <p className="text-[10px] text-muted-foreground">
-            Exporting {filteredAudit.length} of {audit.length} audited actions with the filters above. JSON keeps the full rule-evaluation detail.
+            Exporting {filteredAudit.length} of {audit.length} audited actions with the filters above (default format: {auditFormat.toUpperCase()}).
+            Filters and format are remembered for next time. JSON keeps the full rule-evaluation detail.
           </p>
         </div>
 
@@ -480,7 +524,7 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
             <p className="text-xs text-muted-foreground">No audited actions in this window yet.</p>
           ) : (
             <ul className="space-y-1 max-h-96 overflow-y-auto pr-1">
-              {filteredAudit.slice(0, 200).map((a, i) => (
+              {pagedAudit.map((a, i) => (
                 <li key={a.id ?? `${a.created_at}-${i}`} className="flex items-center gap-2 text-[11px] font-mono border-b border-border/30 py-1">
                   <span className="w-16 shrink-0 text-muted-foreground">{new Date(a.created_at).toLocaleTimeString()}</span>
                   <span className={`w-20 shrink-0 uppercase ${a.action === 'executed' ? 'text-primary' : 'text-warning'}`}>{a.action}</span>
@@ -492,6 +536,24 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
                 </li>
               ))}
             </ul>
+          )}
+          {filteredAudit.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-border/40 pt-2 text-[11px]">
+              <span className="text-muted-foreground font-mono">
+                {(auditPageSafe - 1) * auditPageSize + 1}–{Math.min(auditPageSafe * auditPageSize, filteredAudit.length)} of {filteredAudit.length}
+              </span>
+              <span className="flex-1" />
+              <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Rows</span>
+              {[25, 50, 100].map(n => (
+                <Button key={n} size="sm" variant={auditPageSize === n ? 'default' : 'outline'} className="h-7 text-xs"
+                  aria-label={`Show ${n} rows per page`} onClick={() => setAuditPageSize(n)}>{n}</Button>
+              ))}
+              <Button size="sm" variant="outline" className="h-7 text-xs" disabled={auditPageSafe <= 1}
+                aria-label="Previous audit page" onClick={() => setAuditPage(p => Math.max(1, p - 1))}>Prev</Button>
+              <span className="font-mono text-muted-foreground">page {auditPageSafe}/{auditPages}</span>
+              <Button size="sm" variant="outline" className="h-7 text-xs" disabled={auditPageSafe >= auditPages}
+                aria-label="Next audit page" onClick={() => setAuditPage(p => Math.min(auditPages, p + 1))}>Next</Button>
+            </div>
           )}
         </section>
       </TabsContent>
@@ -752,6 +814,74 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
           </>
         )}
       </TabsContent>
+
+      {/* ---------------- SHARED SCENARIO PREVIEW ---------------- */}
+      <Dialog open={!!sharedPreview} onOpenChange={o => { if (!o) { setSharedPreview(null); clearShareParam(); } }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-display text-sm flex items-center gap-2">
+              <Link2 className="h-4 w-4 text-info" aria-hidden />Shared scenario preview
+            </DialogTitle>
+            <DialogDescription className="font-mono text-[11px]">
+              {sharedPreview?.name} — review the parsed configuration before it replaces your current backtest setup.
+            </DialogDescription>
+          </DialogHeader>
+          {sharedPreview && (
+            <div className="space-y-3">
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] font-mono">
+                {([
+                  ['window', `${new Date(sharedPreview.config.startTime).toLocaleString()} → ${new Date(sharedPreview.config.endTime).toLocaleString()}`],
+                  ['tick interval', `${Math.round(sharedPreview.config.tickIntervalMs / 1000)}s`],
+                  ['resolved ticks', String(ticksFromWindow(sharedPreview.config))],
+                  ['markets / tick', String(sharedPreview.config.marketsPerTick)],
+                  ['fee / slippage', `${sharedPreview.config.feeBps} / ${sharedPreview.config.slippageBps} bps`],
+                  ['seed', String(sharedPreview.config.seed)],
+                  ['strategies', Object.entries(sharedPreview.config.strategies).filter(([, v]) => v).map(([k]) => k).join(', ') || 'none'],
+                  ['risk overrides', Object.keys(sharedPreview.config.riskOverrides ?? {}).length
+                    ? Object.entries(sharedPreview.config.riskOverrides).map(([k, v]) => `${k}=${v}`).join(', ')
+                    : 'uses saved limits'],
+                ] as [string, string][]).map(([k, v]) => (
+                  <React.Fragment key={k}>
+                    <dt className="text-[10px] uppercase tracking-widest text-muted-foreground">{k}</dt>
+                    <dd className="truncate" title={v}>{v}</dd>
+                  </React.Fragment>
+                ))}
+              </dl>
+              <div className="rounded-md border border-border/60 p-2 space-y-1">
+                <p className="flex items-center gap-2 text-[11px] font-semibold">
+                  {sharedValidation && sharedValidation.ok
+                    ? <><ShieldCheck className="h-3 w-3 text-primary" aria-hidden />Compatible with your current limits</>
+                    : <><AlertTriangle className="h-3 w-3 text-destructive" aria-hidden />Compatibility issues</>}
+                </p>
+                {sharedValidation?.issues.length === 0 ? (
+                  <p className="text-[11px] text-muted-foreground">No conflicts with your saved risk limits or drawdown guard.</p>
+                ) : sharedValidation?.issues.map((iss, i) => (
+                  <p key={`${iss.field}-${i}`} className="flex items-start gap-2 text-[11px] font-mono">
+                    <Badge variant={iss.level === 'error' ? 'destructive' : 'outline'} className="mt-0.5 shrink-0 text-[9px]">{iss.level}</Badge>
+                    <span className="text-muted-foreground"><span className="text-foreground">{iss.field}</span> — {iss.message}</span>
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button size="sm" variant="ghost" className="h-8 text-xs"
+              aria-label="Discard shared scenario"
+              onClick={() => { setSharedPreview(null); clearShareParam(); toast.message('Shared scenario discarded'); }}>Discard</Button>
+            <Button size="sm" className="h-8 text-xs"
+              aria-label="Apply shared scenario"
+              onClick={() => {
+                if (!sharedPreview) return;
+                setBtConfig(sharedPreview.config);
+                setActiveBtPreset(sharedPreview.name);
+                setIgnoreWarnings(false);
+                toast.success(`Shared scenario "${sharedPreview.name}" applied`);
+                setSharedPreview(null);
+                clearShareParam();
+              }}>Apply scenario</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Tabs>
   );
 };
