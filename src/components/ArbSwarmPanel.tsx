@@ -471,6 +471,19 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Input
+              value={auditSearch}
+              onChange={e => setAuditSearch(e.target.value)}
+              placeholder="Search execution id, label, price, slippage, reason…"
+              className="h-8 flex-1 min-w-[14rem] text-xs"
+              aria-label="Search audit log"
+            />
+            <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label="Clear audit search"
+              disabled={!auditSearch} onClick={() => setAuditSearch('')}>
+              <X className="h-3 w-3 mr-1" />Clear search
+            </Button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
               value={auditReason}
               onChange={e => setAuditReason(e.target.value)}
               placeholder="Filter by blocked reason (e.g. confidence, capital)…"
@@ -478,12 +491,12 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
               aria-label="Filter by blocked reason"
               disabled={auditFilter === 'executed'}
             />
-            <Button size="sm" variant="outline" className="h-8 text-xs" disabled={exporting}
-              aria-label="Export filtered audit log as CSV" onClick={() => exportAudit('csv')}>
+            <Button size="sm" variant={auditFormat === 'csv' ? 'default' : 'outline'} className="h-8 text-xs" disabled={exporting}
+              aria-label="Export filtered audit log as CSV" onClick={() => { setAuditFormat('csv'); exportAudit('csv'); }}>
               <Download className="h-3 w-3 mr-1" />CSV
             </Button>
-            <Button size="sm" variant="outline" className="h-8 text-xs" disabled={exporting}
-              aria-label="Export filtered audit log as JSON" onClick={() => exportAudit('json')}>
+            <Button size="sm" variant={auditFormat === 'json' ? 'default' : 'outline'} className="h-8 text-xs" disabled={exporting}
+              aria-label="Export filtered audit log as JSON" onClick={() => { setAuditFormat('json'); exportAudit('json'); }}>
               <Download className="h-3 w-3 mr-1" />JSON
             </Button>
             <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label="Clear audit log"
@@ -492,7 +505,8 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
             </Button>
           </div>
           <p className="text-[10px] text-muted-foreground">
-            Exporting {filteredAudit.length} of {audit.length} audited actions with the filters above. JSON keeps the full rule-evaluation detail.
+            Exporting {filteredAudit.length} of {audit.length} audited actions with the filters above (default format: {auditFormat.toUpperCase()}).
+            Filters and format are remembered for next time. JSON keeps the full rule-evaluation detail.
           </p>
         </div>
 
@@ -502,7 +516,7 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
             <p className="text-xs text-muted-foreground">No audited actions in this window yet.</p>
           ) : (
             <ul className="space-y-1 max-h-96 overflow-y-auto pr-1">
-              {filteredAudit.slice(0, 200).map((a, i) => (
+              {pagedAudit.map((a, i) => (
                 <li key={a.id ?? `${a.created_at}-${i}`} className="flex items-center gap-2 text-[11px] font-mono border-b border-border/30 py-1">
                   <span className="w-16 shrink-0 text-muted-foreground">{new Date(a.created_at).toLocaleTimeString()}</span>
                   <span className={`w-20 shrink-0 uppercase ${a.action === 'executed' ? 'text-primary' : 'text-warning'}`}>{a.action}</span>
@@ -514,6 +528,24 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
                 </li>
               ))}
             </ul>
+          )}
+          {filteredAudit.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-border/40 pt-2 text-[11px]">
+              <span className="text-muted-foreground font-mono">
+                {(auditPageSafe - 1) * auditPageSize + 1}–{Math.min(auditPageSafe * auditPageSize, filteredAudit.length)} of {filteredAudit.length}
+              </span>
+              <span className="flex-1" />
+              <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Rows</span>
+              {[25, 50, 100].map(n => (
+                <Button key={n} size="sm" variant={auditPageSize === n ? 'default' : 'outline'} className="h-7 text-xs"
+                  aria-label={`Show ${n} rows per page`} onClick={() => setAuditPageSize(n)}>{n}</Button>
+              ))}
+              <Button size="sm" variant="outline" className="h-7 text-xs" disabled={auditPageSafe <= 1}
+                aria-label="Previous audit page" onClick={() => setAuditPage(p => Math.max(1, p - 1))}>Prev</Button>
+              <span className="font-mono text-muted-foreground">page {auditPageSafe}/{auditPages}</span>
+              <Button size="sm" variant="outline" className="h-7 text-xs" disabled={auditPageSafe >= auditPages}
+                aria-label="Next audit page" onClick={() => setAuditPage(p => Math.min(auditPages, p + 1))}>Next</Button>
+            </div>
           )}
         </section>
       </TabsContent>
