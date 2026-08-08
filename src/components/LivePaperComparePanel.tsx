@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { GitCompareArrows, RefreshCw, Download, Info } from 'lucide-react';
+import { GitCompareArrows, RefreshCw, Download, Info, Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import Sparkline from '@/components/Sparkline';
 import { fetchArbAudit, arbAuditToCsv, type ArbAuditEntry } from '@/lib/arb-audit';
+import { copyToClipboard } from '@/lib/clipboard';
+import { toast } from 'sonner';
 
 const RANGES: [string, number][] = [['1h', 3600e3], ['6h', 6 * 3600e3], ['24h', 86400e3], ['7d', 604800e3]];
 const BUCKETS = 24;
@@ -110,6 +112,41 @@ const LivePaperComparePanel: React.FC = () => {
     () => (reasonDrill ? windowRows.filter(r => r.action === 'blocked' && (r.reason ?? 'unspecified') === reasonDrill) : []),
     [reasonDrill, windowRows],
   );
+
+  /** Latest blocked sample per mode + a merged key list for the side-by-side diff. */
+  const diff = useMemo(() => {
+    const latest = (m: 'paper' | 'live') => drillRows.filter(r => r.mode === m)[0] ?? null;
+    const p = latest('paper'), l = latest('live');
+    const det = (r: ArbAuditEntry | null) => ((r?.detail ?? {}) as Record<string, unknown>);
+    const dp = det(p), dl = det(l);
+    const keys = Array.from(new Set(
+      [...Object.keys(dp), ...Object.keys(dl)].filter(k => k.startsWith('limit_') || k.startsWith('value_')),
+    )).map(k => k.replace(/^(limit_|value_)/, ''));
+    const fields = Array.from(new Set(keys)).sort();
+    const rowsOut = fields.map(f => ({
+      field: f,
+      paperLimit: dp[`limit_${f}`], paperValue: dp[`value_${f}`],
+      liveLimit: dl[`limit_${f}`], liveValue: dl[`value_${f}`],
+    }));
+    return {
+      paperRow: p, liveRow: l, rows: rowsOut,
+      paperRule: String(dp.matched_rule ?? dp.rule ?? p?.reason ?? '—'),
+      liveRule: String(dl.matched_rule ?? dl.rule ?? l?.reason ?? '—'),
+    };
+  }, [drillRows]);
+
+  const copyDiff = async () => {
+    const lines = [
+      `blocked reason: ${reasonDrill}`,
+      `matched rule (paper): ${diff.paperRule}`,
+      `matched rule (live): ${diff.liveRule}`,
+      'field\tpaper_threshold\tpaper_observed\tlive_threshold\tlive_observed',
+      ...diff.rows.map(r => [r.field, r.paperLimit, r.paperValue, r.liveLimit, r.liveValue]
+        .map(v => (v == null ? '' : String(v))).join('\t')),
+    ].join('\n');
+    const ok = await copyToClipboard(lines);
+    ok ? toast.success('Threshold/observed values copied') : toast.error('Copy failed');
+  };
 
   const pct = (s: Side) => (s.executions ? ((s.wins / s.executions) * 100).toFixed(1) : '0.0');
   const fmt = (v: number | null, suffix = '') => (v == null ? '—' : `${v.toFixed(suffix === ' bps' ? 1 : 4)}${suffix}`);
@@ -243,6 +280,51 @@ const LivePaperComparePanel: React.FC = () => {
             <DialogTitle className="font-display text-sm">Why this was blocked</DialogTitle>
             <DialogDescription className="font-mono text-[11px]">{reasonDrill}</DialogDescription>
           </DialogHeader>
+          {drillRows.length > 0 && (
+            <section className="rounded-md border border-border/60 p-2 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <h4 className="font-display text-xs font-semibold">Rule evaluation — paper vs live</h4>
+                <span className="flex-1" />
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={copyDiff}
+                  aria-label="Copy threshold and observed values">
+                  <Copy className="h-3 w-3 mr-1" aria-hidden />Copy values
+                </Button>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
+                <p><span className="uppercase tracking-widest text-muted-foreground">paper rule </span><span className="text-warning">{diff.paperRule}</span></p>
+                <p><span className="uppercase tracking-widest text-muted-foreground">live rule </span><span className="text-destructive">{diff.liveRule}</span></p>
+              </div>
+              {diff.rows.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground">No structured threshold/observed inputs retained for this reason.</p>
+              ) : (
+                <table className="w-full text-[10px] font-mono">
+                  <thead className="text-muted-foreground">
+                    <tr className="border-b border-border/50">
+                      <th className="text-left py-1">field</th>
+                      <th className="text-right">paper limit</th><th className="text-right">paper observed</th>
+                      <th className="text-right">live limit</th><th className="text-right">live observed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {diff.rows.map(r => {
+                      const differs = String(r.paperValue ?? '') !== String(r.liveValue ?? '') ||
+                        String(r.paperLimit ?? '') !== String(r.liveLimit ?? '');
+                      return (
+                        <tr key={r.field} className={`border-b border-border/30 ${differs ? 'bg-destructive/10' : ''}`}>
+                          <td className="py-1">{r.field}</td>
+                          <td className="text-right text-info">{r.paperLimit == null ? '—' : String(r.paperLimit)}</td>
+                          <td className="text-right text-warning">{r.paperValue == null ? '—' : String(r.paperValue)}</td>
+                          <td className="text-right text-info">{r.liveLimit == null ? '—' : String(r.liveLimit)}</td>
+                          <td className="text-right text-destructive">{r.liveValue == null ? '—' : String(r.liveValue)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+              <p className="text-[10px] text-muted-foreground">Highlighted rows differ between the simulated and real evaluation of the same rule.</p>
+            </section>
+          )}
           {drillRows.length === 0 ? (
             <p className="text-xs text-muted-foreground">No detail rows retained for this reason.</p>
           ) : (
