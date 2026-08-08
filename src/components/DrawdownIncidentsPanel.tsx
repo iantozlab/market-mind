@@ -98,9 +98,8 @@ const DrawdownIncidentsPanel: React.FC = () => {
             onClick={() => { setReason('all'); setStrategy('all'); setFrom(''); setTo(''); }}>Reset</Button>
           <span className="text-[10px] text-muted-foreground">
             {rows.length} of {all.length} incidents{from || to ? ` · ${from || '…'} → ${to || '…'}` : ''}
-            {from && to ? '' : ''}
           </span>
-          {(from || to) && <span className="sr-only">{toDateInput(now)}</span>}
+
         </div>
       </div>
 
