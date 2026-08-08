@@ -121,6 +121,23 @@ export function filterArbAudit(rows: ArbAuditEntry[], f: ArbAuditFilter): ArbAud
   });
 }
 
+/** Free-text search across execution id, label, reason, strategy tag and numeric price/profit fields. */
+export function searchArbAudit(rows: ArbAuditEntry[], query: string): ArbAuditEntry[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return rows;
+  return rows.filter(r => {
+    const d = (r.detail ?? {}) as Record<string, unknown>;
+    const hay = [
+      r.id, d.execution_id, d.executionId, r.label, r.reason, r.source, d.strategy, d.matched_rule,
+      r.profit?.toFixed?.(4), r.capital?.toFixed?.(2),
+      typeof d.execPrice === 'number' ? d.execPrice.toFixed(4) : d.execPrice,
+      typeof d.slippageBps === 'number' ? d.slippageBps.toFixed(1) : d.slippageBps,
+    ].filter(v => v != null).join(' ').toLowerCase();
+    return hay.includes(q);
+  });
+}
+
+
 /** Flat, export-friendly rows (detail expanded) for CSV/JSON downloads. */
 export function arbAuditExportRows(rows: ArbAuditEntry[]): Record<string, unknown>[] {
   return rows.map(r => ({
