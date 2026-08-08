@@ -18,12 +18,6 @@ function download(name: string, content: string, type = 'text/csv') {
 
 const pct = (v: number) => `${(v * 100).toFixed(2)}%`;
 
-function toDateInput(ms: number): string {
-  const d = new Date(ms);
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
 const DrawdownIncidentsPanel: React.FC = () => {
   const [all, setAll] = useState<DrawdownIncident[]>(() => getDrawdownIncidents());
   const [now, setNow] = useState(Date.now());
@@ -119,6 +113,7 @@ const DrawdownIncidentsPanel: React.FC = () => {
                 <div className="flex flex-wrap items-center gap-2">
                   <Snowflake className={`h-3 w-3 ${active ? 'text-info animate-pulse' : 'text-muted-foreground'}`} aria-hidden />
                   <Badge variant={r.reason === 'max-drawdown' ? 'destructive' : 'secondary'} className="text-[9px]">{r.reason}</Badge>
+                  <Badge variant="outline" className="text-[9px]">{r.strategy ?? 'global'}</Badge>
                   <span className="text-muted-foreground">{new Date(r.cooldownStart).toLocaleString()}</span>
                   <span className="flex-1" />
                   {active
