@@ -15,8 +15,9 @@ import {
 } from '@/lib/arb-risk-config';
 import {
   fetchArbAudit, subscribeArbAudit, getLocalArbAudit, purgeArbAudit,
-  filterArbAudit, arbAuditExportRows, type ArbAuditEntry,
+  filterArbAudit, arbAuditExportRows, searchArbAudit, type ArbAuditEntry,
 } from '@/lib/arb-audit';
+import { loadAuditPrefs, saveAuditPrefs } from '@/lib/audit-export-prefs';
 import {
   runArbBacktest, arbBacktestToCsv, DEFAULT_ARB_BACKTEST, ticksFromWindow,
   type ArbBacktestConfig, type ArbBacktestResult,
@@ -34,6 +35,7 @@ import { validateBacktestRun } from '@/lib/backtest-validation';
 import { getDrawdownGuard, subscribeDrawdownGuard, type DrawdownGuardConfig } from '@/lib/drawdown-guard';
 import { streamingDownloadCSV, streamingDownloadJSON } from '@/lib/streaming-export';
 import { copyToClipboard } from '@/lib/clipboard';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import LivePaperComparePanel from './LivePaperComparePanel';
 
 
@@ -83,11 +85,17 @@ const NumberField: React.FC<{
 const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSignals, swarmEvents, agentCount }) => {
   const [limits, setLimits] = useState<ArbRiskLimits>(() => getArbLimits());
   const [audit, setAudit] = useState<ArbAuditEntry[]>(() => getLocalArbAudit());
-  const [auditRange, setAuditRange] = useState(24 * 60 * 60 * 1000);
-  const [auditFilter, setAuditFilter] = useState<'all' | 'executed' | 'blocked'>('all');
-  const [auditStrategy, setAuditStrategy] = useState<'all' | 'multi_market_arb' | 'polyswarm'>('all');
-  const [auditMode, setAuditMode] = useState<'all' | 'paper' | 'live'>('all');
-  const [auditReason, setAuditReason] = useState('');
+  const [prefs0] = useState(() => loadAuditPrefs());
+  const [auditRange, setAuditRange] = useState(prefs0.rangeMs);
+  const [auditFilter, setAuditFilter] = useState<'all' | 'executed' | 'blocked'>(prefs0.action);
+  const [auditStrategy, setAuditStrategy] = useState<'all' | 'multi_market_arb' | 'polyswarm'>(prefs0.strategy);
+  const [auditMode, setAuditMode] = useState<'all' | 'paper' | 'live'>(prefs0.mode);
+  const [auditReason, setAuditReason] = useState(prefs0.reason);
+  const [auditSearch, setAuditSearch] = useState(prefs0.search);
+  const [auditFormat, setAuditFormat] = useState<'csv' | 'json'>(prefs0.format);
+  const [auditPageSize, setAuditPageSize] = useState(prefs0.pageSize);
+  const [auditPage, setAuditPage] = useState(1);
+  const [sharedPreview, setSharedPreview] = useState<{ name: string; config: ArbBacktestConfig } | null>(null);
   const [exporting, setExporting] = useState(false);
   const [btConfig, setBtConfig] = useState<ArbBacktestConfig>(DEFAULT_ARB_BACKTEST);
   const [btRunning, setBtRunning] = useState(false);
@@ -102,6 +110,15 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
   const [guard, setGuard] = useState<DrawdownGuardConfig>(() => getDrawdownGuard());
   const [ignoreWarnings, setIgnoreWarnings] = useState(false);
 
+  useEffect(() => {
+    saveAuditPrefs({
+      rangeMs: auditRange, action: auditFilter, strategy: auditStrategy, mode: auditMode,
+      reason: auditReason, search: auditSearch, format: auditFormat, pageSize: auditPageSize,
+    });
+  }, [auditRange, auditFilter, auditStrategy, auditMode, auditReason, auditSearch, auditFormat, auditPageSize]);
+
+  useEffect(() => { setAuditPage(1); }, [auditRange, auditFilter, auditStrategy, auditMode, auditReason, auditSearch, auditPageSize]);
+
   useEffect(() => subscribeArbLimits(setLimits), []);
   useEffect(() => subscribeDrawdownGuard(setGuard), []);
   useEffect(() => subscribeArbPresets(() => { setPresets(listArbPresets()); setActivePreset(getActivePresetName()); }), []);
@@ -113,9 +130,7 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
   useEffect(() => {
     const shared = readSharedScenario();
     if (!shared) return;
-    setBtConfig(shared.config);
-    setActiveBtPreset(shared.name);
-    toast.success(`Shared scenario "${shared.name}" loaded from link`);
+    setSharedPreview(shared);
     try {
       const url = new URL(window.location.href);
       url.searchParams.delete(SHARE_PARAM);
@@ -133,11 +148,18 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
   const update = (patch: Partial<ArbRiskLimits>) => setLimits(setArbLimits(patch));
 
   const filteredAudit = useMemo(
-    () => filterArbAudit(audit, {
+    () => searchArbAudit(filterArbAudit(audit, {
       sinceMs: auditRange, action: auditFilter, strategy: auditStrategy,
       mode: auditMode, reason: auditFilter === 'executed' ? '' : auditReason,
-    }),
-    [audit, auditRange, auditFilter, auditStrategy, auditMode, auditReason],
+    }), auditSearch),
+    [audit, auditRange, auditFilter, auditStrategy, auditMode, auditReason, auditSearch],
+  );
+
+  const auditPages = Math.max(1, Math.ceil(filteredAudit.length / auditPageSize));
+  const auditPageSafe = Math.min(auditPage, auditPages);
+  const pagedAudit = useMemo(
+    () => filteredAudit.slice((auditPageSafe - 1) * auditPageSize, auditPageSafe * auditPageSize),
+    [filteredAudit, auditPageSafe, auditPageSize],
   );
 
   const paperStats = useMemo(() => {
