@@ -92,16 +92,17 @@ export function subscribeDrawdownIncidents(fn: (rows: DrawdownIncident[]) => voi
 
 export function drawdownIncidentsToCsv(rows: DrawdownIncident[]): string {
   const head = [
-    'breach_start', 'cooldown_start', 'cooldown_end', 'reason', 'confirmations',
+    'breach_start', 'cooldown_start', 'cooldown_end', 'reason', 'strategy', 'confirmations',
     'drawdown_at_trip_pct', 'resume_level_pct', 'max_drawdown_pct', 'breach_ticks',
     'smoothing_window', 'resume_buffer_pct', 'cooldown_minutes', 'tick',
   ];
   const body = rows.map(r => [
     new Date(r.breachStartTs).toISOString(), new Date(r.cooldownStart).toISOString(),
-    new Date(r.cooldownEnd).toISOString(), r.reason, r.confirmations,
+    new Date(r.cooldownEnd).toISOString(), r.reason, r.strategy ?? 'global', r.confirmations,
     (r.drawdownAtTrip * 100).toFixed(2), (r.resumeLevel * 100).toFixed(2),
     (r.maxDrawdownPct * 100).toFixed(2), r.breachTicks, r.smoothingWindow,
     (r.resumeBufferPct * 100).toFixed(2), r.cooldownMinutes, r.tick,
   ].join(','));
+
   return [head.join(','), ...body].join('\n');
 }
