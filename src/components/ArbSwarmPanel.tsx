@@ -131,11 +131,6 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
     const shared = readSharedScenario();
     if (!shared) return;
     setSharedPreview(shared);
-    try {
-      const url = new URL(window.location.href);
-      url.searchParams.delete(SHARE_PARAM);
-      window.history.replaceState({}, '', url.toString());
-    } catch { /* ignore */ }
   }, []);
 
   const loadAudit = useCallback(async () => {
@@ -189,6 +184,19 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
     () => validateBacktestRun(btConfig, limits, guard, activeBtPreset, activeBtPreset ? getBacktestPreset(activeBtPreset) : null),
     [btConfig, limits, guard, activeBtPreset],
   );
+
+  const sharedValidation = useMemo(
+    () => (sharedPreview ? validateBacktestRun(sharedPreview.config, limits, guard, null, null) : null),
+    [sharedPreview, limits, guard],
+  );
+
+  const clearShareParam = useCallback(() => {
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete(SHARE_PARAM);
+      window.history.replaceState({}, '', url.toString());
+    } catch { /* ignore */ }
+  }, []);
 
   const runBacktest = async (cfg: ArbBacktestConfig = btConfig) => {
     const report = validateBacktestRun(cfg, limits, guard, activeBtPreset, activeBtPreset ? getBacktestPreset(activeBtPreset) : null);
@@ -806,6 +814,74 @@ const ArbSwarmPanel: React.FC<Props> = ({ signals, executed, realized, swarmSign
           </>
         )}
       </TabsContent>
+
+      {/* ---------------- SHARED SCENARIO PREVIEW ---------------- */}
+      <Dialog open={!!sharedPreview} onOpenChange={o => { if (!o) { setSharedPreview(null); clearShareParam(); } }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-display text-sm flex items-center gap-2">
+              <Link2 className="h-4 w-4 text-info" aria-hidden />Shared scenario preview
+            </DialogTitle>
+            <DialogDescription className="font-mono text-[11px]">
+              {sharedPreview?.name} — review the parsed configuration before it replaces your current backtest setup.
+            </DialogDescription>
+          </DialogHeader>
+          {sharedPreview && (
+            <div className="space-y-3">
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] font-mono">
+                {([
+                  ['window', `${new Date(sharedPreview.config.startTime).toLocaleString()} → ${new Date(sharedPreview.config.endTime).toLocaleString()}`],
+                  ['tick interval', `${Math.round(sharedPreview.config.tickIntervalMs / 1000)}s`],
+                  ['resolved ticks', String(ticksFromWindow(sharedPreview.config))],
+                  ['markets / tick', String(sharedPreview.config.marketsPerTick)],
+                  ['fee / slippage', `${sharedPreview.config.feeBps} / ${sharedPreview.config.slippageBps} bps`],
+                  ['seed', String(sharedPreview.config.seed)],
+                  ['strategies', Object.entries(sharedPreview.config.strategies).filter(([, v]) => v).map(([k]) => k).join(', ') || 'none'],
+                  ['risk overrides', Object.keys(sharedPreview.config.riskOverrides ?? {}).length
+                    ? Object.entries(sharedPreview.config.riskOverrides).map(([k, v]) => `${k}=${v}`).join(', ')
+                    : 'uses saved limits'],
+                ] as [string, string][]).map(([k, v]) => (
+                  <React.Fragment key={k}>
+                    <dt className="text-[10px] uppercase tracking-widest text-muted-foreground">{k}</dt>
+                    <dd className="truncate" title={v}>{v}</dd>
+                  </React.Fragment>
+                ))}
+              </dl>
+              <div className="rounded-md border border-border/60 p-2 space-y-1">
+                <p className="flex items-center gap-2 text-[11px] font-semibold">
+                  {sharedValidation && sharedValidation.ok
+                    ? <><ShieldCheck className="h-3 w-3 text-primary" aria-hidden />Compatible with your current limits</>
+                    : <><AlertTriangle className="h-3 w-3 text-destructive" aria-hidden />Compatibility issues</>}
+                </p>
+                {sharedValidation?.issues.length === 0 ? (
+                  <p className="text-[11px] text-muted-foreground">No conflicts with your saved risk limits or drawdown guard.</p>
+                ) : sharedValidation?.issues.map((iss, i) => (
+                  <p key={`${iss.field}-${i}`} className="flex items-start gap-2 text-[11px] font-mono">
+                    <Badge variant={iss.level === 'error' ? 'destructive' : 'outline'} className="mt-0.5 shrink-0 text-[9px]">{iss.level}</Badge>
+                    <span className="text-muted-foreground"><span className="text-foreground">{iss.field}</span> — {iss.message}</span>
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button size="sm" variant="ghost" className="h-8 text-xs"
+              aria-label="Discard shared scenario"
+              onClick={() => { setSharedPreview(null); clearShareParam(); toast.message('Shared scenario discarded'); }}>Discard</Button>
+            <Button size="sm" className="h-8 text-xs"
+              aria-label="Apply shared scenario"
+              onClick={() => {
+                if (!sharedPreview) return;
+                setBtConfig(sharedPreview.config);
+                setActiveBtPreset(sharedPreview.name);
+                setIgnoreWarnings(false);
+                toast.success(`Shared scenario "${sharedPreview.name}" applied`);
+                setSharedPreview(null);
+                clearShareParam();
+              }}>Apply scenario</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Tabs>
   );
 };
