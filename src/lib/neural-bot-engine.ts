@@ -13,6 +13,7 @@ import { PolySwarmIntegrator, buildDefaultSwarm, type MarketDescription, type Sw
 import { getArbLimits, checkArbLimits } from './arb-risk-config';
 import { recordArbAudit } from './arb-audit';
 import { getDrawdownGuard, setDrawdownGuard } from './drawdown-guard';
+import { nonceDefender } from './nonce-race-defender';
 import { recordDrawdownIncident } from './drawdown-incidents';
 
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Sliders, Brain, Shield, History, Layers, ChevronDown, Cpu, Menu,
+  Sliders, Brain, Shield, History, Layers, ChevronDown, Cpu, Menu, ShieldCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,6 +25,7 @@ import BacktestPanel from './BacktestPanel';
 import SettingsAuditPanel from './SettingsAuditPanel';
 import RansPanel from './RansPanel';
 import ArbSwarmPanel from './ArbSwarmPanel';
+import DefensePanel from './DefensePanel';
 import type { ArbitrageSignal } from '@/lib/multi-market-arbitrage';
 import type { SwarmPrediction, LatencyArbEvent } from '@/lib/polyswarm-integrator';
 import type {
@@ -34,7 +35,7 @@ import type { RANSPlan, MarketRegime, RegimeWeights, RansThresholds } from '@/li
 import type { AlertItem } from '@/hooks/useAlertsCenter';
 import type { AlertRules } from '@/lib/alert-rules';
 
-type SheetKey = null | 'settings' | 'ml' | 'risk' | 'backtest' | 'rans' | 'arb';
+type SheetKey = null | 'settings' | 'ml' | 'risk' | 'backtest' | 'rans' | 'arb' | 'defense';
 const SHEET_STORAGE_KEY = 'app_last_sheet_v1';
 
 interface Props {
@@ -95,6 +96,7 @@ const NAV_ITEMS: { key: Exclude<SheetKey, null>; label: string; Icon: React.Comp
   { key: 'backtest', label: 'Backtest',       Icon: History },
   { key: 'rans',     label: 'RANS',           Icon: Cpu },
   { key: 'arb',      label: 'Arb & Swarm',    Icon: Layers },
+  { key: 'defense',  label: 'Defense',        Icon: ShieldCheck },
 ];
 
 const AppNavbar: React.FC<Props> = ({
@@ -112,7 +114,7 @@ const AppNavbar: React.FC<Props> = ({
   const [lastSheet, setLastSheet] = useState<SheetKey>(() => {
     try {
       const v = localStorage.getItem(SHEET_STORAGE_KEY);
-      if (v && ['settings','ml','risk','backtest','rans','arb'].includes(v)) return v as SheetKey;
+      if (v && ['settings','ml','risk','backtest','rans','arb','defense'].includes(v)) return v as SheetKey;
     } catch { /* noop */ }
     return null;
   });
