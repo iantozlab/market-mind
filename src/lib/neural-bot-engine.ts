@@ -13,6 +13,7 @@ import { PolySwarmIntegrator, buildDefaultSwarm, type MarketDescription, type Sw
 import { getArbLimits, checkArbLimits } from './arb-risk-config';
 import { recordArbAudit } from './arb-audit';
 import { getDrawdownGuard, setDrawdownGuard } from './drawdown-guard';
+import { nonceDefender } from './nonce-race-defender';
 import { recordDrawdownIncident } from './drawdown-incidents';
 
 
@@ -1581,6 +1582,15 @@ export class UnifiedNeuralBot {
               this.psychology.updateStrategyPerformance('anchor_reversion', Math.random() < 0.56);
             }
           }
+        }
+
+        // === MEV / NONCE-RACE DEFENSE SCAN ===
+        try {
+          const defTrades: Trade[] = [];
+          for (const arr of this.recentTrades.values()) defTrades.push(...arr);
+          nonceDefender.ingestTick(markets, defTrades);
+        } catch {
+          // defense scan must never kill the loop
         }
 
         // === MULTI-MARKET ARBITRAGE + POLYSWARM ===
