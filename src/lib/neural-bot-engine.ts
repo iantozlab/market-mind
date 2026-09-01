@@ -1583,6 +1583,15 @@ export class UnifiedNeuralBot {
           }
         }
 
+        // === MEV / NONCE-RACE DEFENSE SCAN ===
+        try {
+          const defTrades: Trade[] = [];
+          for (const arr of this.recentTrades.values()) defTrades.push(...arr);
+          nonceDefender.ingestTick(markets, defTrades);
+        } catch {
+          // defense scan must never kill the loop
+        }
+
         // === MULTI-MARKET ARBITRAGE + POLYSWARM ===
         try {
           await this.runArbitrageAndSwarm(markets);
