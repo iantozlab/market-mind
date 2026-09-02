@@ -71,7 +71,50 @@ export const DEFENSE_PARAMS = {
   PRICE_IMPACT_THRESHOLD: 0.005,
   BLACKLIST_REFRESH_HOURS: 6,
   NONCE_ROTATION_INTERVAL_MS: 3600000,
+  /** Same attack type seen N times inside the window triggers a self-healing patch. */
+  PATCH_TRIGGER_COUNT: 3,
+  PATCH_WINDOW_MS: 120000,
+  /** Optional Blocknative mempool config (key never hardcoded — resolved via /__config). */
 } as const;
+
+// ---------- Enhanced defender: opportunities, self-healing patches, events ----------
+export interface CounterOpportunity {
+  id: string;
+  attackType: AttackType;
+  attackerAddress?: string;
+  marketIds: string[];
+  expectedProfit: number;
+  confidence: number;
+  timestamp: number;
+}
+
+export type PatchType = 'EXTEND_HEDGE_DELAY' | 'TIGHTEN_SPOOF_CUTOFF' | 'RAISE_GAS_THRESHOLD' | 'SHRINK_ORDER_CAP';
+
+export interface SelfHealingPatch {
+  id: string;
+  patchType: PatchType;
+  vulnerability: AttackType;
+  appliedAt: number;
+  detail: string;
+}
+
+export interface DefenderConfig {
+  polygonRpcUrl?: string;
+  /** Optional; when absent the defender runs in passive mempool mode. */
+  blocknativeApiKey?: string;
+}
+
+export interface TradeExecutionDecision {
+  shouldExecute: boolean;
+  waitMs: number;
+  reason?: string;
+  requiresManualVerification: boolean;
+}
+
+interface DefenderEventMap {
+  opportunity_ready: CounterOpportunity;
+  patch_applied: SelfHealingPatch;
+}
 
 type DefenseEvent =
   | { kind: 'attack'; data: AttackDetection }
@@ -82,7 +125,7 @@ type DefenseEvent =
 export interface DefenseLogEntry {
   id: string;
   ts: number;
-  kind: DefenseEvent['kind'];
+  kind: DefenseEvent['kind'] | 'opportunity' | 'patch';
   severity: 'info' | 'warning' | 'critical';
   title: string;
   detail: string;
@@ -101,8 +144,14 @@ const rid = () => {
 interface CancelRec { timestamp: number; marketId: string; orderId: string; fromAddress: string }
 interface OrderRec { timestamp: number; marketId: string; amount: number; price: number; fromAddress: string }
 
-class NonceRaceDefender {
+class EnhancedNonceRaceDefender {
   private listeners = new Set<() => void>();
+  private eventHandlers: { [K in keyof DefenderEventMap]: Set<(payload: DefenderEventMap[K]) => void> } = {
+    opportunity_ready: new Set(),
+    patch_applied: new Set(),
+  };
+
+  private config: DefenderConfig;
 
   private cancellations: CancelRec[] = [];
   private orders: OrderRec[] = [];
@@ -111,6 +160,9 @@ class NonceRaceDefender {
 
   private attacks: AttackDetection[] = [];
   private manipulations: ManipulationSignal[] = [];
+  private opportunities: CounterOpportunity[] = [];
+  private patches: SelfHealingPatch[] = [];
+  private recentAttackTypes: { type: AttackType; ts: number }[] = [];
   private log: DefenseLogEntry[] = [];
 
   private active = true;
@@ -127,12 +179,32 @@ class NonceRaceDefender {
   private ordersBlocked = 0;
   private ticksProcessed = 0;
 
+  // Self-healing runtime adjustments (start at DEFENSE_PARAMS defaults)
+  private rtHedgeDelayMs = DEFENSE_PARAMS.HEDGE_DELAY_MS;
+  private rtSpoofCutoff = 0.7;
+  private rtOrderCapRatio = 0.3;
+
+  constructor(config: DefenderConfig = {}) {
+    this.config = config;
+    // Passive mempool mode when no Blocknative key is available.
+    this.privateMempoolActive = !config.blocknativeApiKey ? this.privateMempoolActive : true;
+  }
+
+  // ---------- typed events ----------
+  on<K extends keyof DefenderEventMap>(event: K, fn: (payload: DefenderEventMap[K]) => void): () => void {
+    this.eventHandlers[event].add(fn);
+    return () => { this.eventHandlers[event].delete(fn); };
+  }
+  private emitEvent<K extends keyof DefenderEventMap>(event: K, payload: DefenderEventMap[K]) {
+    this.eventHandlers[event].forEach(fn => { try { fn(payload); } catch { /* noop */ } });
+  }
+
   // ---------- subscription ----------
   subscribe(fn: () => void) { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; }
   private notify() { this.listeners.forEach(l => { try { l(); } catch { /* noop */ } }); }
 
   // ---------- public state ----------
-  getStatus(): DefenseStatus {
+  getStatus(): DefenseStatus & { patchesApplied: number; mempoolMode: 'private' | 'passive' } {
     return {
       defenseActive: this.active,
       defenseMode: this.mode,
@@ -145,10 +217,14 @@ class NonceRaceDefender {
       ordersScreened: this.ordersScreened,
       ordersBlocked: this.ordersBlocked,
       ticksProcessed: this.ticksProcessed,
+      patchesApplied: this.patches.length,
+      mempoolMode: this.config.blocknativeApiKey ? 'private' : 'passive',
     };
   }
   getAttacks() { return this.attacks; }
   getManipulations() { return this.manipulations; }
+  getOpportunities() { return this.opportunities; }
+  getPatches() { return this.patches; }
   getLog() { return this.log; }
   getBlacklist() { return Array.from(this.blacklist); }
   setDefenseActive(on: boolean) { this.active = on; this.mode = on ? 'ACTIVE' : 'PASSIVE'; this.notify(); }
@@ -156,7 +232,9 @@ class NonceRaceDefender {
   clearBlacklist() { this.blacklist.clear(); this.notify(); }
   reset() {
     this.attacks = []; this.manipulations = []; this.log = [];
+    this.opportunities = []; this.patches = []; this.recentAttackTypes = [];
     this.counterExploitProfit = 0; this.ordersBlocked = 0; this.ordersScreened = 0;
+    this.rtHedgeDelayMs = DEFENSE_PARAMS.HEDGE_DELAY_MS; this.rtSpoofCutoff = 0.7; this.rtOrderCapRatio = 0.3;
     this.notify();
   }
 
@@ -434,4 +512,5 @@ class NonceRaceDefender {
   }
 }
 
-export const nonceDefender = new NonceRaceDefender();
+export { EnhancedNonceRaceDefender };
+export const nonceDefender = new EnhancedNonceRaceDefender();
