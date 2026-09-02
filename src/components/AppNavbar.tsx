@@ -409,6 +409,20 @@ const AppNavbar: React.FC<Props> = ({
           </div>
         </SheetContent>
       </Sheet>
+
+      <Sheet open={sheet === 'defense'} onOpenChange={(o) => !o && close()}>
+        <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="font-display tracking-wide">Defense — Nonce Race &amp; MEV Shield</SheetTitle>
+            <SheetDescription className="text-xs">
+              Attack detection, ghost-fill screening, manipulation alerts, blacklist and counter-exploit P&amp;L.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="mt-4">
+            <DefensePanel />
+          </div>
+        </SheetContent>
+      </Sheet>
     </>
   );
 };

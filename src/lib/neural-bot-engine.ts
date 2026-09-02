@@ -14,6 +14,8 @@ import { getArbLimits, checkArbLimits } from './arb-risk-config';
 import { recordArbAudit } from './arb-audit';
 import { getDrawdownGuard, setDrawdownGuard } from './drawdown-guard';
 import { nonceDefender } from './nonce-race-defender';
+
+const DEFENSE_BOT_ADDRESS = '0xbot0000000000000000000000000000000000bot';
 import { recordDrawdownIncident } from './drawdown-incidents';
 
 
@@ -945,6 +947,23 @@ export class UnifiedNeuralBot {
           });
         }
         if (executedCount >= limits.maxExecutionsPerTick) break;
+        continue;
+      }
+      // Pre-trade MEV / nonce-race gate
+      const refLegPrice = signal.legs.reduce((s, l: { price?: number }) => s + (l.price ?? 0), 0) / Math.max(1, signal.legs.length);
+      const gate = nonceDefender.validateOrder(
+        { marketId: signal.legs[0]?.marketId ?? signal.label, amount: signal.requiredCapital, price: refLegPrice || 1 },
+        DEFENSE_BOT_ADDRESS,
+        this.getRANSCapital(),
+      );
+      if (!gate.isValid) {
+        recordArbAudit({
+          source: 'multi_market_arb', action: 'blocked', mode, label: signal.label,
+          legs: signal.legs.length, profit: signal.guaranteedProfit, capital: signal.requiredCapital,
+          confidence: signal.confidence, reason: `defense: ${gate.reason}`,
+          detail: { type: signal.type, tick: this.tickCount, strategy: 'nonce_race_defender', gate },
+        });
+        this.addLog(`🛡 DEFENSE BLOCKED ARB: ${signal.label} — ${gate.reason}`, 'warning');
         continue;
       }
       const ok = await this.arbitrageEngine.executeArbitrage(signal, this.getRANSCapital());
