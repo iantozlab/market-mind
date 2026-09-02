@@ -512,4 +512,5 @@ class EnhancedNonceRaceDefender {
   }
 }
 
-export const nonceDefender = new NonceRaceDefender();
+export { EnhancedNonceRaceDefender };
+export const nonceDefender = new EnhancedNonceRaceDefender();
