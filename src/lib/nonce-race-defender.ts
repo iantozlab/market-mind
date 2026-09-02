@@ -71,7 +71,50 @@ export const DEFENSE_PARAMS = {
   PRICE_IMPACT_THRESHOLD: 0.005,
   BLACKLIST_REFRESH_HOURS: 6,
   NONCE_ROTATION_INTERVAL_MS: 3600000,
+  /** Same attack type seen N times inside the window triggers a self-healing patch. */
+  PATCH_TRIGGER_COUNT: 3,
+  PATCH_WINDOW_MS: 120000,
+  /** Optional Blocknative mempool config (key never hardcoded — resolved via /__config). */
 } as const;
+
+// ---------- Enhanced defender: opportunities, self-healing patches, events ----------
+export interface CounterOpportunity {
+  id: string;
+  attackType: AttackType;
+  attackerAddress?: string;
+  marketIds: string[];
+  expectedProfit: number;
+  confidence: number;
+  timestamp: number;
+}
+
+export type PatchType = 'EXTEND_HEDGE_DELAY' | 'TIGHTEN_SPOOF_CUTOFF' | 'RAISE_GAS_THRESHOLD' | 'SHRINK_ORDER_CAP';
+
+export interface SelfHealingPatch {
+  id: string;
+  patchType: PatchType;
+  vulnerability: AttackType;
+  appliedAt: number;
+  detail: string;
+}
+
+export interface DefenderConfig {
+  polygonRpcUrl?: string;
+  /** Optional; when absent the defender runs in passive mempool mode. */
+  blocknativeApiKey?: string;
+}
+
+export interface TradeExecutionDecision {
+  shouldExecute: boolean;
+  waitMs: number;
+  reason?: string;
+  requiresManualVerification: boolean;
+}
+
+interface DefenderEventMap {
+  opportunity_ready: CounterOpportunity;
+  patch_applied: SelfHealingPatch;
+}
 
 type DefenseEvent =
   | { kind: 'attack'; data: AttackDetection }
@@ -82,7 +125,7 @@ type DefenseEvent =
 export interface DefenseLogEntry {
   id: string;
   ts: number;
-  kind: DefenseEvent['kind'];
+  kind: DefenseEvent['kind'] | 'opportunity' | 'patch';
   severity: 'info' | 'warning' | 'critical';
   title: string;
   detail: string;
