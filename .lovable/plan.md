@@ -1,66 +1,40 @@
+# Plan: Enhanced Nonce Race Defender Integration
+
 ## Goal
-Major dashboard restructure with diagnostics, navbar, Supabase audit persistence, theming, and strategy verification fixes.
+Extend the existing browser-safe `nonce-race-defender.ts` into an **Enhanced Nonce Race Defender** matching the user's architecture: an event-driven defender with counter-exploit opportunities, self-healing patches, and an async `validateAndExecuteTrade` gate — fully wired into `NeuralBotEngine`.
+
+## Current state (verified)
+- `src/lib/nonce-race-defender.ts` already exists with tick ingestion, attack detection (NONCE_RACE, GHOST_FILL, CANCEL_FLOOD, MULTI_MARKET, BTC_MANIPULATION), a synchronous `validateOrder` gate, blacklist, counter-exploit profit accumulator, CSV export, and a singleton export.
+- `NeuralBotEngine` calls `nonceDefender.ingestTick(...)` every tick and gates arbitrage/swarm orders via `validateOrder`, recording blocked rows in `arb_execution_audit`.
+- `DefensePanel.tsx` renders status, attacks, manipulation signals, and the event log, reachable from the navbar.
 
 ## Changes
 
-### 1. New Navbar (`src/components/AppNavbar.tsx`)
-- Top bar with: Dashboard logo/title, nav items (Trade Settings, ML Insights, Risk Management, Strategy Backtest, Active Strategies), alerts bell icon (with unread count), theme toggle (dark/light).
-- Each nav item opens a slide-out `Sheet` containing the corresponding panel (keeps homepage clean).
-- "Active Strategies" opens a dropdown listing all strategies with active/inactive badges.
+### 1. `src/lib/nonce-race-defender.ts` — event system + new APIs
+- Add a typed event emitter (`on`/`off`, browser-safe listener map — no node `events`) with events:
+  - `opportunity_ready` → `CounterOpportunity { id, attackType, marketId(s), expectedProfit, confidence, attackerAddress }`
+  - `patch_applied` → `SelfHealingPatch { id, patchType, vulnerability, appliedAt, detail }`
+- On confirmed attacks (existing `handleAttack`), emit `opportunity_ready` for NONCE_RACE/GHOST_FILL/MULTI_MARKET instead of silently accumulating counter profit; keep the accumulator as fallback.
+- Add **self-healing patch engine**: recurring attack types (same type ≥3 in a window) auto-generate a patch (e.g. raise validation threshold, extend HEDGE_DELAY, tighten spoof cutoff) and emit `patch_applied`; patches adjust `DEFENSE_PARAMS`-derived runtime values and appear in the defense log.
+- Add async `validateAndExecuteTrade(order, counterpartyAddress, capital): Promise<{ shouldExecute, waitMs, reason?, opportunity? }>` that wraps `validateOrder`, applies the suggested wait, and returns a normalized execution decision. `validateOrder` stays for sync callers.
+- Optional config: constructor accepts `{ polygonRpcUrl?, blocknativeApiKey? }`; Blocknative key is read at runtime from the `/__config` proxy (per credential rules) — never hardcoded. When absent, defender runs in passive mempool mode (current heuristics).
 
-### 2. Theme Toggle
-- Add `next-themes` style toggle using existing CSS vars; add `light` mode tokens to `index.css`.
-- Persist in localStorage; toggle via Sun/Moon icon in navbar.
+### 2. `src/lib/neural-bot-engine.ts` — wire the new APIs
+- Subscribe in the engine setup: on `opportunity_ready`, log to the terminal (`Counter-Exploit Opportunity: $X`) and route through `runArbitrageAndSwarm`'s audit path (`source: 'counter_exploit'`, action `signal`).
+- On `patch_applied`, emit a `strategy` log entry and apply patch adjustments to engine trade settings where relevant (e.g. temporary hedge delay on future orders).
+- Switch the arbitrage pre-trade gate from `validateOrder` to `validateAndExecuteTrade`, honoring `waitMs` before executing instead of dropping the signal outright.
+- Keep all defender calls try/catch-isolated so defense errors never break the trading loop.
 
-### 3. Alerts Center
-- New `useAlertsCenter` hook collecting deprecation alerts, risk threshold breaches, cooldown events.
-- Bell icon with badge count; popover lists recent alerts.
+### 3. `src/components/DefensePanel.tsx` — surface the new features
+- New "Counter-Exploit Opportunities" section: list of emitted opportunities with expected profit, confidence, attack type.
+- New "Self-Healing Patches" section: patch history with type, vulnerability, applied time.
+- Status row gains mempool mode (private/passive) and patch count; existing CSV export includes opportunities and patches.
 
-### 4. Homepage cleanup (`src/pages/Index.tsx`)
-- Remove inline TradeSettings, MLInsights, Backtest, full RiskDashboard, SettingsAudit panels from grid.
-- Replace Risk panel with compact `RiskAlertsPanel` showing only threshold breaches & cooldown status (drawdown hit, daily loss limit, position cap, cooldown timer).
-- Keep: MarketList, PsychologyHealthPanel, Diagnostics panel (new), TerminalLog, NeuralStatusCard, MetricCards.
+## Technical notes
+- No node built-ins; emitter implemented with a `Set` of handlers per event key.
+- No real chain RPC calls in the browser sandbox — `polygonRpcUrl`/`blocknativeApiKey` are accepted and plumbed for future proxy use, with graceful fallback.
+- Existing defense panel, audit logging, and gating behavior remain backward compatible.
 
-### 5. Diagnostics Panel (`src/components/PsychologyDiagnosticsPanel.tsx`)
-- Engine emits a `signalRouted` event with `{signalType, healthKey, timestamp, metrics}`.
-- Panel shows live table: signal type → health key updated, count, last seen, trigger metrics snippet.
-- Confirms mapping fix (temporal_entry → temporal_decay etc.).
-
-### 6. "Why Active" Explanations
-- Engine tracks `lastTrigger` per strategy: `{reason, metrics, timestamp}`.
-- Surface in `StrategyDetailDrawer` and as tooltip in `PsychologyHealthPanel` rows.
-
-### 7. Supabase Audit Log
-- New table `trade_settings_audit` (actor, changes JSONB, created_at) with public RLS for read/insert.
-- Update `settings-audit.ts` to write to Supabase + keep localStorage mirror.
-- `SettingsAuditPanel` queries with date range filter (last 24h, 7d, 30d, all).
-
-### 8. Backtest metadata enrichment
-- Capture full snapshot of live `TradeSettings` at run time; include all fields in PDF summary block and CSV column suffix.
-
-### 9. Cooldown / risk threshold engine
-- Engine: when drawdown ≥ maxDrawdown OR dailyPnL ≤ -maxDailyLoss, set `cooldownUntil` (e.g., +15 min) and pause new entries.
-- Emit alerts; expose `getCooldownStatus()`.
-
-### 10. Strategy activation guarantee
-- Audit `neural-bot-engine.ts` tick loop: ensure all strategies (whale_wreckage, convergence_fade, governance_attack, temporal_decay, bot_exhaustion, liquidity_provision, zk_exploit, whale_inactivity, pre_event, anchor_reversion) execute every tick when bot running.
-- Add health key initialization at start so all strategies appear (not just active ones).
-- Log activation in diagnostics panel.
-
-## Database Migration
-```sql
-CREATE TABLE public.trade_settings_audit (
-  id uuid PK default gen_random_uuid(),
-  actor text NOT NULL,
-  changes jsonb NOT NULL,
-  created_at timestamptz NOT NULL default now()
-);
-ALTER TABLE ... ENABLE RLS;
--- public read/insert/delete policies
-CREATE INDEX ON trade_settings_audit (created_at DESC);
-```
-
-## Files
-- **New**: `AppNavbar.tsx`, `ThemeToggle.tsx`, `AlertsBell.tsx`, `PsychologyDiagnosticsPanel.tsx`, `RiskAlertsPanel.tsx`, `ActiveStrategiesMenu.tsx`, `hooks/useTheme.ts`, `hooks/useAlertsCenter.ts`
-- **Edit**: `Index.tsx`, `neural-bot-engine.ts`, `market-psychology-engine.ts`, `settings-audit.ts`, `SettingsAuditPanel.tsx`, `StrategyDetailDrawer.tsx`, `PsychologyHealthPanel.tsx`, `BacktestPanel.tsx`, `index.css`, `App.tsx`
-- **Migration**: `trade_settings_audit` table
+## Verification
+- Typecheck/build clean.
+- Drive the preview: confirm defense panel shows opportunities/patches, engine log prints counter-exploit and patch lines, blocked orders still appear in the audit log with reasons.
