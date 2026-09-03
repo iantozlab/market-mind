@@ -127,12 +127,61 @@ const DefensePanel: React.FC = () => {
       </Card>
 
       <Tabs defaultValue="attacks">
-        <TabsList className="h-7">
+        <TabsList className="h-auto flex-wrap">
           <TabsTrigger value="attacks" className="text-[11px] h-6">Attacks</TabsTrigger>
           <TabsTrigger value="manip" className="text-[11px] h-6">Manipulation</TabsTrigger>
+          <TabsTrigger value="opps" className="text-[11px] h-6">Opportunities</TabsTrigger>
+          <TabsTrigger value="patches" className="text-[11px] h-6">Patches</TabsTrigger>
           <TabsTrigger value="log" className="text-[11px] h-6">Event log</TabsTrigger>
           <TabsTrigger value="blacklist" className="text-[11px] h-6">Blacklist</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="opps">
+          <ScrollArea className="h-72 rounded border border-border">
+            {opportunities.length === 0 ? (
+              <p className="p-6 text-center text-xs text-muted-foreground">No counter-exploit opportunities yet.</p>
+            ) : (
+              <ul className="divide-y divide-border/40">
+                {opportunities.map(o => (
+                  <li key={o.id} className="p-2.5 text-xs flex items-center justify-between gap-2">
+                    <div>
+                      <div className="font-display tracking-wide text-primary">{o.attackType.replace('_', ' ')}</div>
+                      <div className="text-[11px] text-muted-foreground font-mono break-all">
+                        {o.attackerAddress?.slice(0, 14) ?? 'unknown'}… · {o.marketIds.length} market(s)
+                      </div>
+                    </div>
+                    <div className="text-right font-mono text-[10px] text-muted-foreground">
+                      <div className="text-primary text-sm">${o.expectedProfit.toFixed(2)}</div>
+                      <div>conf {(o.confidence * 100).toFixed(0)}% · {ago(o.timestamp)}</div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </ScrollArea>
+        </TabsContent>
+
+        <TabsContent value="patches">
+          <ScrollArea className="h-72 rounded border border-border">
+            {patches.length === 0 ? (
+              <p className="p-6 text-center text-xs text-muted-foreground">No self-healing patches applied.</p>
+            ) : (
+              <ul className="divide-y divide-border/40">
+                {patches.map(p => (
+                  <li key={p.id} className="p-2.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-display tracking-wide text-info">{p.patchType.replace(/_/g, ' ')}</span>
+                      <span className="font-mono text-[10px] text-muted-foreground">{ago(p.appliedAt)}</span>
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      vuln {p.vulnerability.replace('_', ' ')} · {p.detail}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </ScrollArea>
+        </TabsContent>
 
         <TabsContent value="attacks">
           <ScrollArea className="h-72 rounded border border-border">
