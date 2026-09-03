@@ -551,15 +551,43 @@ class EnhancedNonceRaceDefender {
     if (!this.active) return { isValid: true, suggestedWaitMs: 0, requiresManualVerification: false };
     if (this.blacklist.has(fromAddress)) return reject('Counterparty is blacklisted attacker', 60000, true);
     if (this.detectGhostFill(fromAddress).detected) return reject('Ghost Fill pattern detected', 30000, true);
-    if (order.amount * order.price > botCapital * 0.3) return reject('Order size exceeds safe threshold (potential spoof)', 5000, false);
-    if (this.spoofScore(fromAddress) > 0.7) return reject('High spoof probability', 30000, true);
+    if (order.amount * order.price > botCapital * this.rtOrderCapRatio) {
+      return reject(`Order size exceeds safe threshold (${(this.rtOrderCapRatio * 100).toFixed(0)}% cap, potential spoof)`, 5000, false);
+    }
+    if (this.spoofScore(fromAddress) > this.rtSpoofCutoff) return reject('High spoof probability', 30000, true);
     if (order.market && this.detectManipulation(order.market, order.priceHistory ?? []).detected) {
       return reject('Market manipulation detected', 60000, true);
     }
     return {
       isValid: true,
-      suggestedWaitMs: this.mode === 'AGGRESSIVE' ? DEFENSE_PARAMS.HEDGE_DELAY_MS : 0,
+      suggestedWaitMs: this.mode === 'AGGRESSIVE' ? this.rtHedgeDelayMs : 0,
       requiresManualVerification: false,
+    };
+  }
+
+  /**
+   * Async execution gate: wraps validateOrder and returns a normalized decision,
+   * attaching the newest matching counter-exploit opportunity when one exists.
+   */
+  async validateAndExecuteTrade(
+    order: { marketId: string; amount: number; price?: number; nonce?: number; market?: Market; priceHistory?: number[] },
+    counterpartyAddress: string,
+    capital: number,
+  ): Promise<TradeExecutionDecision & { opportunity?: CounterOpportunity }> {
+    const v = this.validateOrder(
+      { marketId: order.marketId, amount: order.amount, price: order.price ?? 1, market: order.market, priceHistory: order.priceHistory },
+      counterpartyAddress || 'unknown',
+      capital,
+    );
+    const opportunity = this.opportunities.find(
+      o => o.marketIds.includes(order.marketId) && Date.now() - o.timestamp < 60000,
+    );
+    return {
+      shouldExecute: v.isValid,
+      waitMs: v.suggestedWaitMs ?? 0,
+      reason: v.reason,
+      requiresManualVerification: v.requiresManualVerification ?? false,
+      opportunity,
     };
   }
 
@@ -576,7 +604,13 @@ class EnhancedNonceRaceDefender {
     const head = 'timestamp,kind,severity,title,detail';
     const rows = this.log.map(e =>
       [new Date(e.ts).toISOString(), e.kind, e.severity, `"${e.title.replace(/"/g, '""')}"`, `"${e.detail.replace(/"/g, '""')}"`].join(','));
-    return [head, ...rows].join('\n');
+    const oppHead = '\n\nopportunity_time,attack_type,expected_profit,confidence,markets,attacker';
+    const oppRows = this.opportunities.map(o =>
+      [new Date(o.timestamp).toISOString(), o.attackType, o.expectedProfit.toFixed(2), o.confidence.toFixed(3), o.marketIds.length, o.attackerAddress ?? ''].join(','));
+    const patchHead = '\n\npatch_time,patch_type,vulnerability,detail';
+    const patchRows = this.patches.map(p =>
+      [new Date(p.appliedAt).toISOString(), p.patchType, p.vulnerability, `"${p.detail.replace(/"/g, '""')}"`].join(','));
+    return [head, ...rows].join('\n') + [oppHead, ...oppRows].join('\n') + [patchHead, ...patchRows].join('\n');
   }
 }
 
