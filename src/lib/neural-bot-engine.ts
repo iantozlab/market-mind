@@ -1851,6 +1851,13 @@ export class UnifiedNeuralBot {
     this.onUpdate?.();
   }
 
+  /** Tear down defender event subscriptions (call when the engine instance is discarded). */
+  dispose() {
+    this.stop();
+    this.defenseDisposers.forEach(off => { try { off(); } catch { /* ignore */ } });
+    this.defenseDisposers = [];
+  }
+
   getLogs(): LogEntry[] { return this.logEntries; }
   getMetrics(): BotMetrics { return { ...this.metrics }; }
   getIsRunning(): boolean { return this.isRunning; }
