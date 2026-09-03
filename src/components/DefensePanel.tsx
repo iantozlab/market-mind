@@ -41,6 +41,8 @@ const DefensePanel: React.FC = () => {
   const manipulations = nonceDefender.getManipulations();
   const log = nonceDefender.getLog();
   const blacklist = nonceDefender.getBlacklist();
+  const opportunities = nonceDefender.getOpportunities();
+  const patches = nonceDefender.getPatches();
 
   const exportCsv = () => {
     const blob = new Blob([nonceDefender.toCsv()], { type: 'text/csv;charset=utf-8' });
