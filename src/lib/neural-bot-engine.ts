@@ -951,20 +951,24 @@ export class UnifiedNeuralBot {
       }
       // Pre-trade MEV / nonce-race gate
       const refLegPrice = signal.legs.reduce((s, l: { price?: number }) => s + (l.price ?? 0), 0) / Math.max(1, signal.legs.length);
-      const gate = nonceDefender.validateOrder(
-        { marketId: signal.legs[0]?.marketId ?? signal.label, amount: signal.requiredCapital, price: refLegPrice || 1 },
+      const gate = await nonceDefender.validateAndExecuteTrade(
+        { marketId: signal.legs[0]?.marketId ?? signal.label, amount: signal.requiredCapital, price: refLegPrice || 1, nonce: Date.now() },
         DEFENSE_BOT_ADDRESS,
         this.getRANSCapital(),
       );
-      if (!gate.isValid) {
+      if (!gate.shouldExecute) {
         recordArbAudit({
           source: 'multi_market_arb', action: 'blocked', mode, label: signal.label,
           legs: signal.legs.length, profit: signal.guaranteedProfit, capital: signal.requiredCapital,
           confidence: signal.confidence, reason: `defense: ${gate.reason}`,
           detail: { type: signal.type, tick: this.tickCount, strategy: 'nonce_race_defender', gate },
         });
-        this.addLog(`🛡 DEFENSE BLOCKED ARB: ${signal.label} — ${gate.reason}`, 'warning');
+        this.addLog(`🛡 DEFENSE BLOCKED ARB: ${signal.label} — ${gate.reason} (wait ${gate.waitMs}ms)`, 'warning');
         continue;
+      }
+      if (gate.waitMs > 0) {
+        // Defensive hedge delay before executing (capped so the tick loop stays responsive).
+        await new Promise(r => setTimeout(r, Math.min(gate.waitMs, 2000)));
       }
       const ok = await this.arbitrageEngine.executeArbitrage(signal, this.getRANSCapital());
       if (ok) {
