@@ -828,7 +828,39 @@ export class UnifiedNeuralBot {
       this.addLog(`⚠ STRATEGY DEPRECATED: ${strategyName} (WR ${(winRate * 100).toFixed(1)}%)`, 'warning');
       this.emitAlert({ severity: 'warning', strategy: strategyName, title: `Strategy deprecated: ${strategyName}`, detail: `Win rate ${(winRate * 100).toFixed(1)}% below threshold` });
     });
+
+    // --- Defense: counter-exploit opportunities + self-healing patches ---
+    try {
+      this.defenseDisposers.push(
+        nonceDefender.on('opportunity_ready', (opp) => {
+          try {
+            this.addLog(
+              `🎯 COUNTER-EXPLOIT OPPORTUNITY: $${opp.expectedProfit.toFixed(2)} · ${opp.attackType.replace('_', ' ')} · conf ${(opp.confidence * 100).toFixed(0)}%`,
+              'anomaly',
+            );
+            recordArbAudit({
+              source: 'counter_exploit', action: 'signal', mode: this.isPaperMode ? 'paper' : 'live',
+              label: `${opp.attackType} counter-exploit`, legs: Math.max(1, opp.marketIds.length),
+              profit: opp.expectedProfit, capital: this.getRANSCapital(), confidence: opp.confidence,
+              detail: { strategy: 'nonce_race_defender', attacker: opp.attackerAddress, markets: opp.marketIds, tick: this.tickCount },
+            });
+          } catch { /* defense must never break the loop */ }
+        }),
+        nonceDefender.on('patch_applied', (patch) => {
+          try {
+            this.addLog(`🧬 SELF-HEALING PATCH: ${patch.patchType.replace(/_/g, ' ').toLowerCase()} — ${patch.detail}`, 'strategy');
+            this.emitAlert({
+              severity: 'warning', strategy: 'nonce_race_defender',
+              title: `Defense patch applied: ${patch.patchType.replace(/_/g, ' ').toLowerCase()}`,
+              detail: patch.detail,
+            });
+          } catch { /* ignore */ }
+        }),
+      );
+    } catch { /* ignore */ }
   }
+
+  private defenseDisposers: Array<() => void> = [];
 
   // -------- Multi-market arbitrage + PolySwarm --------
   private logArbitrage(signal: ArbitrageSignal) {
