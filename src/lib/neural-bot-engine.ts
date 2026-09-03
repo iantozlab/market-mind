@@ -828,7 +828,39 @@ export class UnifiedNeuralBot {
       this.addLog(`⚠ STRATEGY DEPRECATED: ${strategyName} (WR ${(winRate * 100).toFixed(1)}%)`, 'warning');
       this.emitAlert({ severity: 'warning', strategy: strategyName, title: `Strategy deprecated: ${strategyName}`, detail: `Win rate ${(winRate * 100).toFixed(1)}% below threshold` });
     });
+
+    // --- Defense: counter-exploit opportunities + self-healing patches ---
+    try {
+      this.defenseDisposers.push(
+        nonceDefender.on('opportunity_ready', (opp) => {
+          try {
+            this.addLog(
+              `🎯 COUNTER-EXPLOIT OPPORTUNITY: $${opp.expectedProfit.toFixed(2)} · ${opp.attackType.replace('_', ' ')} · conf ${(opp.confidence * 100).toFixed(0)}%`,
+              'anomaly',
+            );
+            recordArbAudit({
+              source: 'counter_exploit', action: 'signal', mode: this.isPaperMode ? 'paper' : 'live',
+              label: `${opp.attackType} counter-exploit`, legs: Math.max(1, opp.marketIds.length),
+              profit: opp.expectedProfit, capital: this.getRANSCapital(), confidence: opp.confidence,
+              detail: { strategy: 'nonce_race_defender', attacker: opp.attackerAddress, markets: opp.marketIds, tick: this.tickCount },
+            });
+          } catch { /* defense must never break the loop */ }
+        }),
+        nonceDefender.on('patch_applied', (patch) => {
+          try {
+            this.addLog(`🧬 SELF-HEALING PATCH: ${patch.patchType.replace(/_/g, ' ').toLowerCase()} — ${patch.detail}`, 'strategy');
+            this.emitAlert({
+              severity: 'warning', strategy: 'nonce_race_defender',
+              title: `Defense patch applied: ${patch.patchType.replace(/_/g, ' ').toLowerCase()}`,
+              detail: patch.detail,
+            });
+          } catch { /* ignore */ }
+        }),
+      );
+    } catch { /* ignore */ }
   }
+
+  private defenseDisposers: Array<() => void> = [];
 
   // -------- Multi-market arbitrage + PolySwarm --------
   private logArbitrage(signal: ArbitrageSignal) {
@@ -951,20 +983,24 @@ export class UnifiedNeuralBot {
       }
       // Pre-trade MEV / nonce-race gate
       const refLegPrice = signal.legs.reduce((s, l: { price?: number }) => s + (l.price ?? 0), 0) / Math.max(1, signal.legs.length);
-      const gate = nonceDefender.validateOrder(
-        { marketId: signal.legs[0]?.marketId ?? signal.label, amount: signal.requiredCapital, price: refLegPrice || 1 },
+      const gate = await nonceDefender.validateAndExecuteTrade(
+        { marketId: signal.legs[0]?.marketId ?? signal.label, amount: signal.requiredCapital, price: refLegPrice || 1, nonce: Date.now() },
         DEFENSE_BOT_ADDRESS,
         this.getRANSCapital(),
       );
-      if (!gate.isValid) {
+      if (!gate.shouldExecute) {
         recordArbAudit({
           source: 'multi_market_arb', action: 'blocked', mode, label: signal.label,
           legs: signal.legs.length, profit: signal.guaranteedProfit, capital: signal.requiredCapital,
           confidence: signal.confidence, reason: `defense: ${gate.reason}`,
           detail: { type: signal.type, tick: this.tickCount, strategy: 'nonce_race_defender', gate },
         });
-        this.addLog(`🛡 DEFENSE BLOCKED ARB: ${signal.label} — ${gate.reason}`, 'warning');
+        this.addLog(`🛡 DEFENSE BLOCKED ARB: ${signal.label} — ${gate.reason} (wait ${gate.waitMs}ms)`, 'warning');
         continue;
+      }
+      if (gate.waitMs > 0) {
+        // Defensive hedge delay before executing (capped so the tick loop stays responsive).
+        await new Promise(r => setTimeout(r, Math.min(gate.waitMs, 2000)));
       }
       const ok = await this.arbitrageEngine.executeArbitrage(signal, this.getRANSCapital());
       if (ok) {
@@ -1813,6 +1849,13 @@ export class UnifiedNeuralBot {
     if (this.simInterval) clearInterval(this.simInterval);
     this.addLog('🛑 Neural Bot Stopped', 'warning');
     this.onUpdate?.();
+  }
+
+  /** Tear down defender event subscriptions (call when the engine instance is discarded). */
+  dispose() {
+    this.stop();
+    this.defenseDisposers.forEach(off => { try { off(); } catch { /* ignore */ } });
+    this.defenseDisposers = [];
   }
 
   getLogs(): LogEntry[] { return this.logEntries; }

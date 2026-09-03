@@ -180,7 +180,7 @@ class EnhancedNonceRaceDefender {
   private ticksProcessed = 0;
 
   // Self-healing runtime adjustments (start at DEFENSE_PARAMS defaults)
-  private rtHedgeDelayMs = DEFENSE_PARAMS.HEDGE_DELAY_MS;
+  private rtHedgeDelayMs: number = DEFENSE_PARAMS.HEDGE_DELAY_MS;
   private rtSpoofCutoff = 0.7;
   private rtOrderCapRatio = 0.3;
 
@@ -439,9 +439,32 @@ class EnhancedNonceRaceDefender {
 
     // Counter-exploit: pre-position at the spread the attacker intends to set
     if (['NONCE_RACE', 'GHOST_FILL', 'MULTI_MARKET'].includes(attack.attackType)) {
-      const markets = Math.max(1, attack.affectedMarkets?.length ?? 1);
-      this.counterExploitProfit += (0.58 - 0.42) * 100 * markets * attack.confidence;
+      const marketIds = attack.affectedMarkets ?? [];
+      const markets = Math.max(1, marketIds.length);
+      const expectedProfit = (0.58 - 0.42) * 100 * markets * attack.confidence;
+      this.counterExploitProfit += expectedProfit;
+
+      const opp: CounterOpportunity = {
+        id: rid(),
+        attackType: attack.attackType,
+        attackerAddress: attack.attackerAddress,
+        marketIds,
+        expectedProfit,
+        confidence: attack.confidence,
+        timestamp: Date.now(),
+      };
+      this.opportunities.unshift(opp);
+      if (this.opportunities.length > 50) this.opportunities.pop();
+      this.pushLog({
+        id: rid(), ts: opp.timestamp, kind: 'opportunity', severity: 'info',
+        title: `Counter-exploit opportunity: $${expectedProfit.toFixed(2)}`,
+        detail: `${attack.attackType.replace('_', ' ')} · conf ${(attack.confidence * 100).toFixed(0)}% · ${markets} market(s)`,
+      });
+      this.emitEvent('opportunity_ready', opp);
     }
+
+    // Self-healing: recurring attack types tighten runtime defense params
+    this.evaluateSelfHealing(attack.attackType);
 
     // Escalate then cool back down
     this.mode = 'AGGRESSIVE';
@@ -449,6 +472,51 @@ class EnhancedNonceRaceDefender {
     this.cooldownTimer = setTimeout(() => {
       if (this.active) { this.mode = 'ACTIVE'; this.notify(); }
     }, 30000);
+  }
+
+  private evaluateSelfHealing(type: AttackType): void {
+    const now = Date.now();
+    this.recentAttackTypes.push({ type, ts: now });
+    this.recentAttackTypes = this.recentAttackTypes.filter(r => now - r.ts <= DEFENSE_PARAMS.PATCH_WINDOW_MS);
+
+    const count = this.recentAttackTypes.filter(r => r.type === type).length;
+    if (count < DEFENSE_PARAMS.PATCH_TRIGGER_COUNT) return;
+    // one patch per vulnerability per window
+    if (this.patches.some(p => p.vulnerability === type && now - p.appliedAt <= DEFENSE_PARAMS.PATCH_WINDOW_MS)) return;
+
+    let patchType: PatchType;
+    let detail: string;
+    switch (type) {
+      case 'NONCE_RACE':
+        this.rtHedgeDelayMs = Math.min(15000, Math.round(this.rtHedgeDelayMs * 1.5) || 2000);
+        patchType = 'EXTEND_HEDGE_DELAY';
+        detail = `Hedge delay raised to ${this.rtHedgeDelayMs}ms after ${count} nonce races`;
+        break;
+      case 'CANCEL_FLOOD':
+        this.rtSpoofCutoff = Math.max(0.35, +(this.rtSpoofCutoff - 0.1).toFixed(2));
+        patchType = 'TIGHTEN_SPOOF_CUTOFF';
+        detail = `Spoof cutoff tightened to ${this.rtSpoofCutoff} after ${count} cancel floods`;
+        break;
+      case 'MULTI_MARKET':
+      case 'GHOST_FILL':
+        this.rtOrderCapRatio = Math.max(0.08, +(this.rtOrderCapRatio - 0.05).toFixed(2));
+        patchType = 'SHRINK_ORDER_CAP';
+        detail = `Order cap reduced to ${(this.rtOrderCapRatio * 100).toFixed(0)}% of capital after ${count} ${type.replace('_', ' ').toLowerCase()} events`;
+        break;
+      default:
+        patchType = 'RAISE_GAS_THRESHOLD';
+        detail = `Gas shadow threshold raised after ${count} ${type.replace('_', ' ').toLowerCase()} events`;
+    }
+
+    const patch: SelfHealingPatch = { id: rid(), patchType, vulnerability: type, appliedAt: now, detail };
+    this.patches.unshift(patch);
+    if (this.patches.length > 50) this.patches.pop();
+    this.pushLog({
+      id: rid(), ts: now, kind: 'patch', severity: 'warning',
+      title: `Self-healing patch: ${patchType.replace(/_/g, ' ').toLowerCase()}`,
+      detail,
+    });
+    this.emitEvent('patch_applied', patch);
   }
 
   private rotateKeyIfNeeded() {
@@ -483,15 +551,43 @@ class EnhancedNonceRaceDefender {
     if (!this.active) return { isValid: true, suggestedWaitMs: 0, requiresManualVerification: false };
     if (this.blacklist.has(fromAddress)) return reject('Counterparty is blacklisted attacker', 60000, true);
     if (this.detectGhostFill(fromAddress).detected) return reject('Ghost Fill pattern detected', 30000, true);
-    if (order.amount * order.price > botCapital * 0.3) return reject('Order size exceeds safe threshold (potential spoof)', 5000, false);
-    if (this.spoofScore(fromAddress) > 0.7) return reject('High spoof probability', 30000, true);
+    if (order.amount * order.price > botCapital * this.rtOrderCapRatio) {
+      return reject(`Order size exceeds safe threshold (${(this.rtOrderCapRatio * 100).toFixed(0)}% cap, potential spoof)`, 5000, false);
+    }
+    if (this.spoofScore(fromAddress) > this.rtSpoofCutoff) return reject('High spoof probability', 30000, true);
     if (order.market && this.detectManipulation(order.market, order.priceHistory ?? []).detected) {
       return reject('Market manipulation detected', 60000, true);
     }
     return {
       isValid: true,
-      suggestedWaitMs: this.mode === 'AGGRESSIVE' ? DEFENSE_PARAMS.HEDGE_DELAY_MS : 0,
+      suggestedWaitMs: this.mode === 'AGGRESSIVE' ? this.rtHedgeDelayMs : 0,
       requiresManualVerification: false,
+    };
+  }
+
+  /**
+   * Async execution gate: wraps validateOrder and returns a normalized decision,
+   * attaching the newest matching counter-exploit opportunity when one exists.
+   */
+  async validateAndExecuteTrade(
+    order: { marketId: string; amount: number; price?: number; nonce?: number; market?: Market; priceHistory?: number[] },
+    counterpartyAddress: string,
+    capital: number,
+  ): Promise<TradeExecutionDecision & { opportunity?: CounterOpportunity }> {
+    const v = this.validateOrder(
+      { marketId: order.marketId, amount: order.amount, price: order.price ?? 1, market: order.market, priceHistory: order.priceHistory },
+      counterpartyAddress || 'unknown',
+      capital,
+    );
+    const opportunity = this.opportunities.find(
+      o => o.marketIds.includes(order.marketId) && Date.now() - o.timestamp < 60000,
+    );
+    return {
+      shouldExecute: v.isValid,
+      waitMs: v.suggestedWaitMs ?? 0,
+      reason: v.reason,
+      requiresManualVerification: v.requiresManualVerification ?? false,
+      opportunity,
     };
   }
 
@@ -508,7 +604,13 @@ class EnhancedNonceRaceDefender {
     const head = 'timestamp,kind,severity,title,detail';
     const rows = this.log.map(e =>
       [new Date(e.ts).toISOString(), e.kind, e.severity, `"${e.title.replace(/"/g, '""')}"`, `"${e.detail.replace(/"/g, '""')}"`].join(','));
-    return [head, ...rows].join('\n');
+    const oppHead = '\n\nopportunity_time,attack_type,expected_profit,confidence,markets,attacker';
+    const oppRows = this.opportunities.map(o =>
+      [new Date(o.timestamp).toISOString(), o.attackType, o.expectedProfit.toFixed(2), o.confidence.toFixed(3), o.marketIds.length, o.attackerAddress ?? ''].join(','));
+    const patchHead = '\n\npatch_time,patch_type,vulnerability,detail';
+    const patchRows = this.patches.map(p =>
+      [new Date(p.appliedAt).toISOString(), p.patchType, p.vulnerability, `"${p.detail.replace(/"/g, '""')}"`].join(','));
+    return [head, ...rows].join('\n') + [oppHead, ...oppRows].join('\n') + [patchHead, ...patchRows].join('\n');
   }
 }
 
