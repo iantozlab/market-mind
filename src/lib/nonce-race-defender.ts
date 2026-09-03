@@ -180,7 +180,7 @@ class EnhancedNonceRaceDefender {
   private ticksProcessed = 0;
 
   // Self-healing runtime adjustments (start at DEFENSE_PARAMS defaults)
-  private rtHedgeDelayMs = DEFENSE_PARAMS.HEDGE_DELAY_MS;
+  private rtHedgeDelayMs: number = DEFENSE_PARAMS.HEDGE_DELAY_MS;
   private rtSpoofCutoff = 0.7;
   private rtOrderCapRatio = 0.3;
 
