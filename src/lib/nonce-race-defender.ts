@@ -439,9 +439,32 @@ class EnhancedNonceRaceDefender {
 
     // Counter-exploit: pre-position at the spread the attacker intends to set
     if (['NONCE_RACE', 'GHOST_FILL', 'MULTI_MARKET'].includes(attack.attackType)) {
-      const markets = Math.max(1, attack.affectedMarkets?.length ?? 1);
-      this.counterExploitProfit += (0.58 - 0.42) * 100 * markets * attack.confidence;
+      const marketIds = attack.affectedMarkets ?? [];
+      const markets = Math.max(1, marketIds.length);
+      const expectedProfit = (0.58 - 0.42) * 100 * markets * attack.confidence;
+      this.counterExploitProfit += expectedProfit;
+
+      const opp: CounterOpportunity = {
+        id: rid(),
+        attackType: attack.attackType,
+        attackerAddress: attack.attackerAddress,
+        marketIds,
+        expectedProfit,
+        confidence: attack.confidence,
+        timestamp: Date.now(),
+      };
+      this.opportunities.unshift(opp);
+      if (this.opportunities.length > 50) this.opportunities.pop();
+      this.pushLog({
+        id: rid(), ts: opp.timestamp, kind: 'opportunity', severity: 'info',
+        title: `Counter-exploit opportunity: $${expectedProfit.toFixed(2)}`,
+        detail: `${attack.attackType.replace('_', ' ')} · conf ${(attack.confidence * 100).toFixed(0)}% · ${markets} market(s)`,
+      });
+      this.emitEvent('opportunity_ready', opp);
     }
+
+    // Self-healing: recurring attack types tighten runtime defense params
+    this.evaluateSelfHealing(attack.attackType);
 
     // Escalate then cool back down
     this.mode = 'AGGRESSIVE';
@@ -449,6 +472,51 @@ class EnhancedNonceRaceDefender {
     this.cooldownTimer = setTimeout(() => {
       if (this.active) { this.mode = 'ACTIVE'; this.notify(); }
     }, 30000);
+  }
+
+  private evaluateSelfHealing(type: AttackType): void {
+    const now = Date.now();
+    this.recentAttackTypes.push({ type, ts: now });
+    this.recentAttackTypes = this.recentAttackTypes.filter(r => now - r.ts <= DEFENSE_PARAMS.PATCH_WINDOW_MS);
+
+    const count = this.recentAttackTypes.filter(r => r.type === type).length;
+    if (count < DEFENSE_PARAMS.PATCH_TRIGGER_COUNT) return;
+    // one patch per vulnerability per window
+    if (this.patches.some(p => p.vulnerability === type && now - p.appliedAt <= DEFENSE_PARAMS.PATCH_WINDOW_MS)) return;
+
+    let patchType: PatchType;
+    let detail: string;
+    switch (type) {
+      case 'NONCE_RACE':
+        this.rtHedgeDelayMs = Math.min(15000, Math.round(this.rtHedgeDelayMs * 1.5) || 2000);
+        patchType = 'EXTEND_HEDGE_DELAY';
+        detail = `Hedge delay raised to ${this.rtHedgeDelayMs}ms after ${count} nonce races`;
+        break;
+      case 'CANCEL_FLOOD':
+        this.rtSpoofCutoff = Math.max(0.35, +(this.rtSpoofCutoff - 0.1).toFixed(2));
+        patchType = 'TIGHTEN_SPOOF_CUTOFF';
+        detail = `Spoof cutoff tightened to ${this.rtSpoofCutoff} after ${count} cancel floods`;
+        break;
+      case 'MULTI_MARKET':
+      case 'GHOST_FILL':
+        this.rtOrderCapRatio = Math.max(0.08, +(this.rtOrderCapRatio - 0.05).toFixed(2));
+        patchType = 'SHRINK_ORDER_CAP';
+        detail = `Order cap reduced to ${(this.rtOrderCapRatio * 100).toFixed(0)}% of capital after ${count} ${type.replace('_', ' ').toLowerCase()} events`;
+        break;
+      default:
+        patchType = 'RAISE_GAS_THRESHOLD';
+        detail = `Gas shadow threshold raised after ${count} ${type.replace('_', ' ').toLowerCase()} events`;
+    }
+
+    const patch: SelfHealingPatch = { id: rid(), patchType, vulnerability: type, appliedAt: now, detail };
+    this.patches.unshift(patch);
+    if (this.patches.length > 50) this.patches.pop();
+    this.pushLog({
+      id: rid(), ts: now, kind: 'patch', severity: 'warning',
+      title: `Self-healing patch: ${patchType.replace(/_/g, ' ').toLowerCase()}`,
+      detail,
+    });
+    this.emitEvent('patch_applied', patch);
   }
 
   private rotateKeyIfNeeded() {
