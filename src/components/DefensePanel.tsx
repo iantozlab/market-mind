@@ -86,7 +86,11 @@ const DefensePanel: React.FC = () => {
           <Stat label="Ticks screened" value={String(status.ticksProcessed)} />
           <Stat label="Last attack" value={ago(status.lastAttackTime)} />
           <Stat label="Key rotated" value={ago(status.lastKeyRotation)} />
+          <Stat label="Mempool mode" value={status.mempoolMode.toUpperCase()} tone={status.mempoolMode === 'private' ? 'text-primary' : undefined} />
+          <Stat label="Patches applied" value={String(status.patchesApplied)} tone={status.patchesApplied ? 'text-info' : undefined} />
+          <Stat label="Opportunities" value={String(opportunities.length)} tone={opportunities.length ? 'text-primary' : undefined} />
         </div>
+
 
         <div className="grid sm:grid-cols-2 gap-2">
           <div className="flex items-center justify-between rounded border border-border p-2">
