@@ -37,14 +37,16 @@ export const ENV = {
   LOG_LEVEL: (import.meta as any).env?.VITE_LOG_LEVEL || 'info',
 };
 
-// Fetch server-side config (secrets) from proxy
+// Fetch server-side config PRESENCE FLAGS from the proxy.
+// The proxy never returns secret values — only booleans indicating which
+// credentials are configured. All privileged calls happen server-side.
 async function loadServerConfig() {
   try {
     const resp = await proxyFetch('/__config');
     if (resp.ok) {
       const cfg = await resp.json();
-      if (cfg.polygonRpcUrl) ENV.POLYGON_RPC_URL = cfg.polygonRpcUrl;
-      if (cfg.blocknativeApiKey) ENV.BLOCKNATIVE_API_KEY = cfg.blocknativeApiKey;
+      if (cfg.polygonRpcUrl) ENV.POLYGON_RPC_URL = '(configured)';
+      if (cfg.blocknativeApiKey) ENV.BLOCKNATIVE_API_KEY = '(configured)';
     }
   } catch { /* fallback to defaults */ }
 }
