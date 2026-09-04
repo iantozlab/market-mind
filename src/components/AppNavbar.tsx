@@ -276,6 +276,15 @@ const AppNavbar: React.FC<Props> = ({
               clearSuppressed={alerts.clearSuppressed}
             />
             <ThemeToggle />
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Sign out"
+              onClick={() => supabase.auth.signOut()}
+              className="font-display tracking-wide h-8 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+            >
+              ⏻ SIGN OUT
+            </Button>
           </div>
         </div>
 
