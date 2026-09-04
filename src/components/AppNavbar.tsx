@@ -14,6 +14,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { cn } from '@/lib/utils';
 import ThemeToggle from './ThemeToggle';
 import AlertsBell from './AlertsBell';
+import { supabase } from '@/integrations/supabase/client';
 import TradeSettingsPanel from './TradeSettingsPanel';
 import MLInsightsPanel from './MLInsightsPanel';
 import RiskDashboardPanel from './RiskDashboardPanel';
