@@ -14,6 +14,7 @@ import { getArbLimits, checkArbLimits } from './arb-risk-config';
 import { recordArbAudit } from './arb-audit';
 import { getDrawdownGuard, setDrawdownGuard } from './drawdown-guard';
 import { nonceDefender } from './nonce-race-defender';
+import type { CounterOpportunity, SelfHealingPatch } from './nonce-race-defender';
 
 const DEFENSE_BOT_ADDRESS = '0xbot0000000000000000000000000000000000bot';
 import { recordDrawdownIncident } from './drawdown-incidents';
