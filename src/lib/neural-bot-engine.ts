@@ -19,8 +19,59 @@ import type { CounterOpportunity, SelfHealingPatch } from './nonce-race-defender
 const DEFENSE_BOT_ADDRESS = '0xbot0000000000000000000000000000000000bot';
 import { recordDrawdownIncident } from './drawdown-incidents';
 
+// ============================================
+// SECURE ORDER SIGNING VIA EDGE FUNCTION
+// ============================================
+// Private key is stored securely in Supabase Edge Function secrets.
+// All order signing requests are proxied through the backend, never touching the frontend.
 
+const SUPABASE_EDGE_FUNCTION_URL = "https://buvepdnnsurgfthtgtyz.supabase.co/functions/v1/sign-polymarket-order";
 
+/**
+ * Sign a Polymarket order securely via the backend Edge Function.
+ * The function handles EIP-712 signing without exposing the private key to the frontend.
+ * 
+ * @param orderData - The order message fields to sign
+ * @param domain - EIP-712 domain separator
+ * @param types - EIP-712 type definitions
+ * @param primaryType - The main type being signed (default: "Order")
+ * @returns The signed order signature and signer address
+ */
+export const signOrderViaBackend = async (
+  orderData: any,
+  domain: any,
+  types: any,
+  primaryType: string = "Order"
+) => {
+  try {
+    // Get the user's JWT token (if using Supabase Auth)
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+
+    const response = await fetch(SUPABASE_EDGE_FUNCTION_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token && { "Authorization": `Bearer ${token}` }),
+      },
+      body: JSON.stringify({ orderData, domain, types, primaryType }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(`Signing failed: ${error.error || response.statusText}`);
+    }
+
+    const result = await response.json();
+    return {
+      signature: result.signature,
+      signerAddress: result.signerAddress,
+    };
+  } catch (error) {
+    console.error("Backend signing error:", error);
+    throw error;
+  }
+};
 
 // ============================================
 // ENVIRONMENT VARIABLES (Lovable Secrets / Vite env)
