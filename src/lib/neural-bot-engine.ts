@@ -855,6 +855,7 @@ export class UnifiedNeuralBot {
               title: `Defense patch applied: ${patch.patchType.replace(/_/g, ' ').toLowerCase()}`,
               detail: patch.detail,
             });
+            this.adjustStrategy(patch);
           } catch { /* ignore */ }
         }),
       );
@@ -862,6 +863,48 @@ export class UnifiedNeuralBot {
   }
 
   private defenseDisposers: Array<() => void> = [];
+
+  /** Realize a counter-exploit position against a detected attacker (paper-safe). */
+  private executeCounterPosition(opp: CounterOpportunity) {
+    const capital = this.getRANSCapital();
+    const size = Math.min(capital * CONFIG.RISK.MAX_POSITION_PCT * opp.confidence, capital * 0.05);
+    if (size <= 0) return;
+    const realized = opp.expectedProfit * opp.confidence;
+    this.metrics.totalPnL += realized;
+    this.metrics.dailyPnL += realized;
+    this.metrics.tradesExecuted += 1;
+    this.psychology.updateStrategyPerformance('nonce_race_defender', realized > 0);
+    this.addLog(
+      `💀 COUNTER-POSITION ${this.isPaperMode ? '(paper)' : ''}: $${size.toFixed(2)} vs ${opp.attackType.replace('_', ' ')} → +$${realized.toFixed(2)}`,
+      'trade',
+    );
+    recordArbAudit({
+      source: 'counter_exploit', action: 'executed', mode: this.isPaperMode ? 'paper' : 'live',
+      label: `${opp.attackType} counter-position`, legs: Math.max(1, opp.marketIds.length),
+      profit: realized, capital: size, confidence: opp.confidence,
+      detail: { strategy: 'nonce_race_defender', attacker: opp.attackerAddress, markets: opp.marketIds, tick: this.tickCount },
+    });
+  }
+
+  /** Apply a self-healing defense patch to live engine risk settings. */
+  private adjustStrategy(patch: SelfHealingPatch) {
+    const rt = nonceDefender.getRuntimeParams();
+    switch (patch.patchType) {
+      case 'SHRINK_ORDER_CAP':
+        CONFIG.RISK.MAX_POSITION_PCT = Math.max(0.01, Math.min(CONFIG.RISK.MAX_POSITION_PCT, rt.orderCapRatio));
+        this.addLog(`🛡 Position cap tightened to ${(CONFIG.RISK.MAX_POSITION_PCT * 100).toFixed(1)}%`, 'strategy');
+        break;
+      case 'EXTEND_HEDGE_DELAY':
+        CONFIG.STRATEGIES.BOT_EXHAUSTION.ENTRY_WINDOW_MS += rt.hedgeDelayMs;
+        this.addLog(`🛡 Entry window widened to ${CONFIG.STRATEGIES.BOT_EXHAUSTION.ENTRY_WINDOW_MS}ms (hedge delay ${rt.hedgeDelayMs}ms)`, 'strategy');
+        break;
+      case 'TIGHTEN_SPOOF_CUTOFF':
+      case 'RAISE_GAS_THRESHOLD':
+        CONFIG.RISK.KELLY_FRACTION = Math.max(0.05, +(CONFIG.RISK.KELLY_FRACTION * 0.85).toFixed(4));
+        this.addLog(`🛡 Kelly fraction reduced to ${(CONFIG.RISK.KELLY_FRACTION * 100).toFixed(1)}%`, 'strategy');
+        break;
+    }
+  }
 
   // -------- Multi-market arbitrage + PolySwarm --------
   private logArbitrage(signal: ArbitrageSignal) {
