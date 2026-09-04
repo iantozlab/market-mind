@@ -234,7 +234,7 @@ class EnhancedNonceRaceDefender {
     this.config = { ...this.config, ...config };
     if (config.blocknativeApiKey) this.privateMempoolActive = true;
     this.pushLog({
-      id: rid(), ts: Date.now(), kind: 'info', severity: 'info',
+      id: rid(), ts: Date.now(), kind: 'key_rotated', severity: 'info',
       title: `Defender configured (${this.config.blocknativeApiKey ? 'private' : 'passive'} mempool)`,
       detail: this.config.polygonRpcUrl ? 'Polygon RPC endpoint attached' : 'No RPC endpoint — heuristic mode',
     });
