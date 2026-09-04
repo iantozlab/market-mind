@@ -69,9 +69,10 @@ Deno.serve(async (req) => {
         requestId,
         present: { polygon, blocknative, polymarket },
       });
+      // Never return raw secret values to the client — only configuration presence flags.
       const config = {
-        polygonRpcUrl: Deno.env.get('POLYGON_RPC_URL') || '',
-        blocknativeApiKey: Deno.env.get('BLOCKNATIVE_API_KEY') || '',
+        polygonRpcUrl: polygon,
+        blocknativeApiKey: blocknative,
         polymarketApiKey: polymarket,
       };
       return new Response(JSON.stringify(config), {
