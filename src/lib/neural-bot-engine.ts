@@ -246,12 +246,9 @@ export async function executeLiveTrade(
   types: typeof POLYMARKET_ORDER_TYPES,
   primaryType: string,
   expectedTakerAmount: bigint,
-  polymarketApiKey: string,
-  polymarketSecret: string,
-  polymarketPassphrase: string,
   publicClient: PublicClient,
 ): Promise<any> {
-  // 1. Sign the order securely via the backend.
+  // 1. Sign securely via the backend Edge Function.
   const { signature, signerAddress } = await signOrderViaBackend(
     orderData,
     domain,
@@ -259,7 +256,7 @@ export async function executeLiveTrade(
     primaryType,
   );
 
-  // 2. Client-side signature verification (defeats MITM / compromised Edge Function).
+  // 2. Client-side signature verification (defeats MITM).
   const orderHash = hashTypedData({
     domain,
     types,
@@ -280,13 +277,10 @@ export async function executeLiveTrade(
     throw new Error('Signature verification failed on client. The signing service may be compromised.');
   }
 
-  // 3. Simulate the trade before submitting to CLOB.
-  // Prepare the calldata for the exchange contract.
-  // This assumes the order is executed via `fillOrder` or `executeOrder`.
-  // Adjust the `to` address and `data` construction as per your actual contract.
+  // 3. Simulate the trade before submitting.
   const exchangeAddress = POLYMARKET_EXCHANGE_ADDRESS;
   const calldata = encodeFunctionData({
-    abi: [], // Provide the actual ABI or use raw data.
+    abi: [], // Replace with your actual ABI if needed.
     functionName: 'fillOrder',
     args: [orderData, signature],
   });
@@ -296,27 +290,19 @@ export async function executeLiveTrade(
     signerAddress as Address,
     exchangeAddress,
     calldata as Hash,
-    0n, // value (ETH) – usually 0 for USDC orders.
+    0n,
     expectedTakerAmount,
   );
 
-  // 4. Submit the signed order to Polymarket CLOB.
+  // 4. Submit the signed order via the proxy Edge Function.
+  //    The proxy holds the POLYMARKET-API-KEY, SECRET, and PASSPHRASE securely.
   const signedOrderPayload = {
     ...orderData,
     signature,
     signer: signerAddress,
   };
 
-  const response = await fetch('https://clob.polymarket.com/orders', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'POLYMARKET-API-KEY': polymarketApiKey,
-      'POLYMARKET-SECRET': polymarketSecret,
-      'POLYMARKET-PASSPHRASE': polymarketPassphrase,
-    },
-    body: JSON.stringify(signedOrderPayload),
-  });
+  const response = await proxyFetch('/orders', signedOrderPayload, 'POST');
 
   if (!response.ok) {
     const error = await response.json();
@@ -356,12 +342,22 @@ async function loadServerConfig() {
   } catch { /* fallback to defaults */ }
 }
 
-// Secure proxy helper — all Polymarket API calls route through Edge Function
-async function proxyFetch(endpoint: string, params?: string, method: 'GET' | 'HEAD' = 'GET'): Promise<Response> {
+// ─── PATCHED proxyFetch (supports POST with JSON body) ──────────────────────
+async function proxyFetch(endpoint: string, paramsOrBody?: string | any, method: 'GET' | 'HEAD' | 'POST' = 'GET'): Promise<Response> {
   try {
+    const bodyPayload: any = { endpoint, method };
+    
+    if (method === 'POST' && paramsOrBody && typeof paramsOrBody === 'object') {
+      // POST: send the object as the request body
+      bodyPayload.body = paramsOrBody;
+    } else if (paramsOrBody && typeof paramsOrBody === 'string') {
+      // GET/HEAD: send as query params
+      bodyPayload.params = paramsOrBody;
+    }
+
     const { data, error } = await supabase.functions.invoke('polymarket-proxy', {
       method: 'POST',
-      body: { endpoint, params: params || '', method },
+      body: bodyPayload,
     });
     if (error) {
       return new Response(JSON.stringify({ error: error.message }), { status: 502, headers: { 'Content-Type': 'application/json' } });
@@ -1682,33 +1678,24 @@ export class UnifiedNeuralBot {
   private async executeLiveTradeInternal(
     orderData: any,
     expectedTakerAmount: bigint,
-    polymarketApiKey: string,
-    polymarketSecret: string,
-    polymarketPassphrase: string,
   ) {
     if (!this.securePublicClient) {
       throw new Error('No secure RPC client available. Please check RPC health.');
     }
 
-    // Use the constants imported from polyswarm-integrator.
     const domain = POLYMARKET_DOMAIN;
     const types = POLYMARKET_ORDER_TYPES;
     const primaryType = 'Order';
 
-    // Execute the trade using the secure pipeline.
-    const result = await executeLiveTrade(
+    // Pass only the order data, expected amount, and the secure client.
+    return await executeLiveTrade(
       orderData,
       domain,
       types,
       primaryType,
       expectedTakerAmount,
-      polymarketApiKey,
-      polymarketSecret,
-      polymarketPassphrase,
       this.securePublicClient,
     );
-
-    return result;
   }
 
   async run() {
@@ -2016,9 +2003,6 @@ export class UnifiedNeuralBot {
                 const result = await this.executeLiveTradeInternal(
                   orderData,
                   expectedTakerAmount,
-                  '(server-side)', // API keys are proxied via Edge Function
-                  '(server-side)',
-                  '(server-side)',
                 );
 
                 this.addLog(`${modeTag} LIVE TRADE EXECUTED: ${market.question.slice(0, 30)}... ${side} ${size} shares @ ${market.outcomePrices[0].toFixed(3)} [${source}] (hash: ${result.hash?.slice(0, 10) || 'pending'})`, 'trade');
