@@ -14,6 +14,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { cn } from '@/lib/utils';
 import ThemeToggle from './ThemeToggle';
 import AlertsBell from './AlertsBell';
+import { supabase } from '@/integrations/supabase/client';
 import TradeSettingsPanel from './TradeSettingsPanel';
 import MLInsightsPanel from './MLInsightsPanel';
 import RiskDashboardPanel from './RiskDashboardPanel';
@@ -276,6 +277,15 @@ const AppNavbar: React.FC<Props> = ({
               clearSuppressed={alerts.clearSuppressed}
             />
             <ThemeToggle />
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Sign out"
+              onClick={() => supabase.auth.signOut()}
+              className="font-display tracking-wide h-8 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+            >
+              ⏻ SIGN OUT
+            </Button>
           </div>
         </div>
 
