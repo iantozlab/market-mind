@@ -3,6 +3,108 @@
 // KL / JS divergence based cross-market inefficiency detection.
 // Browser-safe: minimal internal emitter (no node `events`).
 
+import { hashTypedData, verifyTypedData, type Address } from 'viem';
+import { supabase } from '@/integrations/supabase/client';
+
+export const POLYMARKET_EXCHANGE_ADDRESS = '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E' as const;
+export const POLYMARKET_DOMAIN = {
+  name: 'Polymarket CTF Exchange', version: '1', chainId: 137,
+  verifyingContract: POLYMARKET_EXCHANGE_ADDRESS,
+} as const;
+export const POLYMARKET_ORDER_TYPES = {
+  Order: [
+    { name: 'salt', type: 'uint256' }, { name: 'maker', type: 'address' },
+    { name: 'signer', type: 'address' }, { name: 'taker', type: 'address' },
+    { name: 'tokenId', type: 'uint256' }, { name: 'makerAmount', type: 'uint256' },
+    { name: 'takerAmount', type: 'uint256' }, { name: 'expiration', type: 'uint256' },
+    { name: 'nonce', type: 'uint256' }, { name: 'feeRateBps', type: 'uint256' },
+    { name: 'side', type: 'uint8' }, { name: 'signatureType', type: 'uint8' },
+    { name: 'useTaker', type: 'bool' },
+  ],
+} as const;
+
+const SIGNING_FUNCTION_URL = 'https://buvepdnnsurgfthtgtyz.supabase.co/functions/v1/sign-polymarket-order';
+const pendingRequests = new Map<string, Promise<`0x${string}`>>();
+let cachedSignerAddress: Address | null = null;
+type OrderData = Record<string, unknown>;
+type SignatureResult = { signature: `0x${string}`; signerAddress: Address };
+
+function isNonZeroInteger(value: unknown): boolean {
+  try {
+    return typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint'
+      ? BigInt(value) > 0n : false;
+  } catch { return false; }
+}
+
+async function signOrderViaBackend(
+  orderData: OrderData, domain: typeof POLYMARKET_DOMAIN,
+  types: typeof POLYMARKET_ORDER_TYPES, primaryType: 'Order', requestId: string,
+): Promise<SignatureResult> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  if (!token) throw new Error('Unauthenticated: sign in before signing orders.');
+
+  const response = await fetch(SIGNING_FUNCTION_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ orderData, domain, types, primaryType, requestId,
+      timestamp: Date.now(), origin: window.location.origin }),
+  });
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('Session expired. Please re-authenticate.');
+    throw new Error('Order signing failed. Please try again later.');
+  }
+
+  const result = await response.json() as Partial<SignatureResult> & { success?: boolean };
+  if (!result.success || typeof result.signature !== 'string' || typeof result.signerAddress !== 'string') {
+    throw new Error('Invalid response from signing service.');
+  }
+  const signature = result.signature as `0x${string}`;
+  const signerAddress = result.signerAddress as Address;
+  if (!await verifyTypedData({ address: signerAddress, domain, types, primaryType,
+    message: orderData as never, signature })) throw new Error('Signature verification failed.');
+  if (cachedSignerAddress && cachedSignerAddress.toLowerCase() !== signerAddress.toLowerCase()) {
+    throw new Error('Signer address changed unexpectedly.');
+  }
+  cachedSignerAddress = signerAddress;
+  return { signature, signerAddress };
+}
+
+export async function signOrder(
+  orderData: OrderData, domain = POLYMARKET_DOMAIN,
+  types = POLYMARKET_ORDER_TYPES, primaryType: 'Order' = 'Order',
+): Promise<`0x${string}`> {
+  if (!isNonZeroInteger(orderData.salt)) throw new Error('Invalid order: salt is required.');
+  if (!isNonZeroInteger(orderData.makerAmount)) throw new Error('Invalid order: makerAmount must be positive.');
+  if (!isNonZeroInteger(orderData.takerAmount)) throw new Error('Invalid order: takerAmount must be positive.');
+  const expiration = Number(orderData.expiration);
+  if (!Number.isSafeInteger(expiration) || expiration <= Math.floor(Date.now() / 1000)) {
+    throw new Error('Invalid order: expiration must be in the future.');
+  }
+
+  const orderHash = hashTypedData({ domain, types, primaryType, message: orderData as never });
+  const pending = pendingRequests.get(orderHash);
+  if (pending) return pending;
+  const signingPromise = (async () => {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return (await signOrderViaBackend(orderData, domain, types, primaryType,
+          `${orderHash}-${crypto.randomUUID()}`)).signature;
+      } catch (error) {
+        lastError = error;
+        if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 200 * 2 ** attempt));
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error('Failed to sign order.');
+  })();
+  pendingRequests.set(orderHash, signingPromise);
+  signingPromise.finally(() => {
+    if (pendingRequests.get(orderHash) === signingPromise) pendingRequests.delete(orderHash);
+  }).catch(() => undefined);
+  return signingPromise;
+}
+
 export interface AgentPrediction { probability: number; confidence: number; }
 
 export interface SwarmAgent {
