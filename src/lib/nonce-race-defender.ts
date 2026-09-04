@@ -229,6 +229,20 @@ class EnhancedNonceRaceDefender {
   getBlacklist() { return Array.from(this.blacklist); }
   setDefenseActive(on: boolean) { this.active = on; this.mode = on ? 'ACTIVE' : 'PASSIVE'; this.notify(); }
   setPrivateMempool(on: boolean) { this.privateMempoolActive = on; this.notify(); }
+  /** Plumb runtime secrets (Polygon RPC / Blocknative) once the proxy config is loaded. */
+  configure(config: DefenderConfig) {
+    this.config = { ...this.config, ...config };
+    if (config.blocknativeApiKey) this.privateMempoolActive = true;
+    this.pushLog({
+      id: rid(), ts: Date.now(), kind: 'key_rotated', severity: 'info',
+      title: `Defender configured (${this.config.blocknativeApiKey ? 'private' : 'passive'} mempool)`,
+      detail: this.config.polygonRpcUrl ? 'Polygon RPC endpoint attached' : 'No RPC endpoint — heuristic mode',
+    });
+    this.notify();
+  }
+  getRuntimeParams() {
+    return { hedgeDelayMs: this.rtHedgeDelayMs, spoofCutoff: this.rtSpoofCutoff, orderCapRatio: this.rtOrderCapRatio };
+  }
   clearBlacklist() { this.blacklist.clear(); this.notify(); }
   reset() {
     this.attacks = []; this.manipulations = []; this.log = [];
