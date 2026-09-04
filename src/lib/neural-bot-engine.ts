@@ -1382,6 +1382,16 @@ export class UnifiedNeuralBot {
     await loadServerConfig();
     this.addLog('🔐 Server-side secrets loaded (API keys, RPC URLs)', 'info');
 
+    // Plumb runtime secrets into the defense layer (private mempool when Blocknative is present)
+    try {
+      nonceDefender.configure({
+        polygonRpcUrl: ENV.POLYGON_RPC_URL !== '(server-side)' ? ENV.POLYGON_RPC_URL : undefined,
+        blocknativeApiKey: ENV.BLOCKNATIVE_API_KEY !== '(server-side)' ? ENV.BLOCKNATIVE_API_KEY : undefined,
+      });
+      nonceDefender.setDefenseActive(true);
+      this.addLog(`🛡 Defense armed — ${nonceDefender.getStatus().mempoolMode} mempool mode`, 'info');
+    } catch { /* defense must never block startup */ }
+
     // Validate env
     const envCheck = validateEnv();
     if (!envCheck.valid) {
