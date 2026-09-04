@@ -844,6 +844,7 @@ export class UnifiedNeuralBot {
               profit: opp.expectedProfit, capital: this.getRANSCapital(), confidence: opp.confidence,
               detail: { strategy: 'nonce_race_defender', attacker: opp.attackerAddress, markets: opp.marketIds, tick: this.tickCount },
             });
+            this.executeCounterPosition(opp);
           } catch { /* defense must never break the loop */ }
         }),
         nonceDefender.on('patch_applied', (patch) => {
