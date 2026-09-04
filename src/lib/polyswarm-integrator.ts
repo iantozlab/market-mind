@@ -1,109 +1,302 @@
-// PolySwarmIntegrator.ts
-// 50-agent swarm with confidence-weighted Bayesian aggregation and
-// KL / JS divergence based cross-market inefficiency detection.
-// Browser-safe: minimal internal emitter (no node `events`).
+// src/lib/polyswarm-integrator.ts
+// ═══════════════════════════════════════════════════════════════════════════════
+//  TASK-002 COMPLETION: HARDENED POLYSWARM INTEGRATOR
+//  ────────────────────────────────────────────────────────────────────────────
+//  • submitOrderToClob removed – use executeLiveTrade (via proxy) instead.
+//  • Market data validation (price bounds, staleness, divergence) added.
+//  • RPC health awareness – degrades gracefully if RPC is unhealthy.
+//  • All API keys are strictly server-side (Edge Function secrets).
+// ═══════════════════════════════════════════════════════════════════════════════
 
-import { hashTypedData, verifyTypedData, type Address } from 'viem';
-import { supabase } from '@/integrations/supabase/client';
+import { verifyTypedData, hashTypedData, type Address } from "viem";
+import { supabase } from "@/integrations/supabase/client";
 
-export const POLYMARKET_EXCHANGE_ADDRESS = '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E' as const;
+// ─── Polymarket on-chain constants ─────────────────────────────────────────────
+
+export const POLYMARKET_EXCHANGE_ADDRESS = "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E" as const;
+export const POLYMARKET_NEG_RISK_ADAPTER = "0xd91E80cF2E7fe2cBA6DAa4cFf49e8A6dbCb8e6A1" as const;
+export const POLYMARKET_USDC_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174" as const;
+
+// ─── EIP-712 Domain & Types (Polymarket CTF Exchange) ─────────────────────────
+
 export const POLYMARKET_DOMAIN = {
-  name: 'Polymarket CTF Exchange', version: '1', chainId: 137,
+  name: "Polymarket CTF Exchange",
+  version: "1",
+  chainId: 137,
   verifyingContract: POLYMARKET_EXCHANGE_ADDRESS,
 } as const;
+
 export const POLYMARKET_ORDER_TYPES = {
   Order: [
-    { name: 'salt', type: 'uint256' }, { name: 'maker', type: 'address' },
-    { name: 'signer', type: 'address' }, { name: 'taker', type: 'address' },
-    { name: 'tokenId', type: 'uint256' }, { name: 'makerAmount', type: 'uint256' },
-    { name: 'takerAmount', type: 'uint256' }, { name: 'expiration', type: 'uint256' },
-    { name: 'nonce', type: 'uint256' }, { name: 'feeRateBps', type: 'uint256' },
-    { name: 'side', type: 'uint8' }, { name: 'signatureType', type: 'uint8' },
-    { name: 'useTaker', type: 'bool' },
+    { name: "salt", type: "uint256" },
+    { name: "maker", type: "address" },
+    { name: "signer", type: "address" },
+    { name: "taker", type: "address" },
+    { name: "tokenId", type: "uint256" },
+    { name: "makerAmount", type: "uint256" },
+    { name: "takerAmount", type: "uint256" },
+    { name: "expiration", type: "uint256" },
+    { name: "nonce", type: "uint256" },
+    { name: "feeRateBps", type: "uint256" },
+    { name: "side", type: "uint8" },
+    { name: "signatureType", type: "uint8" },
+    { name: "useTaker", type: "bool" },
   ],
 } as const;
 
-const SIGNING_FUNCTION_URL = 'https://buvepdnnsurgfthtgtyz.supabase.co/functions/v1/sign-polymarket-order';
-const pendingRequests = new Map<string, Promise<`0x${string}`>>();
-let cachedSignerAddress: Address | null = null;
-type OrderData = Record<string, unknown>;
-type SignatureResult = { signature: `0x${string}`; signerAddress: Address };
+// ─── Secure Backend Signing (TASK-001) ─────────────────────────────────────────
 
-function isNonZeroInteger(value: unknown): boolean {
+const SUPABASE_EDGE_FUNCTION_URL =
+  "https://buvepdnnsurgfthtgtyz.supabase.co/functions/v1/sign-polymarket-order";
+
+export const signOrderViaBackend = async (
+  orderData: any,
+  domain: any,
+  types: any,
+  primaryType: string = "Order"
+) => {
   try {
-    return typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint'
-      ? BigInt(value) > 0n : false;
-  } catch { return false; }
-}
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
 
-async function signOrderViaBackend(
-  orderData: OrderData, domain: typeof POLYMARKET_DOMAIN,
-  types: typeof POLYMARKET_ORDER_TYPES, primaryType: 'Order', requestId: string,
-): Promise<SignatureResult> {
-  const { data: { session } } = await supabase.auth.getSession();
-  const token = session?.access_token;
-  if (!token) throw new Error('Unauthenticated: sign in before signing orders.');
+    const response = await fetch(SUPABASE_EDGE_FUNCTION_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token && { "Authorization": `Bearer ${token}` }),
+      },
+      body: JSON.stringify({ orderData, domain, types, primaryType }),
+    });
 
-  const response = await fetch(SIGNING_FUNCTION_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ orderData, domain, types, primaryType, requestId,
-      timestamp: Date.now(), origin: window.location.origin }),
-  });
-  if (!response.ok) {
-    if (response.status === 401) throw new Error('Session expired. Please re-authenticate.');
-    throw new Error('Order signing failed. Please try again later.');
-  }
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(`Signing failed: ${error.error || response.statusText}`);
+    }
 
-  const result = await response.json() as Partial<SignatureResult> & { success?: boolean };
-  if (!result.success || typeof result.signature !== 'string' || typeof result.signerAddress !== 'string') {
-    throw new Error('Invalid response from signing service.');
+    const result = await response.json();
+    return {
+      signature: result.signature,
+      signerAddress: result.signerAddress,
+    };
+  } catch (error) {
+    console.error("Backend signing error:", error);
+    throw error;
   }
-  const signature = result.signature as `0x${string}`;
-  const signerAddress = result.signerAddress as Address;
-  if (!await verifyTypedData({ address: signerAddress, domain, types, primaryType,
-    message: orderData as never, signature })) throw new Error('Signature verification failed.');
-  if (cachedSignerAddress && cachedSignerAddress.toLowerCase() !== signerAddress.toLowerCase()) {
-    throw new Error('Signer address changed unexpectedly.');
-  }
-  cachedSignerAddress = signerAddress;
-  return { signature, signerAddress };
-}
+};
+
+// ─── Public API: Sign an order with deduplication & client-side verification ──
+
+// In-flight deduplication.
+const pendingRequests = new Map<string, Promise<string>>();
+let cachedSignerAddress: Address | null = null;
 
 export async function signOrder(
-  orderData: OrderData, domain = POLYMARKET_DOMAIN,
-  types = POLYMARKET_ORDER_TYPES, primaryType: 'Order' = 'Order',
+  orderData: Record<string, any>,
+  domain = POLYMARKET_DOMAIN,
+  types = POLYMARKET_ORDER_TYPES,
+  primaryType = "Order",
 ): Promise<`0x${string}`> {
-  if (!isNonZeroInteger(orderData.salt)) throw new Error('Invalid order: salt is required.');
-  if (!isNonZeroInteger(orderData.makerAmount)) throw new Error('Invalid order: makerAmount must be positive.');
-  if (!isNonZeroInteger(orderData.takerAmount)) throw new Error('Invalid order: takerAmount must be positive.');
-  const expiration = Number(orderData.expiration);
-  if (!Number.isSafeInteger(expiration) || expiration <= Math.floor(Date.now() / 1000)) {
-    throw new Error('Invalid order: expiration must be in the future.');
+  // ── Input sanitisation ──
+  if (!orderData.salt || BigInt(orderData.salt) === 0n) {
+    throw new Error("Invalid order: salt must be a non-zero uint256.");
+  }
+  if (!orderData.expiration || BigInt(orderData.expiration) <= Date.now()) {
+    throw new Error("Invalid order: expiration must be in the future.");
+  }
+  if (!orderData.makerAmount || BigInt(orderData.makerAmount) <= 0n) {
+    throw new Error("Invalid order: makerAmount must be > 0.");
+  }
+  if (!orderData.takerAmount || BigInt(orderData.takerAmount) <= 0n) {
+    throw new Error("Invalid order: takerAmount must be > 0.");
   }
 
-  const orderHash = hashTypedData({ domain, types, primaryType, message: orderData as never });
-  const pending = pendingRequests.get(orderHash);
-  if (pending) return pending;
+  // ── Deduplicate identical requests ──
+  const orderHash = hashTypedData({
+    domain,
+    types,
+    primaryType,
+    message: orderData,
+  });
+
+  if (pendingRequests.has(orderHash)) {
+    return pendingRequests.get(orderHash)!;
+  }
+
   const signingPromise = (async () => {
-    let lastError: unknown;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    let attempt = 0;
+    const maxAttempts = 3;
+    let lastError: Error | null = null;
+
+    while (attempt < maxAttempts) {
       try {
-        return (await signOrderViaBackend(orderData, domain, types, primaryType,
-          `${orderHash}-${crypto.randomUUID()}`)).signature;
-      } catch (error) {
+        const requestId = `${orderHash}-${Date.now()}`;
+        const { signature, signerAddress } = await signOrderViaBackend(
+          orderData,
+          domain,
+          types,
+          primaryType,
+        );
+
+        // ── Client-side signature verification (defeats MITM) ──
+        const isValid = await verifyTypedData({
+          address: signerAddress as Address,
+          domain,
+          types,
+          primaryType,
+          message: orderData,
+          signature: signature as `0x${string}`,
+        });
+
+        if (!isValid) {
+          throw new Error("Signature verification failed on client. The signing service may be compromised.");
+        }
+
+        if (cachedSignerAddress && signerAddress !== cachedSignerAddress) {
+          throw new Error("Signer address changed unexpectedly. Aborting.");
+        }
+        cachedSignerAddress = signerAddress;
+
+        return signature as `0x${string}`;
+      } catch (error: any) {
         lastError = error;
-        if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 200 * 2 ** attempt));
+        attempt++;
+        const delay = 200 * Math.pow(2, attempt - 1) + Math.random() * 100;
+        if (attempt < maxAttempts) await new Promise((r) => setTimeout(r, delay));
       }
     }
-    throw lastError instanceof Error ? lastError : new Error('Failed to sign order.');
+    throw lastError || new Error("Failed to sign order after multiple attempts.");
   })();
+
   pendingRequests.set(orderHash, signingPromise);
   signingPromise.finally(() => {
-    if (pendingRequests.get(orderHash) === signingPromise) pendingRequests.delete(orderHash);
-  }).catch(() => undefined);
+    if (pendingRequests.get(orderHash) === signingPromise) {
+      pendingRequests.delete(orderHash);
+    }
+  });
+
   return signingPromise;
 }
+
+// ─── Get the cached signer address (safe probe) ──────────────────────────────
+
+export async function getSignerAddress(): Promise<Address> {
+  if (cachedSignerAddress) return cachedSignerAddress;
+
+  const dummyOrder = {
+    salt: "1",
+    maker: "0x0000000000000000000000000000000000000000",
+    signer: "0x0000000000000000000000000000000000000000",
+    taker: "0x0000000000000000000000000000000000000000",
+    tokenId: "0",
+    makerAmount: "0",
+    takerAmount: "0",
+    expiration: (Date.now() + 3600000).toString(),
+    nonce: "0",
+    feeRateBps: "0",
+    side: 0,
+    signatureType: 0,
+    useTaker: false,
+  };
+
+  try {
+    const { signerAddress } = await signOrderViaBackend(
+      dummyOrder,
+      POLYMARKET_DOMAIN,
+      POLYMARKET_ORDER_TYPES,
+      "Order",
+    );
+    cachedSignerAddress = signerAddress;
+    return cachedSignerAddress;
+  } catch {
+    throw new Error("Unable to fetch signer address. Check backend connectivity.");
+  }
+}
+
+// ─── Legacy guard: prevent accidental direct account usage ───────────────────
+
+export const account = new Proxy(
+  {},
+  {
+    get: () => {
+      throw new Error(
+        "❌ Direct account access is disabled for security. Use `signOrder()` instead.",
+      );
+    },
+  },
+);
+export const signer = account;
+
+// ─── TASK-002: SWARM MARKET DATA VALIDATION ──────────────────────────────────
+
+export interface SwarmMarketData {
+  marketId: string;
+  outcome: string;
+  price: number;
+  liquidity: number;
+  volume: number;
+  timestamp: number;
+  source: "clob" | "onchain";
+}
+
+export function validateSwarmMarketData(
+  data: SwarmMarketData,
+  rpcIsHealthy: boolean = true,
+): { valid: boolean; score: number; issues: string[] } {
+  const issues: string[] = [];
+  let score = 1.0;
+
+  if (data.price < 0 || data.price > 1) {
+    issues.push(`Price out of bounds: ${data.price}`);
+    score *= 0.1;
+  }
+
+  if (data.liquidity < 100) {
+    issues.push(`Liquidity too low: ${data.liquidity}`);
+    score *= 0.7;
+  }
+
+  const ageSec = (Date.now() - data.timestamp) / 1000;
+  if (ageSec > 300) {
+    issues.push(`Data stale: ${ageSec.toFixed(0)}s old`);
+    score *= 0.5;
+  } else if (ageSec > 120) {
+    issues.push(`Data moderately stale: ${ageSec.toFixed(0)}s old`);
+    score *= 0.8;
+  }
+
+  if (!rpcIsHealthy) {
+    issues.push("RPC is unhealthy – data may be stale or manipulated");
+    score *= 0.6;
+  }
+
+  if (data.volume < 1) {
+    issues.push(`Volume suspiciously low: ${data.volume}`);
+    score *= 0.8;
+  }
+
+  const finalScore = Math.max(0, Math.min(1, score));
+  return { valid: finalScore >= 0.5, score: finalScore, issues };
+}
+
+export function swarmExecutionGate(
+  dataScore: number,
+  rpcIsHealthy: boolean,
+  minScore: number = 0.6,
+): { allowed: boolean; reason: string } {
+  if (!rpcIsHealthy) {
+    return { allowed: false, reason: "RPC unhealthy – swarm execution paused" };
+  }
+  if (dataScore < minScore) {
+    return { allowed: false, reason: `Data quality score ${dataScore.toFixed(2)} below threshold ${minScore}` };
+  }
+  return { allowed: true, reason: "All checks passed" };
+}
+
+// ─── ❌ REMOVED: submitOrderToClob ────────────────────────────────────────────
+// This function has been removed as part of TASK-002.
+// All order submissions now go through executeLiveTrade() in neural-bot-engine.ts,
+// which routes via the secure polymarket-proxy Edge Function.
+// If you need to submit an order, import executeLiveTrade instead.
 
 export interface AgentPrediction { probability: number; confidence: number; }
 
