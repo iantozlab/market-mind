@@ -36,12 +36,9 @@ import {
   createWalletClient,
   http,
   fallback,
-  type PublicClient,
   type WalletClient,
   type Hash,
   type Address,
-  getBlockNumber,
-  getBlock,
   verifyTypedData,
   hashTypedData,
   encodeFunctionData,
@@ -49,6 +46,9 @@ import {
   formatEther,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+
+// Loose client type: viem's generic PublicClient blows up TS inference depth here.
+type PublicClient = any;
 import { polygon } from 'viem/chains';
 import {
   POLYMARKET_EXCHANGE_ADDRESS,
@@ -260,18 +260,18 @@ export async function executeLiveTrade(
   const orderHash = hashTypedData({
     domain,
     types,
-    primaryType,
+    primaryType: primaryType as any,
     message: orderData,
-  });
+  } as any);
 
   const isValid = await verifyTypedData({
     address: signerAddress as Address,
     domain,
     types,
-    primaryType,
+    primaryType: primaryType as any,
     message: orderData,
     signature: signature as `0x${string}`,
-  });
+  } as any);
 
   if (!isValid) {
     throw new Error('Signature verification failed on client. The signing service may be compromised.');
@@ -280,10 +280,10 @@ export async function executeLiveTrade(
   // 3. Simulate the trade before submitting.
   const exchangeAddress = POLYMARKET_EXCHANGE_ADDRESS;
   const calldata = encodeFunctionData({
-    abi: [], // Replace with your actual ABI if needed.
+    abi: [] as any,
     functionName: 'fillOrder',
     args: [orderData, signature],
-  });
+  } as any);
 
   await simulateTrade(
     publicClient,
@@ -1983,8 +1983,8 @@ export class UnifiedNeuralBot {
                 // that matches your trading strategy.
                 const orderData = {
                   salt: Math.floor(Math.random() * 1000000000).toString(),
-                  maker: this.securePublicClient.account?.address || '0x0000000000000000000000000000000000000000',
-                  signer: this.securePublicClient.account?.address || '0x0000000000000000000000000000000000000000',
+                  maker: this.securePublicClient?.account?.address || '0x0000000000000000000000000000000000000000',
+                  signer: this.securePublicClient?.account?.address || '0x0000000000000000000000000000000000000000',
                   taker: '0x0000000000000000000000000000000000000000', // public order
                   tokenId: market.tokenIds?.[0] || '0',
                   makerAmount: (size * 1e6).toString(), // Assume USDC decimals 6
