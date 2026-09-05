@@ -114,9 +114,9 @@ export async function signOrder(
   const orderHash = hashTypedData({
     domain,
     types,
-    primaryType,
-    message: orderData,
-  });
+    primaryType: primaryType as any,
+    message: orderData as any,
+  } as any);
 
   if (pendingRequests.has(orderHash)) {
     return pendingRequests.get(orderHash)!;
@@ -139,13 +139,13 @@ export async function signOrder(
 
         // ── Client-side signature verification (defeats MITM) ──
         const isValid = await verifyTypedData({
-          address: signerAddress as Address,
+          address: signerAddress as `0x${string}`,
           domain,
           types,
-          primaryType,
-          message: orderData,
+          primaryType: primaryType as any,
+          message: orderData as any,
           signature: signature as `0x${string}`,
-        });
+        } as any);
 
         if (!isValid) {
           throw new Error("Signature verification failed on client. The signing service may be compromised.");
