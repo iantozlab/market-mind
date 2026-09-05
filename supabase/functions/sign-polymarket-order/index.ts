@@ -36,8 +36,11 @@ serve(async (req) => {
 
   try {
     const requestOrigin = req.headers.get("Origin");
-    const allowedOrigin = Deno.env.get("POLYMARKET_ALLOWED_ORIGIN");
-    if (allowedOrigin && requestOrigin !== allowedOrigin) {
+    const allowedOrigins = (Deno.env.get("POLYMARKET_ALLOWED_ORIGIN") ?? "")
+      .split(",")
+      .map((o) => o.trim())
+      .filter(Boolean);
+    if (allowedOrigins.length > 0 && (!requestOrigin || !allowedOrigins.includes(requestOrigin))) {
       return new Response(JSON.stringify({ error: "Origin not allowed" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
