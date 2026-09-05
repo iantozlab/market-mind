@@ -119,7 +119,7 @@ export async function signOrder(
   } as any);
 
   if (pendingRequests.has(orderHash)) {
-    return pendingRequests.get(orderHash)!;
+    return pendingRequests.get(orderHash)! as Promise<`0x${string}`>;
   }
 
   const signingPromise = (async () => {
