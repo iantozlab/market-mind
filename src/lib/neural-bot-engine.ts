@@ -18,7 +18,15 @@ import {
 } from './rans-engine';
 import { recordRansDiagEvent } from './rans-diag-events';
 import { MultiMarketArbitrageEngine, type ArbitrageSignal, type ArbMarket } from './multi-market-arbitrage';
-import { PolySwarmIntegrator, buildDefaultSwarm, type MarketDescription, type SwarmPrediction, type LatencyArbEvent } from './polyswarm-integrator';
+import {
+  PolySwarmIntegrator,
+  buildDefaultSwarm,
+  validateSwarmMarketData,
+  swarmExecutionGate,
+  type MarketDescription,
+  type SwarmPrediction,
+  type LatencyArbEvent,
+} from './polyswarm-integrator';
 import { getArbLimits, checkArbLimits } from './arb-risk-config';
 import { recordArbAudit } from './arb-audit';
 import { getDrawdownGuard, setDrawdownGuard } from './drawdown-guard';
@@ -1376,7 +1384,41 @@ export class UnifiedNeuralBot {
       currentPrice: m.outcomePrices[0], category: m.category, slug: m.slug,
       timeToExpiry: new Date(m.endDate).getTime() - Date.now(),
     }));
-    const inefficiencies = await this.swarmIntegrator.detectInefficiencies(descriptions, 0.05);
+    const filteredDescriptions: MarketDescription[] = [];
+    for (const m of descriptions) {
+      const ob = this.orderBooks.get(m.id);
+      const liquidity = ob?.bids.reduce((s, b) => s + b.size, 0) || 0;
+      const volume = markets.find(x => x.id === m.id)?.volume || 0;
+
+      const validation = validateSwarmMarketData({
+        marketId: m.id,
+        outcome: m.outcomes[0],
+        price: m.currentPrice,
+        liquidity,
+        volume,
+        timestamp: Date.now(),
+        source: 'clob',
+      }, this.rpcHealth.isHealthy);
+
+      if (!validation.valid) {
+        this.addLog(`⚠️ Swarm data invalid for ${m.slug || m.id}: ${validation.issues.join(', ')} (score ${validation.score.toFixed(2)})`, 'warning');
+        continue;
+      }
+      filteredDescriptions.push(m);
+    }
+
+    const swarmGate = swarmExecutionGate(
+      filteredDescriptions.length > 0 ? 1 : 0,
+      this.rpcHealth.isHealthy,
+    );
+    if (!swarmGate.allowed) {
+      this.addLog(`⚠️ Swarm execution blocked: ${swarmGate.reason}`, 'warning');
+    }
+
+    const inefficiencies = await this.swarmIntegrator.detectInefficiencies(
+      swarmGate.allowed ? filteredDescriptions : [],
+      0.05,
+    );
     this.swarmSignals = inefficiencies;
 
     if (inefficiencies.length > 0) {

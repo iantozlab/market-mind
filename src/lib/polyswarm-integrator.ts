@@ -2,7 +2,6 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 //  TASK-002 COMPLETION: HARDENED POLYSWARM INTEGRATOR
 //  ────────────────────────────────────────────────────────────────────────────
-//  • submitOrderToClob removed – use executeLiveTrade (via proxy) instead.
 //  • Market data validation (price bounds, staleness, divergence) added.
 //  • RPC health awareness – degrades gracefully if RPC is unhealthy.
 //  • All API keys are strictly server-side (Edge Function secrets).
@@ -291,12 +290,6 @@ export function swarmExecutionGate(
   }
   return { allowed: true, reason: "All checks passed" };
 }
-
-// ─── ❌ REMOVED: submitOrderToClob ────────────────────────────────────────────
-// This function has been removed as part of TASK-002.
-// All order submissions now go through executeLiveTrade() in neural-bot-engine.ts,
-// which routes via the secure polymarket-proxy Edge Function.
-// If you need to submit an order, import executeLiveTrade instead.
 
 export interface AgentPrediction { probability: number; confidence: number; }
 
