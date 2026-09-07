@@ -46,7 +46,6 @@ import {
   parseEther,
   formatEther,
 } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
 
 // Loose client type: viem's generic PublicClient blows up TS inference depth here.
 type PublicClient = any;
