@@ -27,6 +27,7 @@ import ReplayQueueProgressPanel from '@/components/ReplayQueueProgressPanel';
 import { appendAudit, diffSettings } from '@/lib/settings-audit';
 import { useAlertsCenter } from '@/hooks/useAlertsCenter';
 import { useMetricsPersistence } from '@/hooks/useMetricsPersistence';
+import { useEnhancedRANS } from '@/lib/enhanced-rans-module';
 
 const StatusPill: React.FC<{ ok: boolean; label: string; value: string; tone?: 'primary' | 'accent' }> = ({ ok, label, value, tone = 'primary' }) => {
   const dot = ok ? (tone === 'accent' ? 'bg-accent' : 'bg-primary') : 'bg-destructive';
@@ -40,8 +41,9 @@ const StatusPill: React.FC<{ ok: boolean; label: string; value: string; tone?: '
   );
 };
 
-
 const NeuralBotDashboard: React.FC = () => {
+  const enhancedRans = useEnhancedRANS(CONFIG.INITIAL_CAPITAL);
+  const EnhancedRansPopup = enhancedRans.Popup;
   const [isRunning, setIsRunning] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [metrics, setMetrics] = useState<BotMetrics>({
@@ -258,6 +260,7 @@ const NeuralBotDashboard: React.FC = () => {
                 <StatusPill ok={apiStatus.dataSource === 'live'} label="Data" value={apiStatus.dataSource === 'live' ? `LIVE · ${metrics.marketsMonitored}` : 'SIM'} />
                 <StatusPill ok={!!getEnvStatus().polymarketApiKey} label="API Key" value={getEnvStatus().polymarketApiKey ? 'OK' : 'Missing'} />
                 <StatusPill ok label="Mode" value={CONFIG.BOT_MODE} tone="accent" />
+                <StatusPill ok={enhancedRans.killLevel === 'none'} label="RANS" value={enhancedRans.killLevel === 'none' ? 'Stable' : enhancedRans.killLevel} tone="accent" />
                 <StatusPill ok label="Capital" value={`$${CONFIG.INITIAL_CAPITAL.toLocaleString()}`} tone="accent" />
                 <StatusPill
                   ok={!persistence.lastError && persistence.queueDepth === 0}
@@ -270,6 +273,7 @@ const NeuralBotDashboard: React.FC = () => {
                         : 'pending'
                   }
                 />
+                <EnhancedRansPopup />
                 {persistence.lastFlush && (
                   <div
                     className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 ${
