@@ -1,5 +1,5 @@
 // RANS diagnostics event persistence — writes to Supabase `rans_diagnostic_events`.
-// Untyped access (table not in generated types until next regen); safe via `as any`.
+// The table is not in generated types until the next schema regeneration.
 import { supabase } from '@/integrations/supabase/client';
 
 export type RansDiagEventType =
@@ -19,9 +19,9 @@ export interface RansDiagEvent {
 }
 
 const TABLE = 'rans_diagnostic_events';
-const db = () => (supabase as any).from(TABLE);
+const db = () => supabase.from(TABLE as never);
 
-let pending: RansDiagEvent[] = [];
+const pending: RansDiagEvent[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
 function scheduleFlush() {
@@ -30,7 +30,7 @@ function scheduleFlush() {
     flushTimer = null;
     const batch = pending.splice(0, pending.length);
     if (batch.length === 0) return;
-    try { await db().insert(batch); } catch { /* offline tolerant */ }
+    try { await db().insert(batch as never[]); } catch { /* offline tolerant */ }
   }, 750);
 }
 
@@ -39,7 +39,7 @@ export function recordRansDiagEvent(ev: RansDiagEvent) {
   scheduleFlush();
   // Optional external notification (kill switch + guardrail bursts only).
   if (ev.event_type === 'kill_switch' || ev.event_type === 'guardrail_burst') {
-    notifyExternal(ev).catch(() => { /* ignore */ });
+    void notifyExternal(ev).catch(() => { /* ignore */ });
   }
 }
 
@@ -81,9 +81,9 @@ export async function queryRansDiagEvents(q: RansDiagQuery = {}): Promise<RansDi
     // Client-side trigram fallback for very short / heavily mistyped queries that
     // neither FTS nor ILIKE catches.
     if (q.search && q.search.trim() && rows.length === 0) {
-      const fbReq = db().select('*').order('created_at', { ascending: false })
+      let fbReq = db().select('*').order('created_at', { ascending: false })
         .range(0, Math.max(limit * 4, 100));
-      if (q.fromIso) (fbReq as any).gte?.('created_at', q.fromIso);
+      if (q.fromIso) fbReq = fbReq.gte('created_at', q.fromIso);
       const { data: fb } = await fbReq;
       const needle = q.search.trim().toLowerCase();
       rows = ((fb ?? []) as RansDiagEvent[]).filter(r => {
@@ -160,13 +160,17 @@ export function setNotifySettings(s: NotifySettings) {
 export async function notifyExternal(ev: RansDiagEvent): Promise<void> {
   const cfg = getNotifySettings();
   if (!cfg.enabled) return;
+  const detail = ev.detail ?? {};
+  const reason = typeof detail.reason === 'string' ? detail.reason : 'unknown';
+  const count = typeof detail.count === 'number' ? detail.count : '?';
+  const windowMs = typeof detail.windowMs === 'number' ? detail.windowMs : '?';
   const payload = {
     source: 'RANS',
     event_type: ev.event_type,
     severity: ev.severity,
     title: ev.event_type === 'kill_switch'
-      ? `RANS kill switch engaged: ${(ev.detail as any)?.reason ?? 'unknown'}`
-      : `RANS guardrail clamp burst (${(ev.detail as any)?.count ?? '?'} in ${(ev.detail as any)?.windowMs ?? '?'}ms)`,
+      ? `RANS kill switch engaged: ${reason}`
+      : `RANS guardrail clamp burst (${count} in ${windowMs}ms)`,
     detail: ev.detail,
     at: new Date().toISOString(),
   };
