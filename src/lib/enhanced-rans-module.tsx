@@ -1,11 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import {
-  type MarketRegime,
-  RANS_PARAMS,
-  type RegimeWeights,
-} from './rans-engine';
+import type { MarketRegime } from './rans-engine';
 
 export enum KillLevel {
   NONE = 'none',
@@ -55,6 +51,13 @@ export interface AutoResumeRequest {
   expiresAt: number;
 }
 
+export interface RansRegimeFeatures {
+  volatility: number;
+  momentum: number;
+  volumeSpike: number;
+  priceRange: number;
+}
+
 type EventMap = {
   resume_requested: AutoResumeRequest;
   resume_approved: AutoResumeRequest;
@@ -63,10 +66,10 @@ type EventMap = {
 };
 
 class TypedEmitter {
-  private listeners: Partial<Record<keyof EventMap, Array<(payload: any) => void>>> = {};
+  private listeners: Partial<Record<keyof EventMap, Array<(payload: unknown) => void>>> = {};
 
   on<K extends keyof EventMap>(event: K, handler: (payload: EventMap[K]) => void) {
-    (this.listeners[event] ??= []).push(handler as (payload: any) => void);
+    (this.listeners[event] ??= []).push(handler as (payload: unknown) => void);
     return this;
   }
 
@@ -120,6 +123,7 @@ export class EnhancedRANSExecutionEngine extends TypedEmitter {
   }
 
   private evaluateKillConditions(trades: Array<{ pnl: number; timestamp: number }>): KillLevel {
+    if (trades.length < 30) return KillLevel.NONE;
     const recent = trades.slice(-30);
     const winRate = recent.length ? recent.filter((t) => t.pnl > 0).length / recent.length : 0.5;
     const dailyPnL = trades
@@ -132,6 +136,30 @@ export class EnhancedRANSExecutionEngine extends TypedEmitter {
     if (winRate < 0.45 || dailyPnL < -150 || maxDrawdown > 0.1) return KillLevel.REDUCED;
     if (winRate < 0.5 || dailyPnL < -100) return KillLevel.WARNING;
     return KillLevel.NONE;
+  }
+
+  public recordTrade(pnl: number, marketId: string): KillLevel {
+    if (!Number.isFinite(pnl)) return this.killState.level;
+
+    this.tradeHistory.push({ timestamp: Date.now(), pnl, marketId });
+    if (this.tradeHistory.length > 500) this.tradeHistory.shift();
+    this.capital += pnl;
+
+    const level = this.evaluateKillConditions(this.tradeHistory);
+    if (level !== this.killState.level) {
+      this.killState.level = level;
+      this.killState.reason = level === KillLevel.NONE ? '' : `Performance guard: ${level}`;
+      this.killState.triggeredAt = level === KillLevel.NONE ? 0 : Date.now();
+      this.killState.metrics = {
+        winRate30: this.tradeHistory.slice(-30).filter((trade) => trade.pnl > 0).length / Math.min(30, this.tradeHistory.length),
+        dailyPnL: this.tradeHistory
+          .filter((trade) => Date.now() - trade.timestamp < 86400000)
+          .reduce((sum, trade) => sum + trade.pnl, 0),
+        maxDrawdown: this.calculateMaxDrawdown(this.tradeHistory),
+        regime: this.killState.metrics.regime,
+      };
+    }
+    return level;
   }
 
   private calculateMaxDrawdown(trades: Array<{ pnl: number; timestamp: number }>): number {
@@ -237,12 +265,7 @@ export class EnhancedRANSExecutionEngine extends TypedEmitter {
     return true;
   }
 
-  public detectRegime(features: {
-    volatility: number;
-    momentum: number;
-    volumeSpike: number;
-    priceRange: number;
-  }): { regime: MarketRegime; confidence: number; probabilities: Record<MarketRegime, number> } {
+  public detectRegime(features: RansRegimeFeatures): { regime: MarketRegime; confidence: number; probabilities: Record<MarketRegime, number> } {
     const { volatility, momentum, volumeSpike, priceRange } = features;
 
     if (volatility < 0.008 && momentum < 0.3 && volumeSpike < 1.5) {
@@ -512,7 +535,7 @@ export function useEnhancedRANS(initialCapital: number) {
     rejectResume: reject,
     snoozeResume: snooze,
     getAdjustedPositionSize: (base: number) => engine.getAdjustedPositionSize(base),
-    detectRegime: (features: any) => engine.detectRegime(features),
+    detectRegime: (features: RansRegimeFeatures) => engine.detectRegime(features),
     getCapital: () => engine.getCapital(),
     getTotalRealized: () => engine.getTotalRealized(),
   };

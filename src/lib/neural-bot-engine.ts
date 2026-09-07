@@ -27,6 +27,7 @@ import type { CounterOpportunity, SelfHealingPatch } from './nonce-race-defender
 
 const DEFENSE_BOT_ADDRESS = '0xbot0000000000000000000000000000000000bot';
 import { recordDrawdownIncident } from './drawdown-incidents';
+import { EnhancedRANSExecutionEngine } from './enhanced-rans-module';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  TASK-001 & TASK-002: VIEM SECURE IMPORTS
@@ -1073,6 +1074,7 @@ export class UnifiedNeuralBot {
   private swarmEvents: LatencyArbEvent[] = [];
 
   private rans: RANSExecutionEngine | null = null;
+  private enhancedRans: EnhancedRANSExecutionEngine;
   private lastRansPlan: RANSPlan | null = null;
   private lastRansRegime: MarketRegime | null = null;
   private ransHistory: RansHistoryEntry[] = [];
@@ -1124,6 +1126,7 @@ export class UnifiedNeuralBot {
     this.phantom = new PhantomLiquidityHarvester(CONFIG.INITIAL_CAPITAL);
     this.psychology = new MarketPsychologyEngine();
     this.rans = new RANSExecutionEngine(CONFIG.INITIAL_CAPITAL);
+    this.enhancedRans = new EnhancedRANSExecutionEngine(CONFIG.INITIAL_CAPITAL);
 
     // --- Multi-market arbitrage + 50-agent swarm ---
     buildDefaultSwarm(this.swarmIntegrator, 50);
@@ -1967,12 +1970,18 @@ export class UnifiedNeuralBot {
           const direction = Math.max(-1, Math.min(1, crossDir * 0.5 + metaPred.expectedMove * 5 + gasAdj));
 
           if (strength > 0.2 && this.tickCount % 3 === 0) {
-            this.metrics.tradesExecuted++;
             const side = direction >= 0 ? 'BUY YES' : 'BUY NO';
             const rawSize = Math.floor(50 + strength * 500);
-            const size = this.applyAntiDetection(rawSize);
+            const antiDetectionSize = this.applyAntiDetection(rawSize);
+            const size = Math.floor(this.enhancedRans.getAdjustedPositionSize(antiDetectionSize));
             const source = crossPred.confidence > metaPred.confidence ? 'transformer' : 'meta';
             const modeTag = CONFIG.BOT_MODE === 'PAPER' ? '📄' : '🔴';
+
+            if (size <= 0) {
+              this.addLog(`🛑 RANS exposure guard blocked trade on ${market.slug.slice(0, 25)}`, 'warning');
+              continue;
+            }
+            this.metrics.tradesExecuted++;
 
             // ─── TASK-001 / TASK-002: Live vs Paper execution branch ──────────
             if (CONFIG.BOT_MODE === 'LIVE' && rpcOk && this.securePublicClient) {
@@ -2011,6 +2020,7 @@ export class UnifiedNeuralBot {
                 const pnl = (Math.random() - 0.45) * size * 0.05;
                 this.metrics.totalPnL += pnl;
                 this.metrics.dailyPnL += pnl;
+                this.enhancedRans.recordTrade(pnl, market.id);
                 this.pnlHistory.push(this.metrics.totalPnL);
                 this.updateDrawdown();
 
@@ -2035,6 +2045,7 @@ export class UnifiedNeuralBot {
               const pnl = (Math.random() - 0.45) * size * 0.05;
               this.metrics.totalPnL += pnl;
               this.metrics.dailyPnL += pnl;
+              this.enhancedRans.recordTrade(pnl, market.id);
               this.pnlHistory.push(this.metrics.totalPnL);
               this.updateDrawdown();
 
