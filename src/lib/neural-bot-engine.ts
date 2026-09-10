@@ -129,58 +129,69 @@ export async function createSecurePublicClient(): Promise<{
   isHealthy: boolean;
   blockAgeSec: number;
   consensusDiff: number;
+  activeRpcs: number;
 }> {
   let isHealthy = false;
   let blockAgeSec = 999;
   let consensusDiff = 999;
+  let activeRpcs = 0;
 
   const client = createPublicClient({
     chain: polygon,
     transport: fallback(
-      RPC_ENDPOINTS.map((url) => http(url, { batch: true })),
+      RPC_ENDPOINTS.map((url) => http(url, { batch: true, timeout: 5000 })),
       {
         rank: true,
-        retryCount: 3,
-        retryDelay: 1000,
+        retryCount: 2,
+        retryDelay: 500,
       }
     ),
   });
 
+  const rpcResults: { endpoint: string; block: bigint | null; latency: number }[] = [];
+  await Promise.allSettled(
+    RPC_ENDPOINTS.map(async (endpoint) => {
+      const startedAt = Date.now();
+      try {
+        const rpcClient = createPublicClient({
+          chain: polygon,
+          transport: http(endpoint, { timeout: 3000 }),
+        });
+        const block = await rpcClient.getBlockNumber();
+        rpcResults.push({ endpoint, block, latency: Date.now() - startedAt });
+        activeRpcs += 1;
+      } catch {
+        rpcResults.push({ endpoint, block: null, latency: -1 });
+      }
+    }),
+  );
+
+  const responsiveRpcs = rpcResults.filter((result) => result.block !== null);
+  if (responsiveRpcs.length >= 2) {
+    const blocks = responsiveRpcs.map((result) => Number(result.block));
+    consensusDiff = Math.max(...blocks) - Math.min(...blocks);
+    isHealthy = consensusDiff <= 3;
+    if (!isHealthy) console.warn(`⚠️ RPC consensus failure: blocks differ by ${consensusDiff}`);
+  } else if (responsiveRpcs.length === 1) {
+    consensusDiff = 0;
+    isHealthy = true;
+    console.warn('⚠️ Only 1 RPC responsive - degraded mode');
+  }
+
   try {
-    // Query two RPCs independently to check consensus.
-    const [blockA, blockB] = await Promise.all([
-      createPublicClient({ chain: polygon, transport: http(RPC_ENDPOINTS[0]) }).getBlockNumber(),
-      createPublicClient({ chain: polygon, transport: http(RPC_ENDPOINTS[1]) }).getBlockNumber(),
-    ]);
-
-    const diff = Math.abs(Number(blockA - blockB));
-    consensusDiff = diff;
-
-    // If blocks differ by more than 3, RPCs are out of sync.
-    if (diff <= 3) {
-      isHealthy = true;
-    } else {
-      console.warn(`⚠️ RPC consensus failure: blocks differ by ${diff}`);
-      isHealthy = false;
-    }
-
-    // Check staleness of the latest block.
     const latestBlock = await client.getBlock({ blockTag: 'latest' });
-    const blockTimestamp = Number(latestBlock.timestamp);
-    const now = Math.floor(Date.now() / 1000);
-    const age = now - blockTimestamp;
-    blockAgeSec = age;
-
-    if (age > 60) {
-      console.warn(`⚠️ RPC serving stale block (${age}s old)`);
+    blockAgeSec = Math.floor(Date.now() / 1000) - Number(latestBlock.timestamp);
+    if (blockAgeSec > 120) {
+      console.warn(`⚠️ RPC serving stale block (${blockAgeSec}s old)`);
       isHealthy = false;
     }
   } catch (error) {
-    console.error('❌ RPC health check failed:', error);
+    blockAgeSec = 999;
     isHealthy = false;
+    console.error('❌ RPC staleness check failed:', error);
   }
 
-  return { client, isHealthy, blockAgeSec, consensusDiff };
+  return { client, isHealthy, blockAgeSec, consensusDiff, activeRpcs };
 }
 
 /**
@@ -1038,7 +1049,7 @@ export class UnifiedNeuralBot {
     consensusDiff: 999,
   };
   private lastRpcCheck = 0;
-  private rpcCheckInterval = 10000; // Check every 10 seconds.
+  private rpcCheckInterval = 30000; // Check every 30 seconds.
 
   private metrics: BotMetrics = {
     totalPnL: 0, dailyPnL: 0, winRate: 0, activePositions: 0,
