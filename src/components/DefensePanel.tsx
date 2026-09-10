@@ -43,6 +43,7 @@ const DefensePanel: React.FC = () => {
   const blacklist = nonceDefender.getBlacklist();
   const opportunities = nonceDefender.getOpportunities();
   const patches = nonceDefender.getPatches();
+  const telemetry = nonceDefender.getAttackTelemetry();
 
   const exportCsv = () => {
     const blob = new Blob([nonceDefender.toCsv()], { type: 'text/csv;charset=utf-8' });
@@ -89,6 +90,8 @@ const DefensePanel: React.FC = () => {
           <Stat label="Mempool mode" value={status.mempoolMode.toUpperCase()} tone={status.mempoolMode === 'private' ? 'text-primary' : undefined} />
           <Stat label="Patches applied" value={String(status.patchesApplied)} tone={status.patchesApplied ? 'text-info' : undefined} />
           <Stat label="Opportunities" value={String(opportunities.length)} tone={opportunities.length ? 'text-primary' : undefined} />
+          <Stat label="Projected Threats" value={String(telemetry.simulated)} />
+          <Stat label="Live Attacks Detected" value={String(telemetry.observed)} tone={telemetry.observed ? 'text-destructive' : undefined} />
         </div>
 
 

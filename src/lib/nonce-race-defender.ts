@@ -12,7 +12,7 @@ import type { Market, Trade } from './neural-bot-engine';
 
 export type AttackType =
   | 'NONCE_RACE' | 'GHOST_FILL' | 'BALANCE_DRAIN' | 'CANCEL_FLOOD'
-  | 'MULTI_MARKET' | 'BTC_MANIPULATION' | 'NONE';
+  | 'MULTI_MARKET' | 'BTC_MANIPULATION' | 'OBSERVED_MEV' | 'NONE';
 
 export type DefenseMode = 'PASSIVE' | 'ACTIVE' | 'AGGRESSIVE';
 
@@ -86,6 +86,14 @@ export interface CounterOpportunity {
   expectedProfit: number;
   confidence: number;
   timestamp: number;
+  isReal?: boolean;
+}
+
+export interface AttackTelemetry {
+  simulated: number;
+  observed: number;
+  lastObservedAt: number;
+  source: 'paper' | 'live' | 'hybrid';
 }
 
 export type PatchType = 'EXTEND_HEDGE_DELAY' | 'TIGHTEN_SPOOF_CUTOFF' | 'RAISE_GAS_THRESHOLD' | 'SHRINK_ORDER_CAP';
@@ -178,6 +186,12 @@ class EnhancedNonceRaceDefender {
   private ordersScreened = 0;
   private ordersBlocked = 0;
   private ticksProcessed = 0;
+  private attackTelemetry: AttackTelemetry = {
+    simulated: 0,
+    observed: 0,
+    lastObservedAt: 0,
+    source: 'paper',
+  };
 
   // Self-healing runtime adjustments (start at DEFENSE_PARAMS defaults)
   private rtHedgeDelayMs: number = DEFENSE_PARAMS.HEDGE_DELAY_MS;
@@ -227,6 +241,7 @@ class EnhancedNonceRaceDefender {
   getPatches() { return this.patches; }
   getLog() { return this.log; }
   getBlacklist() { return Array.from(this.blacklist); }
+  getAttackTelemetry(): AttackTelemetry { return { ...this.attackTelemetry }; }
   setDefenseActive(on: boolean) { this.active = on; this.mode = on ? 'ACTIVE' : 'PASSIVE'; this.notify(); }
   setPrivateMempool(on: boolean) { this.privateMempoolActive = on; this.notify(); }
   /** Plumb runtime secrets (Polygon RPC / Blocknative) once the proxy config is loaded. */
@@ -248,6 +263,7 @@ class EnhancedNonceRaceDefender {
     this.attacks = []; this.manipulations = []; this.log = [];
     this.opportunities = []; this.patches = []; this.recentAttackTypes = [];
     this.counterExploitProfit = 0; this.ordersBlocked = 0; this.ordersScreened = 0;
+    this.attackTelemetry = { simulated: 0, observed: 0, lastObservedAt: 0, source: 'paper' };
     this.rtHedgeDelayMs = DEFENSE_PARAMS.HEDGE_DELAY_MS; this.rtSpoofCutoff = 0.7; this.rtOrderCapRatio = 0.3;
     this.notify();
   }
@@ -258,10 +274,37 @@ class EnhancedNonceRaceDefender {
   }
 
   // ---------- ingestion (called per engine tick) ----------
-  ingestTick(markets: Market[], trades: Trade[]): void {
+  async ingestTick(markets: Market[], trades: Trade[]): Promise<void> {
     if (!this.active) return;
     this.ticksProcessed += 1;
     this.rotateKeyIfNeeded();
+
+    const isRealData = trades.some(t => t.txHash?.startsWith('0x'));
+    if (isRealData) {
+      this.attackTelemetry.source = this.attackTelemetry.simulated > 0 ? 'hybrid' : 'live';
+      const suspiciousTrades = trades.filter(t => {
+        const timeSince = Date.now() - t.timestamp;
+        return timeSince >= 0 && timeSince < 2000 && t.amount > 1000;
+      });
+      if (suspiciousTrades.length > 0) {
+        this.attackTelemetry.observed += suspiciousTrades.length;
+        this.attackTelemetry.lastObservedAt = Date.now();
+        this.attackTelemetry.source = 'hybrid';
+        this.emitEvent('opportunity_ready', {
+          id: rid(),
+          attackType: 'OBSERVED_MEV',
+          expectedProfit: suspiciousTrades.reduce((s, t) => s + t.amount * 0.01, 0),
+          confidence: 0.7,
+          marketIds: suspiciousTrades.map(t => t.marketId),
+          attackerAddress: suspiciousTrades[0]?.traderAddress,
+          timestamp: Date.now(),
+          isReal: true,
+        });
+      }
+    } else {
+      this.attackTelemetry.simulated += 1;
+      this.attackTelemetry.source = this.attackTelemetry.observed > 0 ? 'hybrid' : 'paper';
+    }
 
     const now = Date.now();
     const cutoff = now - 60000;

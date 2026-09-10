@@ -2132,7 +2132,7 @@ export class UnifiedNeuralBot {
         try {
           const defTrades: Trade[] = [];
           for (const arr of this.recentTrades.values()) defTrades.push(...arr);
-          nonceDefender.ingestTick(markets, defTrades);
+          await nonceDefender.ingestTick(markets, defTrades);
         } catch {
           // defense scan must never kill the loop
         }
