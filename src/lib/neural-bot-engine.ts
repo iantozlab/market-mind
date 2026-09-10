@@ -632,6 +632,9 @@ export interface BotMetrics {
   sharpeRatio: number;
   maxDrawdown: number;
   lastGasSpike: number;
+  totalWins: number;
+  totalLosses: number;
+  totalTrades: number;
 }
 
 export interface StrategyStatus {
@@ -1055,6 +1058,7 @@ export class UnifiedNeuralBot {
     totalPnL: 0, dailyPnL: 0, winRate: 0, activePositions: 0,
     anomalyScore: 0, botDetectionAccuracy: 0, tradesExecuted: 0, marketsMonitored: 0,
     sharpeRatio: 0, maxDrawdown: 0, lastGasSpike: 0,
+    totalWins: 0, totalLosses: 0, totalTrades: 0,
   };
 
   private strategies: StrategyStatus[] = [
@@ -1192,6 +1196,16 @@ export class UnifiedNeuralBot {
   private defenseDisposers: Array<() => void> = [];
 
   /** Realize a counter-exploit position against a detected attacker (paper-safe). */
+  private recordTradeOutcome(pnl: number, tradeCount = 1) {
+    if (tradeCount <= 0) return;
+    this.metrics.totalTrades += tradeCount;
+    if (pnl > 0) this.metrics.totalWins += tradeCount;
+    else this.metrics.totalLosses += tradeCount;
+    this.metrics.winRate = this.metrics.totalTrades > 0
+      ? this.metrics.totalWins / this.metrics.totalTrades
+      : 0;
+  }
+
   private executeCounterPosition(opp: CounterOpportunity) {
     const capital = this.getRANSCapital();
     const size = Math.min(capital * CONFIG.RISK.MAX_POSITION_PCT * opp.confidence, capital * 0.05);
@@ -1200,6 +1214,7 @@ export class UnifiedNeuralBot {
     this.metrics.totalPnL += realized;
     this.metrics.dailyPnL += realized;
     this.metrics.tradesExecuted += 1;
+    this.recordTradeOutcome(realized);
     this.psychology.updateStrategyPerformance('nonce_race_defender', realized > 0);
     this.addLog(
       `💀 COUNTER-POSITION ${this.isPaperMode ? '(paper)' : ''}: $${size.toFixed(2)} vs ${opp.attackType.replace('_', ' ')} → +$${realized.toFixed(2)}`,
@@ -1240,6 +1255,7 @@ export class UnifiedNeuralBot {
     this.metrics.totalPnL += signal.guaranteedProfit;
     this.metrics.dailyPnL += signal.guaranteedProfit;
     this.metrics.tradesExecuted += signal.legs.length;
+    this.recordTradeOutcome(signal.guaranteedProfit, signal.legs.length);
     this.addLog(`🔒 ARBITRAGE ${signal.type.replace(/_/g, ' ').toUpperCase()}: +$${signal.guaranteedProfit.toFixed(2)} · ${signal.legs.length} legs · ${signal.label}`, 'trade');
   }
 
@@ -1878,6 +1894,7 @@ export class UnifiedNeuralBot {
             this.metrics.totalPnL += profit;
             this.metrics.dailyPnL += profit;
             this.metrics.tradesExecuted += events.length;
+            for (const event of events) this.recordTradeOutcome(event.profitRealized);
           }
           for (const ev of events) {
             this.addLog(`✅ PHANTOM FILL: ${ev.slug.slice(0, 24)} +$${ev.profitRealized.toFixed(2)} (${ev.status})`, 'trade');
@@ -2033,8 +2050,6 @@ export class UnifiedNeuralBot {
               this.addLog(`🛑 RANS exposure guard blocked trade on ${market.slug.slice(0, 25)}`, 'warning');
               continue;
             }
-            this.metrics.tradesExecuted++;
-
             // ─── TASK-001 / TASK-002: Live vs Paper execution branch ──────────
             if (CONFIG.BOT_MODE === 'LIVE' && rpcOk && this.securePublicClient) {
               // ─── LIVE EXECUTION (Secure pipeline) ─────────────────────────────
@@ -2072,12 +2087,11 @@ export class UnifiedNeuralBot {
                 const pnl = (Math.random() - 0.45) * size * 0.05;
                 this.metrics.totalPnL += pnl;
                 this.metrics.dailyPnL += pnl;
+                this.metrics.tradesExecuted++;
+                this.recordTradeOutcome(pnl);
                 this.enhancedRans.recordTrade(pnl, market.id);
                 this.pnlHistory.push(this.metrics.totalPnL);
                 this.updateDrawdown();
-
-                if (pnl > 0) this.metrics.winRate = this.metrics.winRate * 0.95 + 0.05;
-                else this.metrics.winRate = this.metrics.winRate * 0.95;
 
               } catch (execError) {
                 this.addLog(`❌ LIVE TRADE FAILED: ${execError}`, 'error');
@@ -2097,12 +2111,12 @@ export class UnifiedNeuralBot {
               const pnl = (Math.random() - 0.45) * size * 0.05;
               this.metrics.totalPnL += pnl;
               this.metrics.dailyPnL += pnl;
+              this.metrics.tradesExecuted++;
+              this.recordTradeOutcome(pnl);
               this.enhancedRans.recordTrade(pnl, market.id);
               this.pnlHistory.push(this.metrics.totalPnL);
               this.updateDrawdown();
 
-              if (pnl > 0) this.metrics.winRate = this.metrics.winRate * 0.95 + 0.05;
-              else this.metrics.winRate = this.metrics.winRate * 0.95;
             }
           }
 
@@ -2272,6 +2286,7 @@ export class UnifiedNeuralBot {
               this.metrics.totalPnL += plan.realizedArbitrageProfit;
               this.metrics.dailyPnL += plan.realizedArbitrageProfit;
               this.metrics.tradesExecuted += plan.arbitrageSignals.length;
+              this.recordTradeOutcome(plan.realizedArbitrageProfit, plan.arbitrageSignals.length);
             }
           }
         } catch (err) {

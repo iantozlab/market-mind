@@ -50,6 +50,7 @@ const NeuralBotDashboard: React.FC = () => {
     totalPnL: 0, dailyPnL: 0, winRate: 0, activePositions: 0,
     anomalyScore: 0, botDetectionAccuracy: 0, tradesExecuted: 0, marketsMonitored: 0,
     sharpeRatio: 0, maxDrawdown: 0, lastGasSpike: 0,
+    totalWins: 0, totalLosses: 0, totalTrades: 0,
   });
   const [anomalyHistory, setAnomalyHistory] = useState<{ time: string; score: number; threshold: number }[]>([]);
   const [pnlHistory, setPnlHistory] = useState<{ time: string; pnl: number }[]>([]);
