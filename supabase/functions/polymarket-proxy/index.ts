@@ -4,7 +4,6 @@ import {
   formatUnits,
   http,
   type Address,
-  waitForTransactionReceipt,
 } from "npm:viem@2.21.0";
 import { privateKeyToAccount } from "npm:viem@2.21.0/accounts";
 import { polygon } from "npm:viem@2.21.0/chains";
@@ -93,8 +92,10 @@ async function readAllowance(publicClient: ReturnType<typeof createPublicClient>
 }
 
 async function revokeAllowance(
-  walletClient: ReturnType<typeof createWalletClient>,
-  publicClient: ReturnType<typeof createPublicClient>,
+  // deno-lint-ignore no-explicit-any
+  walletClient: any,
+  // deno-lint-ignore no-explicit-any
+  publicClient: any,
 ) {
   const revokeHash = await walletClient.writeContract({
     address: POLYMARKET_USDC_ADDRESS,
@@ -102,7 +103,7 @@ async function revokeAllowance(
     functionName: "approve",
     args: [POLYMARKET_EXCHANGE_ADDRESS, 0n],
   });
-  const receipt = await waitForTransactionReceipt(publicClient, { hash: revokeHash });
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: revokeHash });
   if (receipt.status !== "success") throw new Error(`Allowance revocation failed: ${revokeHash}`);
   logJson("info", { event: "allowance_revoked", txHash: revokeHash });
 }
@@ -137,7 +138,7 @@ async function secureAllowanceAndSubmitOrder(signedOrderPayload: Record<string, 
         functionName: "approve",
         args: [POLYMARKET_EXCHANGE_ADDRESS, requiredAllowance],
       });
-      const receipt = await waitForTransactionReceipt(publicClient, { hash: approveHash });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: approveHash });
       if (receipt.status !== "success") throw new Error("Exact allowance approval failed");
       allowanceWasUsed = true;
       logJson("info", { event: "allowance_approved", amount: formatUnits(requiredAllowance, 6), txHash: approveHash });
