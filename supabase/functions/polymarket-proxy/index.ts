@@ -182,15 +182,19 @@ async function proxyRequest(endpoint: string, params: string | undefined, method
   const apiKey = Deno.env.get("POLYMARKET_API_KEY");
   const secret = Deno.env.get("POLYMARKET_SECRET");
   const passphrase = Deno.env.get("POLYMARKET_PASSPHRASE");
-  if (!apiKey || !secret || !passphrase) throw new Error("Polymarket API credentials are not configured");
+  const hasCreds = !!(apiKey && secret && passphrase);
+  // Public market data (GET) works without credentials; only writes require them.
+  if (!hasCreds && method === "POST") throw new Error("Polymarket API credentials are not configured");
 
   const headers: Record<string, string> = {
     Accept: "application/json",
     "Content-Type": "application/json",
-    "POLYMARKET-API-KEY": apiKey,
-    "POLYMARKET-SECRET": secret,
-    "POLYMARKET-PASSPHRASE": passphrase,
   };
+  if (hasCreds && !isGamma) {
+    headers["POLYMARKET-API-KEY"] = apiKey!;
+    headers["POLYMARKET-SECRET"] = secret!;
+    headers["POLYMARKET-PASSPHRASE"] = passphrase!;
+  }
   const response = await fetch(targetUrl, {
     method: method === "HEAD" ? "HEAD" : method === "POST" ? "POST" : "GET",
     headers,
