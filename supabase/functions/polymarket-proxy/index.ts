@@ -1,3 +1,4 @@
+import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   createPublicClient,
   createWalletClient,
@@ -199,6 +200,18 @@ async function proxyRequest(endpoint: string, params: string | undefined, method
   return { ok: response.ok, status: response.status, body };
 }
 
+async function isAdminRequest(req: Request): Promise<boolean> {
+  const token = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
+  if (!token) return false;
+  const url = Deno.env.get("SUPABASE_URL") ?? "";
+  const anon = createClient(url, Deno.env.get("SUPABASE_ANON_KEY") ?? "");
+  const { data: { user }, error } = await anon.auth.getUser(token);
+  if (error || !user) return false;
+  const svc = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "");
+  const { data } = await svc.rpc("has_role", { _user_id: user.id, _role: "admin" });
+  return data === true;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -222,6 +235,12 @@ Deno.serve(async (req) => {
     }
 
     const method = input.method ?? "GET";
+
+    if (endpoint.startsWith("/orders") && method !== "GET" && method !== "HEAD") {
+      if (!(await isAdminRequest(req))) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+    }
 
     if (!startupChecked) {
       try {

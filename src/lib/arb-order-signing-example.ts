@@ -140,7 +140,7 @@ async function submitSignedOrderToPolymarket(signedOrder: any) {
  * 
  * // ❌ OLD (INSECURE):
  * // const privateKey = Deno.env.get("PRIVATE_KEY");
- * // const account = /* local private-key account (removed) */;
+ * // const account = <local private-key account (removed)>;
  * // const signature = await account.signTypedData(...);
  * 
  * // ✅ NEW (SECURE):

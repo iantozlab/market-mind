@@ -88,11 +88,17 @@ export async function purgeArbAudit(): Promise<void> {
   try { await db().delete().neq('id', '00000000-0000-0000-0000-000000000000'); } catch { /* ignore */ }
 }
 
+const csvSafe = (v: string | null | undefined): string => {
+  let s = v ?? '';
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  return `"${s.replace(/"/g, '""')}"`;
+};
+
 export function arbAuditToCsv(rows: ArbAuditEntry[]): string {
   const head = ['created_at', 'mode', 'source', 'action', 'label', 'legs', 'profit', 'capital', 'confidence', 'reason'];
   const body = rows.map(r => [
-    r.created_at, r.mode, r.source, r.action, `"${(r.label ?? '').replace(/"/g, '""')}"`,
-    r.legs, r.profit.toFixed(4), r.capital.toFixed(2), r.confidence.toFixed(3), `"${r.reason ?? ''}"`,
+    r.created_at, r.mode, r.source, r.action, csvSafe(r.label),
+    r.legs, r.profit.toFixed(4), r.capital.toFixed(2), r.confidence.toFixed(3), csvSafe(r.reason),
   ].join(','));
   return [head.join(','), ...body].join('\n');
 }
