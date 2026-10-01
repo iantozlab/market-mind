@@ -13,19 +13,21 @@ const corsHeaders = {
 
 const expectedDomain = {
   name: "Polymarket CTF Exchange",
-  version: "1",
+  version: "2",
   chainId: 137,
-  verifyingContract: "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E",
 };
+const allowedExchanges = new Set([
+  "0xE111180000d2663C0091e4f400237545B87B996B",
+  "0xe2222d279d744050d28e00520010520000310F59",
+]);
 const expectedOrderTypes = {
   Order: [
     { name: "salt", type: "uint256" }, { name: "maker", type: "address" },
-    { name: "signer", type: "address" }, { name: "taker", type: "address" },
+    { name: "signer", type: "address" },
     { name: "tokenId", type: "uint256" }, { name: "makerAmount", type: "uint256" },
-    { name: "takerAmount", type: "uint256" }, { name: "expiration", type: "uint256" },
-    { name: "nonce", type: "uint256" }, { name: "feeRateBps", type: "uint256" },
-    { name: "side", type: "uint8" }, { name: "signatureType", type: "uint8" },
-    { name: "useTaker", type: "bool" },
+    { name: "takerAmount", type: "uint256" }, { name: "side", type: "uint8" },
+    { name: "signatureType", type: "uint8" }, { name: "timestamp", type: "uint256" },
+    { name: "metadata", type: "bytes32" }, { name: "builder", type: "bytes32" },
   ],
 };
 
@@ -43,6 +45,34 @@ serve(async (req) => {
   }
 
   if (req.method === "GET") {
+    const url = new URL(req.url);
+    if (url.searchParams.get("action") === "signer") {
+      const allowedOrigins = (Deno.env.get("POLYMARKET_ALLOWED_ORIGIN") ?? "")
+        .split(",").map((o) => o.trim()).filter(Boolean);
+      const requestOrigin = req.headers.get("Origin");
+      if (allowedOrigins.length > 0 && (!requestOrigin || !allowedOrigins.includes(requestOrigin))) {
+        return jsonResponse({ error: "Origin not allowed" }, 403);
+      }
+
+      const token = req.headers.get("Authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
+      if (!token) return jsonResponse({ error: "Unauthorized" }, 401);
+      try {
+        const client = createClient(
+          Deno.env.get("SUPABASE_URL") ?? "",
+          Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+        );
+        const { data: { user }, error } = await client.auth.getUser(token);
+        if (error || !user) return jsonResponse({ error: "Unauthorized" }, 401);
+        const privateKey = Deno.env.get("POLYMARKET_PRIVATE_KEY");
+        if (!privateKey || !/^0x[0-9a-fA-F]{64}$/.test(privateKey)) {
+          return jsonResponse({ error: "Signing service unavailable" }, 503);
+        }
+        return jsonResponse({ signerAddress: privateKeyToAccount(privateKey as `0x${string}`).address });
+      } catch {
+        return jsonResponse({ error: "Signer address lookup failed" }, 500);
+      }
+    }
+
     return jsonResponse({
       status: "ok",
       service: "sign-polymarket-order",
@@ -107,10 +137,11 @@ serve(async (req) => {
     // 2. Parse the incoming order data
     const { orderData, domain, types, primaryType, requestId, timestamp, origin } = await req.json();
     if (!orderData || !domain || !types || primaryType !== "Order" ||
-      JSON.stringify(domain) !== JSON.stringify(expectedDomain) ||
+      domain.name !== expectedDomain.name || domain.version !== expectedDomain.version ||
+      domain.chainId !== expectedDomain.chainId || !allowedExchanges.has(domain.verifyingContract) ||
       JSON.stringify(types) !== JSON.stringify(expectedOrderTypes) ||
-      !/^0x[0-9a-f]{64}-[0-9a-f-]{36}$/i.test(requestId) ||
       typeof requestId !== "string" ||
+      !/^0x[0-9a-f]{64}-[0-9a-f-]{36}$/i.test(requestId) ||
         typeof timestamp !== "number" || Math.abs(Date.now() - timestamp) > 60_000 ||
         typeof origin !== "string" || origin !== requestOrigin) {
       return new Response(JSON.stringify({ error: "Invalid signing request" }), {
@@ -124,7 +155,8 @@ serve(async (req) => {
       if (!orderData.salt || BigInt(orderData.salt) === 0n) validationErrors.push("salt must be a non-zero uint256");
       if (!orderData.makerAmount || BigInt(orderData.makerAmount) <= 0n) validationErrors.push("makerAmount must be > 0");
       if (!orderData.takerAmount || BigInt(orderData.takerAmount) <= 0n) validationErrors.push("takerAmount must be > 0");
-      if (!orderData.expiration || BigInt(orderData.expiration) <= Date.now()) validationErrors.push("expiration must be in the future");
+      if (!orderData.timestamp || Math.abs(Date.now() - Number(orderData.timestamp)) > 60_000) validationErrors.push("timestamp must be current Unix milliseconds");
+      if (orderData.signatureType !== 0) validationErrors.push("only EOA signature type is configured");
     } catch {
       validationErrors.push("numeric order fields are invalid");
     }
@@ -140,8 +172,9 @@ serve(async (req) => {
 
     // 4. Create the signer account
     const account = privateKeyToAccount(privateKey);
-    if (typeof orderData.signer !== "string" ||
-        orderData.signer.toLowerCase() !== account.address.toLowerCase()) {
+    if (typeof orderData.signer !== "string" || typeof orderData.maker !== "string" ||
+      orderData.signer.toLowerCase() !== account.address.toLowerCase() ||
+      orderData.maker.toLowerCase() !== account.address.toLowerCase()) {
       return new Response(JSON.stringify({ error: "Order signer mismatch" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

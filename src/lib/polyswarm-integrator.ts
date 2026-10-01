@@ -13,6 +13,8 @@ import { supabase } from "@/integrations/supabase/client";
 // ─── Polymarket on-chain constants ─────────────────────────────────────────────
 
 export const POLYMARKET_EXCHANGE_ADDRESS = "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E" as const;
+export const POLYMARKET_STANDARD_EXCHANGE_ADDRESS = "0xE111180000d2663C0091e4f400237545B87B996B" as const;
+export const POLYMARKET_NEG_RISK_EXCHANGE_ADDRESS = "0xe2222d279d744050d28e00520010520000310F59" as const;
 export const POLYMARKET_NEG_RISK_ADAPTER = "0xd91E80cF2E7fe2cBA6DAa4cFf49e8A6dbCb8e6A1" as const;
 export const POLYMARKET_USDC_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174" as const;
 
@@ -20,9 +22,9 @@ export const POLYMARKET_USDC_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa841
 
 export const POLYMARKET_DOMAIN = {
   name: "Polymarket CTF Exchange",
-  version: "1",
+  version: "2",
   chainId: 137,
-  verifyingContract: POLYMARKET_EXCHANGE_ADDRESS,
+  verifyingContract: POLYMARKET_STANDARD_EXCHANGE_ADDRESS,
 } as const;
 
 export const POLYMARKET_ORDER_TYPES = {
@@ -30,16 +32,14 @@ export const POLYMARKET_ORDER_TYPES = {
     { name: "salt", type: "uint256" },
     { name: "maker", type: "address" },
     { name: "signer", type: "address" },
-    { name: "taker", type: "address" },
     { name: "tokenId", type: "uint256" },
     { name: "makerAmount", type: "uint256" },
     { name: "takerAmount", type: "uint256" },
-    { name: "expiration", type: "uint256" },
-    { name: "nonce", type: "uint256" },
-    { name: "feeRateBps", type: "uint256" },
     { name: "side", type: "uint8" },
     { name: "signatureType", type: "uint8" },
-    { name: "useTaker", type: "bool" },
+    { name: "timestamp", type: "uint256" },
+    { name: "metadata", type: "bytes32" },
+    { name: "builder", type: "bytes32" },
   ],
 } as const;
 
@@ -57,14 +57,30 @@ export const signOrderViaBackend = async (
   try {
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token;
+    if (!token) throw new Error("You must be signed in to sign an order.");
+
+    const requestId = `${hashTypedData({
+      domain,
+      types,
+      primaryType: primaryType as any,
+      message: orderData as any,
+    } as any)}-${crypto.randomUUID()}`;
 
     const response = await fetch(SUPABASE_EDGE_FUNCTION_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(token && { "Authorization": `Bearer ${token}` }),
+        "Authorization": `Bearer ${token}`,
       },
-      body: JSON.stringify({ orderData, domain, types, primaryType }),
+      body: JSON.stringify({
+        orderData,
+        domain,
+        types,
+        primaryType,
+        requestId,
+        timestamp: Date.now(),
+        origin: window.location.origin,
+      }),
     });
 
     if (!response.ok) {
@@ -99,14 +115,15 @@ export async function signOrder(
   if (!orderData.salt || BigInt(orderData.salt) === 0n) {
     throw new Error("Invalid order: salt must be a non-zero uint256.");
   }
-  if (!orderData.expiration || BigInt(orderData.expiration) <= Date.now()) {
-    throw new Error("Invalid order: expiration must be in the future.");
-  }
   if (!orderData.makerAmount || BigInt(orderData.makerAmount) <= 0n) {
     throw new Error("Invalid order: makerAmount must be > 0.");
   }
   if (!orderData.takerAmount || BigInt(orderData.takerAmount) <= 0n) {
     throw new Error("Invalid order: takerAmount must be > 0.");
+  }
+  if (!Number.isSafeInteger(Number(orderData.timestamp)) ||
+      Math.abs(Date.now() - Number(orderData.timestamp)) > 60_000) {
+    throw new Error("Invalid order: timestamp must be current Unix milliseconds.");
   }
 
   // ── Deduplicate identical requests ──
@@ -128,7 +145,6 @@ export async function signOrder(
 
     while (attempt < maxAttempts) {
       try {
-        const requestId = `${orderHash}-${Date.now()}`;
         const { signature, signerAddress } = await signOrderViaBackend(
           orderData,
           domain,
@@ -180,30 +196,16 @@ export async function signOrder(
 
 export async function getSignerAddress(): Promise<Address> {
   if (cachedSignerAddress) return cachedSignerAddress;
-
-  const dummyOrder = {
-    salt: "1",
-    maker: "0x0000000000000000000000000000000000000000",
-    signer: "0x0000000000000000000000000000000000000000",
-    taker: "0x0000000000000000000000000000000000000000",
-    tokenId: "0",
-    makerAmount: "0",
-    takerAmount: "0",
-    expiration: (Date.now() + 3600000).toString(),
-    nonce: "0",
-    feeRateBps: "0",
-    side: 0,
-    signatureType: 0,
-    useTaker: false,
-  };
-
   try {
-    const { signerAddress } = await signOrderViaBackend(
-      dummyOrder,
-      POLYMARKET_DOMAIN,
-      POLYMARKET_ORDER_TYPES,
-      "Order",
-    );
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) throw new Error("You must be signed in to retrieve the signer address.");
+    const response = await fetch(`${SUPABASE_EDGE_FUNCTION_URL}?action=signer`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) throw new Error("Signer address lookup failed.");
+    const { signerAddress } = await response.json() as { signerAddress: Address };
+    if (!/^0x[0-9a-f]{40}$/i.test(signerAddress)) throw new Error("Invalid signer address response.");
     cachedSignerAddress = signerAddress;
     return cachedSignerAddress;
   } catch {

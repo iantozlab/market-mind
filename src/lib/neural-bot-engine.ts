@@ -42,71 +42,27 @@ import { EnhancedRANSExecutionEngine } from './enhanced-rans-module';
 // ═══════════════════════════════════════════════════════════════════════════════
 import {
   createPublicClient,
-  createWalletClient,
   http,
   fallback,
-  type WalletClient,
-  type Hash,
   type Address,
   verifyTypedData,
-  hashTypedData,
-  encodeFunctionData,
-  parseEther,
-  formatEther,
 } from 'viem';
 
 // Loose client type: viem's generic PublicClient blows up TS inference depth here.
 type PublicClient = any;
 import { polygon } from 'viem/chains';
 import {
-  POLYMARKET_EXCHANGE_ADDRESS,
+  POLYMARKET_NEG_RISK_EXCHANGE_ADDRESS,
   POLYMARKET_DOMAIN,
   POLYMARKET_ORDER_TYPES,
+  getSignerAddress,
+  signOrderViaBackend as requestOrderSignature,
 } from './polyswarm-integrator';
 
 // ============================================
 // SECURE ORDER SIGNING VIA EDGE FUNCTION (TASK-001)
 // ============================================
-const SUPABASE_EDGE_FUNCTION_URL = "https://buvepdnnsurgfthtgtyz.supabase.co/functions/v1/sign-polymarket-order";
-
-/**
- * Sign a Polymarket order securely via the backend Edge Function.
- * Private key is stored in Supabase secrets, never touches the frontend.
- */
-export const signOrderViaBackend = async (
-  orderData: any,
-  domain: any,
-  types: any,
-  primaryType: string = "Order"
-) => {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token;
-
-    const response = await fetch(SUPABASE_EDGE_FUNCTION_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token && { "Authorization": `Bearer ${token}` }),
-      },
-      body: JSON.stringify({ orderData, domain, types, primaryType }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(`Signing failed: ${error.error || response.statusText}`);
-    }
-
-    const result = await response.json();
-    return {
-      signature: result.signature,
-      signerAddress: result.signerAddress,
-    };
-  } catch (error) {
-    console.error("Backend signing error:", error);
-    throw error;
-  }
-};
+export const signOrderViaBackend = requestOrderSignature;
 
 // ============================================
 // TASK-002: DUAL-RPC CONSENSUS & SECURE PUBLIC CLIENT
@@ -195,77 +151,16 @@ export async function createSecurePublicClient(): Promise<{
 }
 
 /**
- * TASK-002: Pre-execution simulation using eth_call.
- * Verifies that the expected takerAmount matches the simulated result within tolerance (50 bps = 0.5%).
- */
-export async function simulateTrade(
-  publicClient: PublicClient,
-  from: Address,
-  to: Address,
-  data: Hash,
-  value: bigint,
-  expectedTakerAmount: bigint,
-  toleranceBps: number = 50,
-): Promise<bigint> {
-  // Get the current block and gas price to simulate in a consistent state.
-  const [block, gasPrice] = await Promise.all([
-    publicClient.getBlock(),
-    publicClient.getGasPrice(),
-  ]);
-
-  // Simulate the contract call.
-  // Note: Polymarket's `fillOrder` or `executeOrder` function signature varies.
-  // We use raw calldata; the ABI is passed as empty, and we rely on `simulateContract` decoding.
-  // If you have the exact ABI, replace `abi: []` with the proper array.
-  const simulation = await publicClient.simulateContract({
-    address: to,
-    abi: [], // Placeholder – replace with your actual contract ABI if needed.
-    functionName: 'executeOrder', // Adjust to the actual function name.
-    args: [data],
-    account: from,
-    value,
-    blockNumber: block.number,
-    gasPrice,
-  });
-
-  let actualTakerAmount = 0n;
-  if (simulation.result && Array.isArray(simulation.result)) {
-    const result = simulation.result as any[];
-    // Polymarket typically returns (bool success, uint256 takerAmount)
-    if (result.length > 1 && typeof result[1] === 'bigint') {
-      actualTakerAmount = result[1];
-    }
-  }
-
-  // Calculate deviation.
-  const deviation = Number(actualTakerAmount - expectedTakerAmount) / Number(expectedTakerAmount);
-  const deviationBps = Math.abs(deviation) * 10000;
-
-  if (deviationBps > toleranceBps) {
-    throw new Error(
-      `⚠️ Simulation mismatch: expected ${expectedTakerAmount}, got ${actualTakerAmount} ` +
-      `(deviation ${(deviationBps / 100).toFixed(2)}%)`
-    );
-  }
-
-  console.log(`✅ Simulation passed: expected ${expectedTakerAmount}, actual ${actualTakerAmount}`);
-  return actualTakerAmount;
-}
-
-/**
  * TASK-001 + TASK-002: Safe live trade execution.
  * - Signs the order via the backend Edge Function.
  * - Verifies the signature client-side.
- * - Simulates the trade.
  * - Submits the signed order to Polymarket CLOB.
  */
 export async function executeLiveTrade(
   orderData: any,
-  domain: typeof POLYMARKET_DOMAIN,
+  domain: any,
   types: typeof POLYMARKET_ORDER_TYPES,
   primaryType: string,
-  expectedTakerAmount: bigint,
-  publicClient: PublicClient,
 ): Promise<any> {
   // 1. Sign securely via the backend Edge Function.
   const { signature, signerAddress } = await signOrderViaBackend(
@@ -276,13 +171,6 @@ export async function executeLiveTrade(
   );
 
   // 2. Client-side signature verification (defeats MITM).
-  const orderHash = hashTypedData({
-    domain,
-    types,
-    primaryType: primaryType as any,
-    message: orderData,
-  } as any);
-
   const isValid = await verifyTypedData({
     address: signerAddress as Address,
     domain,
@@ -296,24 +184,8 @@ export async function executeLiveTrade(
     throw new Error('Signature verification failed on client. The signing service may be compromised.');
   }
 
-  // 3. Simulate the trade before submitting.
-  const exchangeAddress = POLYMARKET_EXCHANGE_ADDRESS;
-  const calldata = encodeFunctionData({
-    abi: [] as any,
-    functionName: 'fillOrder',
-    args: [orderData, signature],
-  } as any);
-
-  await simulateTrade(
-    publicClient,
-    signerAddress as Address,
-    exchangeAddress,
-    calldata as Hash,
-    0n,
-    expectedTakerAmount,
-  );
-
-  // 4. Submit the signed order via the proxy Edge Function.
+  // CLOB orders are signed off-chain; there is no on-chain fill call to simulate here.
+  // 3. Submit the signed order via the proxy Edge Function.
   //    The proxy holds the POLYMARKET-API-KEY, SECRET, and PASSPHRASE securely.
   const signedOrderPayload = {
     ...orderData,
@@ -328,7 +200,11 @@ export async function executeLiveTrade(
     throw new Error(`CLOB submission failed: ${error.message || response.status}`);
   }
 
-  return response.json();
+  const result = await response.json();
+  if (result.success === false) {
+    throw new Error(`CLOB rejected order: ${result.errorMsg || result.error || 'unknown reason'}`);
+  }
+  return result;
 }
 
 // ============================================
@@ -1748,13 +1624,12 @@ export class UnifiedNeuralBot {
   // ─── TASK-001 + TASK-002: Live Trade Execution ──────────────────────────────
   private async executeLiveTradeInternal(
     orderData: any,
-    expectedTakerAmount: bigint,
+    domain: any,
   ) {
     if (!this.securePublicClient) {
       throw new Error('No secure RPC client available. Please check RPC health.');
     }
 
-    const domain = POLYMARKET_DOMAIN;
     const types = POLYMARKET_ORDER_TYPES;
     const primaryType = 'Order';
 
@@ -1764,8 +1639,6 @@ export class UnifiedNeuralBot {
       domain,
       types,
       primaryType,
-      expectedTakerAmount,
-      this.securePublicClient,
     );
   }
 
@@ -2054,44 +1927,58 @@ export class UnifiedNeuralBot {
             if (CONFIG.BOT_MODE === 'LIVE' && rpcOk && this.securePublicClient) {
               // ─── LIVE EXECUTION (Secure pipeline) ─────────────────────────────
               try {
-                // Construct the order data for Polymarket.
-                // This is a simplified example – you must build the exact order structure
-                // that matches your trading strategy.
-                const orderData = {
-                  salt: Math.floor(Math.random() * 1000000000).toString(),
-                  maker: this.securePublicClient?.account?.address || '0x0000000000000000000000000000000000000000',
-                  signer: this.securePublicClient?.account?.address || '0x0000000000000000000000000000000000000000',
-                  taker: '0x0000000000000000000000000000000000000000', // public order
-                  tokenId: market.tokenIds?.[0] || '0',
-                  makerAmount: (size * 1e6).toString(), // Assume USDC decimals 6
-                  takerAmount: (size * 1e6 * 0.99).toString(), // Approximate
-                  expiration: (Date.now() + 3600000).toString(),
-                  nonce: Math.floor(Math.random() * 1000000).toString(),
-                  feeRateBps: '0',
-                  side: direction >= 0 ? 0 : 1,
-                  signatureType: 0,
-                  useTaker: false,
-                };
+                const outcomeIndex = direction >= 0 ? 0 : 1;
+                const tokenId = market.tokenIds?.[outcomeIndex];
+                if (!tokenId) throw new Error(`No ${outcomeIndex === 0 ? 'YES' : 'NO'} token ID for this market.`);
+                const bookResponse = await proxyFetch('/book', `token_id=${encodeURIComponent(tokenId)}`);
+                if (!bookResponse.ok) throw new Error('Unable to fetch a current order book.');
+                const orderBook = await bookResponse.json();
+                const asks = Array.isArray(orderBook.asks) ? orderBook.asks : [];
+                const bestAsk = asks.map((ask: { price: string }) => Number(ask.price))
+                  .filter((price: number) => Number.isFinite(price) && price > 0 && price < 1)
+                  .sort((a: number, b: number) => a - b)[0];
+                const tickSize = Number(orderBook.tick_size);
+                const minimumOrderSize = Number(orderBook.min_order_size);
+                if (!bestAsk || !Number.isFinite(tickSize) || tickSize <= 0) {
+                  throw new Error('No valid ask or tick size is available for this outcome.');
+                }
+                if (!Number.isFinite(minimumOrderSize) || size < minimumOrderSize) {
+                  throw new Error(`Order size is below the market minimum of ${orderBook.min_order_size} shares.`);
+                }
 
-                const expectedTakerAmount = BigInt(orderData.takerAmount);
+                const signerAddress = await getSignerAddress();
+                const salt = BigInt(`0x${crypto.randomUUID().replace(/-/g, '').slice(0, 13)}`).toString();
+                const makerAmount = Math.round(size * bestAsk * 1e6);
+                const orderData = {
+                  salt,
+                  maker: signerAddress,
+                  signer: signerAddress,
+                  tokenId,
+                  makerAmount: makerAmount.toString(),
+                  takerAmount: (size * 1e6).toString(),
+                  side: 0,
+                  signatureType: 0,
+                  timestamp: Date.now().toString(),
+                  metadata: `0x${'0'.repeat(64)}`,
+                  builder: `0x${'0'.repeat(64)}`,
+                };
+                const domain = {
+                  ...POLYMARKET_DOMAIN,
+                  verifyingContract: orderBook.neg_risk
+                    ? POLYMARKET_NEG_RISK_EXCHANGE_ADDRESS
+                    : POLYMARKET_DOMAIN.verifyingContract,
+                };
 
                 // Execute live trade securely.
                 const result = await this.executeLiveTradeInternal(
                   orderData,
-                  expectedTakerAmount,
+                  domain,
                 );
 
-                this.addLog(`${modeTag} LIVE TRADE EXECUTED: ${market.question.slice(0, 30)}... ${side} ${size} shares @ ${market.outcomePrices[0].toFixed(3)} [${source}] (hash: ${result.hash?.slice(0, 10) || 'pending'})`, 'trade');
+                this.addLog(`${modeTag} LIVE ORDER ACCEPTED: ${market.question.slice(0, 30)}... ${side} ${size} shares @ ${bestAsk.toFixed(4)} [${source}] (order: ${result.orderID || result.orderId || 'accepted'})`, 'trade');
 
-                // Simulate PnL (the real PnL will be tracked from on-chain events)
-                const pnl = (Math.random() - 0.45) * size * 0.05;
-                this.metrics.totalPnL += pnl;
-                this.metrics.dailyPnL += pnl;
-                this.metrics.tradesExecuted++;
-                this.recordTradeOutcome(pnl);
-                this.enhancedRans.recordTrade(pnl, market.id);
-                this.pnlHistory.push(this.metrics.totalPnL);
-                this.updateDrawdown();
+                const tradeIds = Array.isArray(result.tradeIDs) ? result.tradeIDs : [];
+                if (tradeIds.length > 0) this.metrics.tradesExecuted += tradeIds.length;
 
               } catch (execError) {
                 this.addLog(`❌ LIVE TRADE FAILED: ${execError}`, 'error');
