@@ -77,11 +77,6 @@ serve(async (req) => {
       status: "ok",
       service: "sign-polymarket-order",
       deployed: true,
-      secretsConfigured: {
-        privateKey: Boolean(Deno.env.get("POLYMARKET_PRIVATE_KEY")),
-        apiKey: Boolean(Deno.env.get("POLYMARKET_API_KEY")),
-      },
-      timestamp: new Date().toISOString(),
     });
   }
 
@@ -211,10 +206,9 @@ serve(async (req) => {
       }
     );
   } catch (error) {
-    console.error("Signing error:", error);
-    const message = error instanceof Error ? error.message : "Signing failed";
+    console.error("Signing request failed", error instanceof Error ? error.name : "UnknownError");
     return new Response(
-      JSON.stringify({ success: false, error: message }),
+      JSON.stringify({ success: false, error: "Signing request failed" }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 500,

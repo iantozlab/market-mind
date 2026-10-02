@@ -215,8 +215,8 @@ export const ENV = {
   // API keys are now stored server-side (Edge Function secrets).
   // We only keep non-sensitive configs in the frontend.
   POLYMARKET_API_KEY: '(server-side)',
-  POLYGON_RPC_URL: (import.meta as any).env?.VITE_POLYGON_RPC_URL || '(server-side)',
-  BLOCKNATIVE_API_KEY: (import.meta as any).env?.VITE_BLOCKNATIVE_API_KEY || '(server-side)',
+  POLYGON_RPC_URL: '(server-side)',
+  BLOCKNATIVE_API_KEY: '(server-side)',
   // Always boot in PAPER. LIVE is only enabled at runtime via setTradingMode('LIVE').
   BOT_MODE: 'PAPER' as 'PAPER' | 'LIVE',
   INITIAL_CAPITAL: parseFloat((import.meta as any).env?.VITE_INITIAL_CAPITAL || '10000'),

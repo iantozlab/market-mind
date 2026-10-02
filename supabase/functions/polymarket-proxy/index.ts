@@ -150,25 +150,52 @@ Deno.serve(async (req) => {
   let endpoint = "";
   try {
     const input = await req.json() as { endpoint?: string; params?: string; method?: string; body?: unknown };
-    endpoint = input.endpoint ?? "";
-    if (!endpoint) return new Response(JSON.stringify({ error: "Missing endpoint parameter" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    if (!input || typeof input !== "object" || Array.isArray(input) ||
+      typeof input.endpoint !== "string" || input.endpoint.length === 0 || input.endpoint.length > 256 ||
+      (input.params !== undefined && (typeof input.params !== "string" || input.params.length > 4096)) ||
+      (input.method !== undefined && typeof input.method !== "string")) {
+      return new Response(JSON.stringify({ error: "Invalid proxy request" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    endpoint = input.endpoint;
+    const method = input.method ?? "GET";
+    if (!['GET', 'HEAD', 'POST'].includes(method)) {
+      return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     if (endpoint === "/__config") {
+      if (method !== "GET") {
+        return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const token = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
+      if (!token) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const authClient = createClient(
+        Deno.env.get("SUPABASE_URL") ?? "",
+        Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+      );
+      const { data: { user }, error } = await authClient.auth.getUser(token);
+      if (error || !user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
       return new Response(JSON.stringify({
         polygonRpcUrl: !!Deno.env.get("POLYGON_RPC_URL"),
         blocknativeApiKey: !!Deno.env.get("BLOCKNATIVE_API_KEY"),
         polymarketApiKey: !!Deno.env.get("POLYMARKET_API_KEY"),
-        polymarketPrivateKey: !!Deno.env.get("POLYMARKET_PRIVATE_KEY"),
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    if (!ALLOWED_PATHS.some((path) => endpoint.startsWith(path))) {
+    const canonicalEndpoint = new URL(endpoint, "https://proxy.invalid");
+    const hasSafePath = endpoint.startsWith("/") &&
+      canonicalEndpoint.origin === "https://proxy.invalid" &&
+      canonicalEndpoint.pathname === endpoint &&
+      !endpoint.includes("%") &&
+      !endpoint.includes("\\");
+    if (!hasSafePath || !ALLOWED_PATHS.some((path) => endpoint === path || endpoint.startsWith(`${path}/`))) {
       return new Response(JSON.stringify({ error: "Endpoint not allowed" }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const method = input.method ?? "GET";
-
-    if (endpoint.startsWith("/orders") && method !== "GET" && method !== "HEAD") {
+    if (endpoint.startsWith("/orders") || (method !== "GET" && method !== "HEAD")) {
       if (!(await isAdminRequest(req))) {
         return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
@@ -185,7 +212,7 @@ Deno.serve(async (req) => {
     }
     return new Response(JSON.stringify(result), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (error) {
-    logJson("error", { event: "proxy_exception", endpoint, error: String(error) });
-    return new Response(JSON.stringify({ error: "Proxy request failed", detail: String(error) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    logJson("error", { event: "proxy_exception", endpoint, errorName: error instanceof Error ? error.name : "UnknownError" });
+    return new Response(JSON.stringify({ error: "Proxy request failed" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });
