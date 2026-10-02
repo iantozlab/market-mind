@@ -217,7 +217,8 @@ export const ENV = {
   POLYMARKET_API_KEY: '(server-side)',
   POLYGON_RPC_URL: (import.meta as any).env?.VITE_POLYGON_RPC_URL || '(server-side)',
   BLOCKNATIVE_API_KEY: (import.meta as any).env?.VITE_BLOCKNATIVE_API_KEY || '(server-side)',
-  BOT_MODE: ((import.meta as any).env?.VITE_BOT_MODE || 'PAPER') as 'PAPER' | 'LIVE',
+  // Always boot in PAPER. LIVE is only enabled at runtime via setTradingMode('LIVE').
+  BOT_MODE: 'PAPER' as 'PAPER' | 'LIVE',
   INITIAL_CAPITAL: parseFloat((import.meta as any).env?.VITE_INITIAL_CAPITAL || '10000'),
   MAX_DAILY_LOSS: parseFloat((import.meta as any).env?.VITE_MAX_DAILY_LOSS || '187'),
   MAX_DRAWDOWN: parseFloat((import.meta as any).env?.VITE_MAX_DRAWDOWN || '0.142'),
@@ -1621,6 +1622,40 @@ export class UnifiedNeuralBot {
     }
   }
 
+  // ─── Runtime PAPER / LIVE toggle ────────────────────────────────────────────
+  getTradingMode(): 'PAPER' | 'LIVE' {
+    return CONFIG.BOT_MODE;
+  }
+
+  /** Switch modes. LIVE runs a preflight (signer key + API credentials) first. */
+  async setTradingMode(mode: 'PAPER' | 'LIVE'): Promise<{ ok: boolean; error?: string; signerAddress?: string }> {
+    if (mode === 'PAPER') {
+      CONFIG.BOT_MODE = 'PAPER';
+      this.addLog('📄 Switched to PAPER mode — no real orders will be sent.', 'info');
+      return { ok: true };
+    }
+    try {
+      const cfgRes = await proxyFetch('/__config');
+      const cfg = cfgRes.ok ? await cfgRes.json() : {};
+      if (!cfg.polymarketPrivateKey) throw new Error('Signing key is not configured on the server.');
+      if (!cfg.polymarketApiKey) throw new Error('Polymarket API key is not configured on the server.');
+      const signerAddress = await getSignerAddress();
+      if (!/^0x[0-9a-fA-F]{40}$/.test(signerAddress) || /^0x0{40}$/i.test(signerAddress)) {
+        throw new Error('Signer address from server is invalid.');
+      }
+      this.lastRpcCheck = 0;
+      await this.refreshRpcHealth();
+      CONFIG.BOT_MODE = 'LIVE';
+      this.addLog(`🔴 LIVE mode enabled · signer ${signerAddress}`, 'warning');
+      return { ok: true, signerAddress };
+    } catch (e) {
+      CONFIG.BOT_MODE = 'PAPER';
+      const error = e instanceof Error ? e.message : String(e);
+      this.addLog(`❌ LIVE preflight failed, staying in PAPER: ${error}`, 'error');
+      return { ok: false, error };
+    }
+  }
+
   // ─── TASK-001 + TASK-002: Live Trade Execution ──────────────────────────────
   private async executeLiveTradeInternal(
     orderData: any,
@@ -1948,7 +1983,8 @@ export class UnifiedNeuralBot {
 
                 const signerAddress = await getSignerAddress();
                 const salt = BigInt(`0x${crypto.randomUUID().replace(/-/g, '').slice(0, 13)}`).toString();
-                const makerAmount = Math.round(size * bestAsk * 1e6);
+                // CLOB precision: USDC amount to 2 decimals, shares as whole units.
+                const makerAmount = Math.round(size * bestAsk * 100) * 1e4;
                 const orderData = {
                   salt,
                   maker: signerAddress,
