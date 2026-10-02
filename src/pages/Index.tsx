@@ -82,6 +82,30 @@ const NeuralBotDashboard: React.FC = () => {
 
   const alerts = useAlertsCenter();
   const botRef = useRef<UnifiedNeuralBot | null>(null);
+  const [tradingMode, setTradingModeState] = useState<'PAPER' | 'LIVE'>(CONFIG.BOT_MODE);
+  const [modeBusy, setModeBusy] = useState(false);
+  const [modeError, setModeError] = useState<string | null>(null);
+  const toggleTradingMode = useCallback(async () => {
+    const next = tradingMode === 'PAPER' ? 'LIVE' : 'PAPER';
+    if (next === 'LIVE' && !window.confirm('Enable LIVE trading? Real orders will be signed and sent to Polymarket with real funds.')) return;
+    setModeBusy(true);
+    setModeError(null);
+    try {
+      if (!botRef.current) {
+        if (next === 'LIVE') throw new Error('Start the bot first, then enable LIVE.');
+        CONFIG.BOT_MODE = 'PAPER';
+      } else {
+        const res = await botRef.current.setTradingMode(next);
+        if (!res.ok) throw new Error(res.error);
+      }
+      setTradingModeState(CONFIG.BOT_MODE);
+    } catch (e) {
+      setModeError(e instanceof Error ? e.message : String(e));
+      setTradingModeState(CONFIG.BOT_MODE);
+    } finally {
+      setModeBusy(false);
+    }
+  }, [tradingMode]);
   const persistence = useMetricsPersistence(metrics, isRunning, 30_000);
 
 
@@ -260,7 +284,17 @@ const NeuralBotDashboard: React.FC = () => {
                 <StatusPill ok={apiStatus.polymarket} label="Polymarket" value={apiStatus.polymarket ? 'Connected' : 'Down'} />
                 <StatusPill ok={apiStatus.dataSource === 'live'} label="Data" value={apiStatus.dataSource === 'live' ? `LIVE · ${metrics.marketsMonitored}` : 'SIM'} />
                 <StatusPill ok={!!getEnvStatus().polymarketApiKey} label="API Key" value={getEnvStatus().polymarketApiKey ? 'OK' : 'Missing'} />
-                <StatusPill ok label="Mode" value={CONFIG.BOT_MODE} tone="accent" />
+                <button
+                  type="button"
+                  onClick={toggleTradingMode}
+                  disabled={modeBusy}
+                  aria-pressed={tradingMode === 'LIVE'}
+                  title={modeError ?? (tradingMode === 'LIVE' ? 'Click to return to PAPER' : 'Click to enable LIVE trading')}
+                  className={`rounded border px-2 py-1 text-[10px] font-mono uppercase tracking-wider transition-colors disabled:opacity-50 ${tradingMode === 'LIVE' ? 'border-destructive text-destructive bg-destructive/10' : 'border-primary/50 text-primary bg-primary/10'}`}
+                >
+                  Mode: {modeBusy ? 'checking…' : tradingMode} ⇄
+                </button>
+                {modeError && <span role="alert" className="text-[10px] font-mono text-destructive">{modeError}</span>}
                 <StatusPill ok={enhancedRans.killLevel === 'none'} label="RANS" value={enhancedRans.killLevel === 'none' ? 'Stable' : enhancedRans.killLevel} tone="accent" />
                 <StatusPill ok label="Capital" value={`$${CONFIG.INITIAL_CAPITAL.toLocaleString()}`} tone="accent" />
                 <StatusPill
