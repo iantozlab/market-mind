@@ -27,6 +27,7 @@ import SettingsAuditPanel from './SettingsAuditPanel';
 import RansPanel from './RansPanel';
 import ArbSwarmPanel from './ArbSwarmPanel';
 import DefensePanel from './DefensePanel';
+import RejectionExplainerPanel from './RejectionExplainerPanel';
 import type { ArbitrageSignal } from '@/lib/multi-market-arbitrage';
 import type { SwarmPrediction, LatencyArbEvent } from '@/lib/polyswarm-integrator';
 import type {
@@ -430,6 +431,13 @@ const AppNavbar: React.FC<Props> = ({
           </SheetHeader>
           <div className="mt-4">
             <DefensePanel />
+          </div>
+          <div className="mt-8 border-t border-border pt-4">
+            <h3 className="font-display tracking-wide mb-1">Order Rejection Explainer</h3>
+            <p className="text-xs text-muted-foreground mb-3">
+              Paste a Polymarket rejection and order details; AI explains the likely cause and a safe next step.
+            </p>
+            <RejectionExplainerPanel />
           </div>
         </SheetContent>
       </Sheet>
