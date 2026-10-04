@@ -2031,6 +2031,7 @@ export class UnifiedNeuralBot {
                 this.addLog(`⚠️ RPC unhealthy – skipping live execution (paper simulation fallback)`, 'warning');
               }
               this.addLog(`${modeTag} PAPER TRADE: ${market.question.slice(0, 30)}... ${side} ${size} shares @ ${market.outcomePrices[0].toFixed(3)} [${source}]`, 'trade');
+              logPaperOrder({ marketLabel: market.question, side: String(side), price: Number(market.outcomePrices[0]) || 0, size: Number(size) || 0 });
               const pnl = (Math.random() - 0.45) * size * 0.05;
               this.metrics.totalPnL += pnl;
               this.metrics.dailyPnL += pnl;

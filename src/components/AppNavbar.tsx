@@ -28,6 +28,7 @@ import RansPanel from './RansPanel';
 import ArbSwarmPanel from './ArbSwarmPanel';
 import DefensePanel from './DefensePanel';
 import RejectionExplainerPanel from './RejectionExplainerPanel';
+import LiveOrdersPanel from './LiveOrdersPanel';
 import type { ArbitrageSignal } from '@/lib/multi-market-arbitrage';
 import type { SwarmPrediction, LatencyArbEvent } from '@/lib/polyswarm-integrator';
 import type {
@@ -298,6 +299,7 @@ const AppNavbar: React.FC<Props> = ({
           <div className="flex items-center gap-1 flex-wrap">
             {NAV_ITEMS.map(n => navButton(n.key, n.label, n.Icon))}
             {StrategiesMenu}
+            <a href="/history" className="px-3 py-1.5 text-xs rounded text-muted-foreground hover:text-primary">Trade History</a>
           </div>
         </nav>
       </header>
@@ -431,6 +433,13 @@ const AppNavbar: React.FC<Props> = ({
           </SheetHeader>
           <div className="mt-4">
             <DefensePanel />
+          </div>
+          <div className="mt-8 border-t border-border pt-4">
+            <h3 className="font-display tracking-wide mb-1">Live Orders</h3>
+            <p className="text-xs text-muted-foreground mb-3">
+              Every real order with Polymarket's exact response. Explain a failure before retrying.
+            </p>
+            <LiveOrdersPanel />
           </div>
           <div className="mt-8 border-t border-border pt-4">
             <h3 className="font-display tracking-wide mb-1">Order Rejection Explainer</h3>
