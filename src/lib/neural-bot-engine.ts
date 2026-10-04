@@ -7,6 +7,7 @@
 //  - All existing strategy logic (RANS, Phantom, Psychology, Swarm, Arb) preserved.
 // ═══════════════════════════════════════════════════════════════════════════════
 
+import { logPaperOrder } from './order-audit';
 import { supabase } from '@/integrations/supabase/client';
 import { PhantomLiquidityHarvester } from './phantom-liquidity-harvester';
 import { MarketPsychologyEngine } from './market-psychology-engine';
