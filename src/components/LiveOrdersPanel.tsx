@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { fetchOrders, placeLiveOrder, type OrderAuditRow } from '@/lib/order-audit';
+import { connectWallet, hasWallet, placeWalletOrder, walletAddress } from '@/lib/wallet-trading';
 
 interface Analysis { likely_cause: string; safe_next_step: string; retry_safe: boolean; confidence: string }
 
@@ -35,7 +36,9 @@ const OrderCard: React.FC<{ o: OrderAuditRow; onRetried: () => void }> = ({ o, o
     if (!window.confirm(`Re-send this REAL order?\n${o.side} ${o.size} @ ${o.price}\nThis uses real money if it fills.`)) return;
     setRetrying(true); setErr(null);
     try {
-      await placeLiveOrder({ tokenId: o.token_id, side: o.side, price: o.price, size: o.size, orderType: o.order_type, marketLabel: o.market_label ?? undefined, retryOf: o.id });
+      const viaWallet = (o.polymarket_response as { source?: string } | null)?.source === 'browser_wallet';
+      const args = { tokenId: o.token_id, side: o.side as 'BUY' | 'SELL', price: o.price, size: o.size, orderType: o.order_type as 'GTC' | 'FAK' | 'FOK', marketLabel: o.market_label ?? undefined, retryOf: o.id };
+      if (viaWallet) await placeWalletOrder(args); else await placeLiveOrder(args);
       onRetried();
     } catch (e) { setErr(e instanceof Error ? e.message : 'Retry failed'); }
     finally { setRetrying(false); }
@@ -77,6 +80,57 @@ const OrderCard: React.FC<{ o: OrderAuditRow; onRetried: () => void }> = ({ o, o
   );
 };
 
+const WalletOrderForm: React.FC<{ onPlaced: () => void }> = ({ onPlaced }) => {
+  const [addr, setAddr] = useState<string | null>(walletAddress());
+  const [f, setF] = useState({ tokenId: '', marketLabel: '', side: 'BUY', price: '', size: '', orderType: 'GTC' });
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
+
+  const connect = async () => {
+    setMsg(null);
+    try { setAddr(await connectWallet()); } catch (e) { setMsg(e instanceof Error ? e.message : 'Could not connect wallet'); }
+  };
+  const submit = async () => {
+    const price = Number(f.price), size = Number(f.size);
+    if (!/^\d{1,90}$/.test(f.tokenId) || !(price > 0 && price < 1) || !(size > 0 && size <= 10000)) {
+      setMsg('Enter a valid token ID, a price between 0 and 1, and a size above 0.'); return;
+    }
+    if (!window.confirm(`Send this REAL order from your wallet?\n${f.side} ${size} @ ${price} (≈ $${(size * price).toFixed(2)})\nUses real money if it fills.`)) return;
+    setBusy(true); setMsg(null);
+    try {
+      const row = await placeWalletOrder({ tokenId: f.tokenId, side: f.side as 'BUY' | 'SELL', price, size, orderType: f.orderType as 'GTC' | 'FAK' | 'FOK', marketLabel: f.marketLabel || undefined });
+      setMsg(`Polymarket replied: ${row.status}${row.error_message ? ` — ${row.error_message}` : ''}`);
+      onPlaced();
+    } catch (e) { setMsg(e instanceof Error ? e.message : 'Order failed'); }
+    finally { setBusy(false); }
+  };
+  const input = 'h-8 rounded border border-border bg-background px-2 text-xs font-mono';
+
+  return (
+    <div className="rounded border border-primary/40 p-3 space-y-2 text-xs font-mono">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-primary">Send from my wallet</span>
+        {addr ? <Badge variant="outline">{addr.slice(0, 6)}…{addr.slice(-4)}</Badge>
+          : <Button size="sm" variant="outline" onClick={connect} disabled={!hasWallet()}>{hasWallet() ? 'Connect wallet' : 'No wallet found'}</Button>}
+      </div>
+      <p className="text-muted-foreground">Signed in your wallet and sent from your own internet connection. The wallet needs USDC on Polygon and trading approval on Polymarket.</p>
+      <div className="grid grid-cols-2 gap-2">
+        <input className={`${input} col-span-2`} placeholder="Token ID (outcome)" value={f.tokenId} onChange={set('tokenId')} aria-label="Token ID" />
+        <input className={`${input} col-span-2`} placeholder="Market name (optional)" value={f.marketLabel} onChange={set('marketLabel')} aria-label="Market name" />
+        <select className={input} value={f.side} onChange={set('side')} aria-label="Side"><option>BUY</option><option>SELL</option></select>
+        <select className={input} value={f.orderType} onChange={set('orderType')} aria-label="Order type"><option>GTC</option><option>FAK</option><option>FOK</option></select>
+        <input className={input} placeholder="Price (e.g. 0.55)" value={f.price} onChange={set('price')} aria-label="Price" inputMode="decimal" />
+        <input className={input} placeholder="Shares (e.g. 5)" value={f.size} onChange={set('size')} aria-label="Shares" inputMode="decimal" />
+      </div>
+      <Button size="sm" variant="destructive" onClick={submit} disabled={busy || !addr}>
+        {busy && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}Sign & send real order
+      </Button>
+      {msg && <div className="text-muted-foreground break-all">{msg}</div>}
+    </div>
+  );
+};
+
 const LiveOrdersPanel: React.FC = () => {
   const [orders, setOrders] = useState<OrderAuditRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,6 +149,7 @@ const LiveOrdersPanel: React.FC = () => {
         <span className="text-xs text-muted-foreground">{orders.length} live order(s)</span>
         <Button size="sm" variant="ghost" onClick={load} disabled={loading}><RefreshCw className="h-3 w-3 mr-1" />Refresh</Button>
       </div>
+      <WalletOrderForm onPlaced={load} />
       {error && <p className="text-destructive text-xs">{error}</p>}
       {!loading && orders.length === 0 && <p className="text-xs text-muted-foreground">No live orders yet.</p>}
       {orders.map(o => <OrderCard key={o.id} o={o} onRetried={load} />)}
