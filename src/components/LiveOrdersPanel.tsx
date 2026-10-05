@@ -149,6 +149,7 @@ const LiveOrdersPanel: React.FC = () => {
         <span className="text-xs text-muted-foreground">{orders.length} live order(s)</span>
         <Button size="sm" variant="ghost" onClick={load} disabled={loading}><RefreshCw className="h-3 w-3 mr-1" />Refresh</Button>
       </div>
+      <WalletOrderForm onPlaced={load} />
       {error && <p className="text-destructive text-xs">{error}</p>}
       {!loading && orders.length === 0 && <p className="text-xs text-muted-foreground">No live orders yet.</p>}
       {orders.map(o => <OrderCard key={o.id} o={o} onRetried={load} />)}
