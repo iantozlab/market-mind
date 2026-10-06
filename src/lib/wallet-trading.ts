@@ -1,7 +1,7 @@
 // Browser-wallet trading: the order is signed by the user's own wallet
 // (MetaMask etc.) and sent to Polymarket from the user's own connection.
 // Polymarket trading keys derived from the wallet live in memory only.
-import { createWalletClient, custom, type WalletClient } from 'viem';
+import { createPublicClient, createWalletClient, custom, maxUint256, parseAbi, type WalletClient } from 'viem';
 import { polygon } from 'viem/chains';
 import { supabase } from '@/integrations/supabase/client';
 import type { OrderAuditRow } from '@/lib/order-audit';
@@ -159,3 +159,122 @@ export async function placeWalletOrder(o: WalletOrder): Promise<OrderAuditRow> {
     orderId: typeof p.orderID === 'string' ? p.orderID : null,
   });
 }
+
+// ─── Wallet readiness (balance + trading approvals) ─────────────────────────
+// Read from the exchange contracts on Polygon: both exchanges settle in the
+// collateral token returned by getCollateral() and the CTF from getCtf().
+export const COLLATERAL = '0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB' as const; // pUSD, 6 decimals
+export const CTF = '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045' as const;
+export const EXCHANGES = [
+  { name: 'Standard exchange', address: STANDARD_EXCHANGE as `0x${string}` },
+  { name: 'Neg-risk exchange', address: NEG_RISK_EXCHANGE as `0x${string}` },
+];
+const ERC20 = parseAbi([
+  'function balanceOf(address) view returns (uint256)',
+  'function allowance(address,address) view returns (uint256)',
+  'function approve(address,uint256) returns (bool)',
+]);
+const ERC1155 = parseAbi([
+  'function isApprovedForAll(address,address) view returns (bool)',
+  'function setApprovalForAll(address,bool)',
+]);
+
+export interface WalletStatus {
+  address: `0x${string}`;
+  chainOk: boolean;
+  gasPol: number;
+  collateral: number;
+  approvals: { name: string; spender: string; collateral: boolean; shares: boolean }[];
+  tradingKeys: boolean;
+  ready: boolean;
+  problems: string[];
+}
+
+function publicClient() {
+  const eth = (window as unknown as { ethereum?: Eth }).ethereum;
+  if (!eth) throw new Error('No browser wallet found.');
+  return createPublicClient({ chain: polygon, transport: custom(eth) });
+}
+
+export async function getWalletStatus(): Promise<WalletStatus> {
+  if (!address) throw new Error('Connect your wallet first.');
+  const pc = publicClient();
+  const chainId = await pc.getChainId();
+  const chainOk = chainId === 137;
+  const problems: string[] = [];
+  if (!chainOk) problems.push('Wallet is not on the Polygon network.');
+  const [gas, bal] = await Promise.all([
+    pc.getBalance({ address }),
+    (pc.readContract as (a: unknown) => Promise<any>)({ address: COLLATERAL, abi: ERC20, functionName: 'balanceOf', args: [address] }),
+  ]);
+  const approvals = await Promise.all(EXCHANGES.map(async (x) => {
+    const [allow, ok1155] = await Promise.all([
+      (pc.readContract as (a: unknown) => Promise<any>)({ address: COLLATERAL, abi: ERC20, functionName: 'allowance', args: [address!, x.address] }),
+      (pc.readContract as (a: unknown) => Promise<any>)({ address: CTF, abi: ERC1155, functionName: 'isApprovedForAll', args: [address!, x.address] }),
+    ]);
+    return { name: x.name, spender: x.address, collateral: allow > 10n ** 12n, shares: ok1155 };
+  }));
+  const gasPol = Number(gas) / 1e18;
+  const collateral = Number(bal) / 1e6;
+  if (gasPol < 0.05) problems.push('Less than 0.05 POL for network fees (needed to approve).');
+  if (collateral <= 0) problems.push('No pUSD trading balance in this wallet.');
+  if (approvals.some(a => !a.collateral)) problems.push('Buying is not approved on every exchange.');
+  if (approvals.some(a => !a.shares)) problems.push('Selling is not approved on every exchange.');
+  return { address, chainOk, gasPol, collateral, approvals, tradingKeys: !!creds, ready: chainOk && collateral > 0 && approvals.every(a => a.collateral), problems };
+}
+
+/** Sends the missing approval transactions (each costs a small POL fee). */
+export async function approveTrading(onStep?: (s: string) => void): Promise<number> {
+  if (!client || !address) await connectWallet();
+  const st = await getWalletStatus();
+  const pc = publicClient();
+  let sent = 0;
+  for (const a of st.approvals) {
+    if (!a.collateral) {
+      onStep?.(`Approve buying on ${a.name}…`);
+      const h = await (client!.writeContract as (a: unknown) => Promise<`0x${string}`>)({ account: address!, chain: polygon, address: COLLATERAL, abi: ERC20, functionName: 'approve', args: [a.spender as `0x${string}`, maxUint256] });
+      await pc.waitForTransactionReceipt({ hash: h }); sent++;
+    }
+    if (!a.shares) {
+      onStep?.(`Approve selling on ${a.name}…`);
+      const h = await (client!.writeContract as (a: unknown) => Promise<`0x${string}`>)({ account: address!, chain: polygon, address: CTF, abi: ERC1155, functionName: 'setApprovalForAll', args: [a.spender as `0x${string}`, true] });
+      await pc.waitForTransactionReceipt({ hash: h }); sent++;
+    }
+  }
+  return sent;
+}
+
+/** Unlock Polymarket trading keys (one free signature). */
+export async function unlockTradingKeys() { await getCreds(); }
+
+// ─── Fills (trades that actually matched) ───────────────────────────────────
+export interface Fill { id: string; time: number; side: string; price: number; size: number; outcome: string; market: string; status: string; tx: string | null; role: string }
+
+export async function getFills(): Promise<Fill[]> {
+  const c = await getCreds();
+  const ts = Math.floor(Date.now() / 1000).toString();
+  const path = '/data/trades';
+  const r = await fetch(`${CLOB}${path}?maker_address=${address}`, {
+    headers: { POLY_ADDRESS: address!, POLY_API_KEY: c.apiKey, POLY_PASSPHRASE: c.passphrase, POLY_TIMESTAMP: ts, POLY_SIGNATURE: await hmac(c.secret, `${ts}GET${path}`) },
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(`Polymarket fills request failed (HTTP ${r.status}): ${j.error ?? ''}`);
+  const rows = (Array.isArray(j) ? j : j.data ?? []) as Record<string, any>[];
+  const me = address!.toLowerCase();
+  return rows.map((t) => {
+    const mine = t.trader_side === 'MAKER'
+      ? (t.maker_orders ?? []).find((m: any) => String(m.maker_address).toLowerCase() === me)
+      : null;
+    return {
+      id: String(t.id), time: Number(t.match_time) * 1000, role: String(t.trader_side ?? ''),
+      side: String(mine?.side ?? t.side), price: Number(mine?.price ?? t.price), size: Number(mine?.matched_amount ?? t.size),
+      outcome: String(mine?.outcome ?? t.outcome ?? ''), market: String(t.market ?? ''), status: String(t.status ?? ''),
+      tx: t.transaction_hash ? String(t.transaction_hash) : null,
+    };
+  }).sort((a, b) => b.time - a.time);
+}
+
+// ─── Bot live-mode safety cap ───────────────────────────────────────────────
+const CAP_KEY = 'wallet_max_order_usd';
+export const getMaxOrderUsd = () => { const v = Number(localStorage.getItem(CAP_KEY)); return v > 0 ? v : 5; };
+export const setMaxOrderUsd = (v: number) => localStorage.setItem(CAP_KEY, String(Math.max(0.1, Math.min(1000, v))));
