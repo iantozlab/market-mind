@@ -1636,18 +1636,13 @@ export class UnifiedNeuralBot {
       return { ok: true };
     }
     try {
-      const cfgRes = await proxyFetch('/__config');
-      const cfg = cfgRes.ok ? await cfgRes.json() : {};
-      if (!cfg.polymarketPrivateKey) throw new Error('Signing key is not configured on the server.');
-      if (!cfg.polymarketApiKey) throw new Error('Polymarket API key is not configured on the server.');
-      const signerAddress = await getSignerAddress();
-      if (!/^0x[0-9a-fA-F]{40}$/.test(signerAddress) || /^0x0{40}$/i.test(signerAddress)) {
-        throw new Error('Signer address from server is invalid.');
-      }
-      this.lastRpcCheck = 0;
-      await this.refreshRpcHealth();
+      // LIVE uses the connected browser wallet: signed and sent from the user's own connection.
+      const signerAddress = walletAddress() ?? await connectWallet();
+      const st = await getWalletStatus();
+      if (!st.ready) throw new Error(`Wallet not ready: ${st.problems.join(' ')}`);
+      await unlockTradingKeys();
       CONFIG.BOT_MODE = 'LIVE';
-      this.addLog(`🔴 LIVE mode enabled · signer ${signerAddress}`, 'warning');
+      this.addLog(`🔴 LIVE mode enabled · wallet ${signerAddress} · max $${getMaxOrderUsd()} per order`, 'warning');
       return { ok: true, signerAddress };
     } catch (e) {
       CONFIG.BOT_MODE = 'PAPER';
@@ -1982,35 +1977,30 @@ export class UnifiedNeuralBot {
                   throw new Error(`Order size is below the market minimum of ${orderBook.min_order_size} shares.`);
                 }
 
-                const signerAddress = await getSignerAddress();
-                const salt = BigInt(`0x${crypto.randomUUID().replace(/-/g, '').slice(0, 13)}`).toString();
-                // CLOB precision: USDC amount to 2 decimals, shares as whole units.
-                const makerAmount = Math.round(size * bestAsk * 100) * 1e4;
-                const orderData = {
-                  salt,
-                  maker: signerAddress,
-                  signer: signerAddress,
-                  tokenId,
-                  makerAmount: makerAmount.toString(),
-                  takerAmount: (size * 1e6).toString(),
-                  side: 0,
-                  signatureType: 0,
-                  timestamp: Date.now().toString(),
-                  metadata: `0x${'0'.repeat(64)}`,
-                  builder: `0x${'0'.repeat(64)}`,
-                };
-                const domain = {
-                  ...POLYMARKET_DOMAIN,
-                  verifyingContract: orderBook.neg_risk
-                    ? POLYMARKET_NEG_RISK_EXCHANGE_ADDRESS
-                    : POLYMARKET_DOMAIN.verifyingContract,
-                };
-
-                // Execute live trade securely.
-                const result = await this.executeLiveTradeInternal(
-                  orderData,
-                  domain,
-                );
+                // Wallet live mode: signed in the user's wallet, sent from their connection.
+                if (this.walletOrderBusy || Date.now() - this.lastWalletOrderAt < 60_000) {
+                  this.addLog(`⏳ Wallet order skipped on ${market.slug.slice(0, 25)} — one wallet order per minute.`, 'info');
+                  continue;
+                }
+                const capUsd = getMaxOrderUsd();
+                const walletShares = Math.min(size, Math.floor((capUsd / bestAsk) * 100) / 100);
+                if (walletShares < minimumOrderSize) {
+                  this.addLog(`🛑 Wallet cap $${capUsd} too small for minimum ${minimumOrderSize} shares @ ${bestAsk} on ${market.slug.slice(0, 25)}`, 'warning');
+                  continue;
+                }
+                this.walletOrderBusy = true;
+                this.lastWalletOrderAt = Date.now();
+                let row;
+                try {
+                  row = await placeWalletOrder({
+                    tokenId: String(tokenId), side: 'BUY', price: bestAsk, size: walletShares, orderType: 'FAK',
+                    marketLabel: `${market.question.slice(0, 200)} · ${side}`,
+                  });
+                } finally { this.walletOrderBusy = false; }
+                if (['rejected', 'error', 'invalid'].includes(row.status)) {
+                  throw new Error(`Polymarket ${row.status}: ${row.error_message ?? 'see Live Orders'}`);
+                }
+                const result: any = { orderID: row.order_id, tradeIDs: (row.polymarket_response as any)?.reply?.tradeIDs };
 
                 this.addLog(`${modeTag} LIVE ORDER ACCEPTED: ${market.question.slice(0, 30)}... ${side} ${size} shares @ ${bestAsk.toFixed(4)} [${source}] (order: ${result.orderID || result.orderId || 'accepted'})`, 'trade');
 
