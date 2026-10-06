@@ -205,12 +205,12 @@ export async function getWalletStatus(): Promise<WalletStatus> {
   if (!chainOk) problems.push('Wallet is not on the Polygon network.');
   const [gas, bal] = await Promise.all([
     pc.getBalance({ address }),
-    pc.readContract({ address: COLLATERAL, abi: ERC20, functionName: 'balanceOf', args: [address] }),
+    (pc.readContract as (a: unknown) => Promise<any>)({ address: COLLATERAL, abi: ERC20, functionName: 'balanceOf', args: [address] }),
   ]);
   const approvals = await Promise.all(EXCHANGES.map(async (x) => {
     const [allow, ok1155] = await Promise.all([
-      pc.readContract({ address: COLLATERAL, abi: ERC20, functionName: 'allowance', args: [address!, x.address] }),
-      pc.readContract({ address: CTF, abi: ERC1155, functionName: 'isApprovedForAll', args: [address!, x.address] }),
+      (pc.readContract as (a: unknown) => Promise<any>)({ address: COLLATERAL, abi: ERC20, functionName: 'allowance', args: [address!, x.address] }),
+      (pc.readContract as (a: unknown) => Promise<any>)({ address: CTF, abi: ERC1155, functionName: 'isApprovedForAll', args: [address!, x.address] }),
     ]);
     return { name: x.name, spender: x.address, collateral: allow > 10n ** 12n, shares: ok1155 };
   }));
@@ -232,12 +232,12 @@ export async function approveTrading(onStep?: (s: string) => void): Promise<numb
   for (const a of st.approvals) {
     if (!a.collateral) {
       onStep?.(`Approve buying on ${a.name}…`);
-      const h = await client!.writeContract({ account: address!, chain: polygon, address: COLLATERAL, abi: ERC20, functionName: 'approve', args: [a.spender as `0x${string}`, maxUint256] });
+      const h = await (client!.writeContract as (a: unknown) => Promise<`0x${string}`>)({ account: address!, chain: polygon, address: COLLATERAL, abi: ERC20, functionName: 'approve', args: [a.spender as `0x${string}`, maxUint256] });
       await pc.waitForTransactionReceipt({ hash: h }); sent++;
     }
     if (!a.shares) {
       onStep?.(`Approve selling on ${a.name}…`);
-      const h = await client!.writeContract({ account: address!, chain: polygon, address: CTF, abi: ERC1155, functionName: 'setApprovalForAll', args: [a.spender as `0x${string}`, true] });
+      const h = await (client!.writeContract as (a: unknown) => Promise<`0x${string}`>)({ account: address!, chain: polygon, address: CTF, abi: ERC1155, functionName: 'setApprovalForAll', args: [a.spender as `0x${string}`, true] });
       await pc.waitForTransactionReceipt({ hash: h }); sent++;
     }
   }
