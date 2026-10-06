@@ -7,6 +7,7 @@
 //  - All existing strategy logic (RANS, Phantom, Psychology, Swarm, Arb) preserved.
 // ═══════════════════════════════════════════════════════════════════════════════
 
+import { connectWallet, getMaxOrderUsd, getWalletStatus, placeWalletOrder, unlockTradingKeys, walletAddress } from '@/lib/wallet-trading';
 import { logPaperOrder } from './order-audit';
 import { supabase } from '@/integrations/supabase/client';
 import { PhantomLiquidityHarvester } from './phantom-liquidity-harvester';
@@ -1624,6 +1625,8 @@ export class UnifiedNeuralBot {
   }
 
   // ─── Runtime PAPER / LIVE toggle ────────────────────────────────────────────
+  private walletOrderBusy = false;
+  private lastWalletOrderAt = 0;
   getTradingMode(): 'PAPER' | 'LIVE' {
     return CONFIG.BOT_MODE;
   }
