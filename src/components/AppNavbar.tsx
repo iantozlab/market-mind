@@ -300,6 +300,7 @@ const AppNavbar: React.FC<Props> = ({
             {NAV_ITEMS.map(n => navButton(n.key, n.label, n.Icon))}
             {StrategiesMenu}
             <a href="/history" className="px-3 py-1.5 text-xs rounded text-muted-foreground hover:text-primary">Trade History</a>
+            <a href="/wallet" className="px-3 py-1.5 text-xs rounded text-muted-foreground hover:text-primary">Wallet</a>
           </div>
         </nav>
       </header>

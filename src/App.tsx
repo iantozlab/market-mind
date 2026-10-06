@@ -7,6 +7,7 @@ import Index from "./pages/Index.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import AuthGate from "./components/AuthGate.tsx";
 import TradeHistory from "./pages/TradeHistory.tsx";
+import WalletGuide from "./pages/WalletGuide.tsx";
 
 const queryClient = new QueryClient();
 
@@ -19,6 +20,7 @@ const App = () => (
         <Routes>
           <Route path="/" element={<AuthGate><Index /></AuthGate>} />
           <Route path="/history" element={<AuthGate><TradeHistory /></AuthGate>} />
+          <Route path="/wallet" element={<AuthGate><WalletGuide /></AuthGate>} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
