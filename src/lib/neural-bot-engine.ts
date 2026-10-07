@@ -352,12 +352,198 @@ export const CONFIG = {
     ZK_EXPLOIT: { WAIT_MS: 1800, TARGET_PREMIUM: 0.005 },
     CONSENSUS_FAILURE: { DIVERGENCE_THRESHOLD: 0.08, JUMP_TIMES: [9.53, 14.0, 16.25, 20.0] },
   },
-  RISK: { MAX_DAILY_LOSS: ENV.MAX_DAILY_LOSS, MAX_DRAWDOWN: ENV.MAX_DRAWDOWN, KELLY_FRACTION: EVOLVED.kelly_fraction, MAX_POSITION_PCT: 0.10 },
+  RISK: {
+    MAX_DAILY_LOSS_PCT: 0.05,
+    MAX_MONTHLY_LOSS_PCT: 0.15,
+    MAX_DRAWDOWN_PCT: 0.25,
+    TOTAL_LOSS_HALT_PCT: 0.40,
+    MAX_DAILY_LOSS: ENV.MAX_DAILY_LOSS,
+    MAX_DRAWDOWN: ENV.MAX_DRAWDOWN,
+    KELLY_FRACTION: EVOLVED.kelly_fraction,
+    MAX_POSITION_PCT: 0.10,
+    MAX_TOTAL_EXPOSURE_PCT: 0.20,
+    MIN_TRADE_SIZE_USDC: 5.0,
+    MAX_TRADE_SIZE_USDC: 500,
+    MAX_CONSECUTIVE_LOSSES: 5,
+  },
+  EXITS: {
+    STOP_LOSS_PCT: -0.25,
+    TAKE_PROFIT_PCT: 1.00,
+    TRAILING_STOP_PCT: 0.15,
+    TIME_BASED_EXIT_HOURS: 72,
+    MIN_PROFIT_THRESHOLD_PCT: 0.005,
+  },
+  MARKET_FILTERS: {
+    MIN_VOLUME_USDC: 5000,
+    MIN_LIQUIDITY_USDC: 1000,
+    MIN_PROBABILITY: 0.05,
+    MAX_PROBABILITY: 0.95,
+    MAX_SPREAD_PCT: 0.05,
+    MIN_TIME_TO_EXPIRY_HOURS: 24,
+    MAX_TIME_TO_EXPIRY_DAYS: 90,
+  },
+  EXECUTION: {
+    SLIPPAGE_TOLERANCE_PCT: 0.01,
+    GAS_PRIORITY_GWEI: 30,
+    GAS_MAX_GWEI: 60,
+    ORDER_COOLDOWN_SECONDS: 5,
+    MAX_ORDERS_PER_MINUTE: 30,
+  },
   ANTI_DETECTION: { JITTER_PCT: 0.07, SIZE_MIN: 47, SIZE_MAX: 142, GAS_MIN: 31, GAS_MAX: 78, FALSE_SIGNAL_RATE: 0.015 },
   EXECUTION_INTERVAL_MS: EVOLVED.execution_delay,
   CANCEL_REPLACE_TIMEOUT_MS: EVOLVED.cancel_replace_timeout,
   WEBSOCKET_RECONNECT_DELAY_MS: 5000,
 };
+
+Object.defineProperty(CONFIG.RISK, 'MAX_DAILY_LOSS', {
+  get() {
+    return CONFIG.INITIAL_CAPITAL * this.MAX_DAILY_LOSS_PCT;
+  },
+  set(value: number) {
+    const next = Number(value) || 0;
+    this.MAX_DAILY_LOSS_PCT = Math.max(0, next / Math.max(1, CONFIG.INITIAL_CAPITAL));
+  },
+  configurable: true,
+});
+
+Object.defineProperty(CONFIG.RISK, 'MAX_DRAWDOWN', {
+  get() {
+    return this.MAX_DRAWDOWN_PCT;
+  },
+  set(value: number) {
+    this.MAX_DRAWDOWN_PCT = Math.max(0, Number(value) || 0);
+  },
+  configurable: true,
+});
+
+const SETTINGS_STORAGE_KEY = 'polymarket-bot-trade-settings-v1';
+
+export const SETTINGS_SCHEMA = {
+  KELLY_FRACTION: { min: 0.05, max: 0.50, step: 0.01, label: 'Kelly Fraction', help: 'Quarter-Kelly (0.25) is standard for binary markets.' },
+  MAX_POSITION_PCT: { min: 0.005, max: 0.05, step: 0.005, label: 'Max Position %', help: 'Percent of bankroll per trade.' },
+  MAX_TOTAL_EXPOSURE_PCT: { min: 0.05, max: 0.30, step: 0.01, label: 'Max Total Exposure %', help: 'Aggregate open exposure cap.' },
+  MIN_TRADE_SIZE_USDC: { min: 1, max: 100, step: 1, label: 'Min Trade Size (USDC)' },
+  MAX_TRADE_SIZE_USDC: { min: 50, max: 5000, step: 50, label: 'Max Trade Size (USDC)' },
+  MAX_DAILY_LOSS_PCT: { min: 0.01, max: 0.10, step: 0.005, label: 'Daily Loss %', help: 'Pauses trading for 24h when breached.' },
+  MAX_MONTHLY_LOSS_PCT: { min: 0.05, max: 0.25, step: 0.01, label: 'Monthly Loss %', help: 'Pauses trading for 7 days when breached.' },
+  MAX_DRAWDOWN_PCT: { min: 0.10, max: 0.40, step: 0.01, label: 'Max Drawdown %', help: 'Pauses and requires manual review.' },
+  TOTAL_LOSS_HALT_PCT: { min: 0.20, max: 0.60, step: 0.02, label: 'Total Halt %', help: 'Permanent halt. No auto-resume.' },
+  MAX_CONSECUTIVE_LOSSES: { min: 2, max: 10, step: 1, label: 'Max Consecutive Losses' },
+  STOP_LOSS_PCT: { min: -0.50, max: -0.05, step: 0.01, label: 'Stop Loss %' },
+  TAKE_PROFIT_PCT: { min: 0.20, max: 2.00, step: 0.05, label: 'Take Profit %' },
+  TRAILING_STOP_PCT: { min: 0.05, max: 0.40, step: 0.01, label: 'Trailing Stop %' },
+  TIME_BASED_EXIT_HOURS: { min: 6, max: 168, step: 6, label: 'Time Exit (hours)' },
+  MIN_PROFIT_THRESHOLD_PCT: { min: 0.001, max: 0.02, step: 0.001, label: 'Min Profit Threshold %' },
+  MIN_VOLUME_USDC: { min: 500, max: 50000, step: 500, label: 'Min Volume (USDC)' },
+  MIN_LIQUIDITY_USDC: { min: 100, max: 10000, step: 100, label: 'Min Liquidity (USDC)' },
+  MIN_PROBABILITY: { min: 0.01, max: 0.20, step: 0.01, label: 'Min Probability' },
+  MAX_PROBABILITY: { min: 0.80, max: 0.99, step: 0.01, label: 'Max Probability' },
+  MAX_SPREAD_PCT: { min: 0.005, max: 0.10, step: 0.005, label: 'Max Spread %' },
+  MIN_TIME_TO_EXPIRY_HOURS: { min: 1, max: 72, step: 1, label: 'Min Time to Expiry (h)' },
+  MAX_TIME_TO_EXPIRY_DAYS: { min: 7, max: 365, step: 1, label: 'Max Time to Expiry (d)' },
+  SLIPPAGE_TOLERANCE_PCT: { min: 0.001, max: 0.05, step: 0.001, label: 'Slippage Tolerance %' },
+  GAS_PRIORITY_GWEI: { min: 20, max: 100, step: 1, label: 'Gas Priority (GWEI)' },
+  GAS_MAX_GWEI: { min: 30, max: 200, step: 5, label: 'Gas Max (GWEI)' },
+  ORDER_COOLDOWN_SECONDS: { min: 1, max: 30, step: 1, label: 'Order Cooldown (s)' },
+  MAX_ORDERS_PER_MINUTE: { min: 5, max: 120, step: 5, label: 'Max Orders / min' },
+} as const;
+
+export type SettingsSection = 'RISK' | 'EXITS' | 'MARKET_FILTERS' | 'EXECUTION';
+export type SettingsKey = keyof typeof SETTINGS_SCHEMA;
+
+const KEY_TO_SECTION: Record<SettingsKey, SettingsSection> = {
+  KELLY_FRACTION: 'RISK',
+  MAX_POSITION_PCT: 'RISK',
+  MAX_TOTAL_EXPOSURE_PCT: 'RISK',
+  MIN_TRADE_SIZE_USDC: 'RISK',
+  MAX_TRADE_SIZE_USDC: 'RISK',
+  MAX_DAILY_LOSS_PCT: 'RISK',
+  MAX_MONTHLY_LOSS_PCT: 'RISK',
+  MAX_DRAWDOWN_PCT: 'RISK',
+  TOTAL_LOSS_HALT_PCT: 'RISK',
+  MAX_CONSECUTIVE_LOSSES: 'RISK',
+  STOP_LOSS_PCT: 'EXITS',
+  TAKE_PROFIT_PCT: 'EXITS',
+  TRAILING_STOP_PCT: 'EXITS',
+  TIME_BASED_EXIT_HOURS: 'EXITS',
+  MIN_PROFIT_THRESHOLD_PCT: 'EXITS',
+  MIN_VOLUME_USDC: 'MARKET_FILTERS',
+  MIN_LIQUIDITY_USDC: 'MARKET_FILTERS',
+  MIN_PROBABILITY: 'MARKET_FILTERS',
+  MAX_PROBABILITY: 'MARKET_FILTERS',
+  MAX_SPREAD_PCT: 'MARKET_FILTERS',
+  MIN_TIME_TO_EXPIRY_HOURS: 'MARKET_FILTERS',
+  MAX_TIME_TO_EXPIRY_DAYS: 'MARKET_FILTERS',
+  SLIPPAGE_TOLERANCE_PCT: 'EXECUTION',
+  GAS_PRIORITY_GWEI: 'EXECUTION',
+  GAS_MAX_GWEI: 'EXECUTION',
+  ORDER_COOLDOWN_SECONDS: 'EXECUTION',
+  MAX_ORDERS_PER_MINUTE: 'EXECUTION',
+};
+
+export function clampSetting(key: SettingsKey, value: number): number {
+  const spec = SETTINGS_SCHEMA[key];
+  const section = (CONFIG as any)[KEY_TO_SECTION[key]] as Record<string, number>;
+  if (typeof value !== 'number' || !Number.isFinite(value)) return section[key];
+  return Math.min(spec.max, Math.max(spec.min, value));
+}
+
+export function persistSettings() {
+  try {
+    const snapshot: Record<string, number> = {};
+    for (const key of Object.keys(SETTINGS_SCHEMA) as SettingsKey[]) {
+      const section = (CONFIG as any)[KEY_TO_SECTION[key]] as Record<string, number>;
+      snapshot[key] = section[key];
+    }
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(snapshot));
+  } catch { /* localStorage unavailable */ }
+}
+
+export function restoreSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!raw) return;
+    const snapshot = JSON.parse(raw) as Record<string, number>;
+    for (const key of Object.keys(SETTINGS_SCHEMA) as SettingsKey[]) {
+      if (typeof snapshot[key] === 'number') {
+        const section = (CONFIG as any)[KEY_TO_SECTION[key]] as Record<string, number>;
+        section[key] = clampSetting(key, snapshot[key]);
+      }
+    }
+  } catch { /* corrupted payload; ignore */ }
+}
+
+export function applySetting(key: SettingsKey, value: number, logger?: (msg: string, type?: string) => void) {
+  const section = KEY_TO_SECTION[key];
+  const clamped = clampSetting(key, value);
+  const current = (CONFIG as any)[section][key];
+  (CONFIG as any)[section][key] = clamped;
+  persistSettings();
+  if (logger && current !== clamped) {
+    logger(`⚙️ ${SETTINGS_SCHEMA[key].label}: ${current} → ${clamped}`, 'info');
+  }
+  return clamped;
+}
+
+export function resetSettings(logger?: (msg: string, type?: string) => void) {
+  const defaults: Record<string, number> = {};
+  for (const key of Object.keys(SETTINGS_SCHEMA) as SettingsKey[]) {
+    defaults[key] = DEFAULTS_SNAPSHOT[key];
+  }
+  for (const key of Object.keys(SETTINGS_SCHEMA) as SettingsKey[]) {
+    const section = (CONFIG as any)[KEY_TO_SECTION[key]] as Record<string, number>;
+    section[key] = defaults[key];
+  }
+  persistSettings();
+  logger?.('♻️ Trade settings reset to defaults', 'info');
+}
+
+const DEFAULTS_SNAPSHOT: Record<string, number> = {};
+for (const key of Object.keys(SETTINGS_SCHEMA) as SettingsKey[]) {
+  const section = (CONFIG as any)[KEY_TO_SECTION[key]] as Record<string, number>;
+  DEFAULTS_SNAPSHOT[key] = section[key];
+}
+restoreSettings();
 
 // ============================================
 // REAL-TIME DATA FETCHER — Polymarket REST API
