@@ -116,6 +116,63 @@ export type Database = {
         }
         Relationships: []
       }
+      order_audit_log: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          http_status: number | null
+          id: string
+          market_label: string | null
+          mode: string
+          order_id: string | null
+          order_type: string
+          polymarket_response: Json
+          price: number
+          retry_of: string | null
+          side: string
+          size: number
+          status: string
+          token_id: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          http_status?: number | null
+          id?: string
+          market_label?: string | null
+          mode?: string
+          order_id?: string | null
+          order_type?: string
+          polymarket_response?: Json
+          price: number
+          retry_of?: string | null
+          side: string
+          size: number
+          status?: string
+          token_id?: string | null
+          user_id?: string
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          http_status?: number | null
+          id?: string
+          market_label?: string | null
+          mode?: string
+          order_id?: string | null
+          order_type?: string
+          polymarket_response?: Json
+          price?: number
+          retry_of?: string | null
+          side?: string
+          size?: number
+          status?: string
+          token_id?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       psychology_snapshots: {
         Row: {
           created_at: string

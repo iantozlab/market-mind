@@ -202,6 +202,7 @@ const WalletPage = () => {
                 <a className="inline-flex items-center gap-1 text-primary hover:underline" href="https://docs.polymarket.com/trading/wallets-auth#session-keys" target="_blank" rel="noreferrer">
                   Wallet authorization guide <ExternalLink className="h-3 w-3" />
                 </a>
+                <Link className="block text-primary hover:underline" to="/wallet-guide">Connected EOA status, approvals, fills, and manual orders</Link>
                 <p className="text-[11px]">This installation also requires a dedicated server-side Session Key and Deposit Wallet address. Never enter a private key here.</p>
                 <p className="border-t border-border pt-3">This converter handles USDC.e on Polygon. Native USDC on other networks must be deposited through Polymarket’s supported bridge flow instead.</p>
               </CardContent>

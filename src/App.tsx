@@ -8,6 +8,7 @@ import Wallet from "./pages/Wallet.tsx";
 import TradeHistory from "./pages/TradeHistory.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import AuthGate from "./components/AuthGate.tsx";
+import WalletGuide from "./pages/WalletGuide.tsx";
 
 const queryClient = new QueryClient();
 
@@ -21,6 +22,8 @@ const App = () => (
           <Route path="/" element={<AuthGate><Index /></AuthGate>} />
           <Route path="/wallet" element={<AuthGate><Wallet /></AuthGate>} />
           <Route path="/trade-history" element={<AuthGate><TradeHistory /></AuthGate>} />
+          <Route path="/history" element={<AuthGate><TradeHistory /></AuthGate>} />
+          <Route path="/wallet-guide" element={<AuthGate><WalletGuide /></AuthGate>} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

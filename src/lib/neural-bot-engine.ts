@@ -7,6 +7,8 @@
 //  - All existing strategy logic (RANS, Phantom, Psychology, Swarm, Arb) preserved.
 // ═══════════════════════════════════════════════════════════════════════════════
 
+import { getMaxOrderUsd } from '@/lib/wallet-trading';
+import { logPaperOrder } from './order-audit';
 import { supabase } from '@/integrations/supabase/client';
 import { PhantomLiquidityHarvester } from './phantom-liquidity-harvester';
 import { MarketPsychologyEngine } from './market-psychology-engine';
@@ -58,6 +60,7 @@ import {
   getSignerAddress,
   placeOrderWithSessionKey,
   signOrderViaBackend as requestOrderSignature,
+  type SessionOrderResponse,
 } from './polyswarm-integrator';
 
 // ============================================
@@ -1624,6 +1627,8 @@ export class UnifiedNeuralBot {
   }
 
   // ─── Runtime PAPER / LIVE toggle ────────────────────────────────────────────
+  private liveOrderBusy = false;
+  private lastLiveOrderAt = 0;
   getTradingMode(): 'PAPER' | 'LIVE' {
     return CONFIG.BOT_MODE;
   }
@@ -1643,7 +1648,7 @@ export class UnifiedNeuralBot {
       this.lastRpcCheck = 0;
       await this.refreshRpcHealth();
       CONFIG.BOT_MODE = 'LIVE';
-      this.addLog('🔴 LIVE mode enabled · Deposit Wallet Session Key route configured', 'warning');
+      this.addLog(`🔴 LIVE mode enabled · Deposit Wallet Session Key · max $${getMaxOrderUsd()} per order`, 'warning');
       return { ok: true };
     } catch (e) {
       CONFIG.BOT_MODE = 'PAPER';
@@ -1978,17 +1983,34 @@ export class UnifiedNeuralBot {
                   throw new Error(`Order size is below the market minimum of ${orderBook.min_order_size} shares.`);
                 }
 
-                const result = await placeOrderWithSessionKey({
-                  assetId: tokenId,
-                  amount: Math.round(size * bestAsk * 100) / 100,
-                  maxPrice: bestAsk,
-                });
-                if (!result.success) {
-                  const certainty = result.ambiguous ? 'submission status unknown; do not resend automatically' : 'confirmed rejection';
-                  throw new Error(`${result.error || 'Order rejected'} (${certainty})`);
+                if (this.liveOrderBusy || Date.now() - this.lastLiveOrderAt < 60_000) {
+                  this.addLog(`⏳ Live order skipped on ${market.slug.slice(0, 25)} — one live order per minute.`, 'info');
+                  continue;
                 }
-
-                this.addLog(`${modeTag} LIVE ORDER ${result.status?.toUpperCase() || 'ACCEPTED'}: ${market.question.slice(0, 30)}... ${side} ${size} shares ≤ ${bestAsk.toFixed(4)} [${source}] (order: ${result.orderId || 'accepted'})`, 'trade');
+                const maxOrderUsd = getMaxOrderUsd();
+                const orderAmount = Math.floor(Math.min(size * bestAsk, maxOrderUsd) * 100) / 100;
+                const executableShares = orderAmount / bestAsk;
+                if (executableShares < minimumOrderSize) {
+                  this.addLog(`🛑 Live order cap $${maxOrderUsd} is below the minimum spend for ${minimumOrderSize} shares on ${market.slug.slice(0, 25)}`, 'warning');
+                  continue;
+                }
+                this.liveOrderBusy = true;
+                this.lastLiveOrderAt = Date.now();
+                let result: SessionOrderResponse;
+                try {
+                  result = await placeOrderWithSessionKey({
+                    assetId: tokenId,
+                    amount: orderAmount,
+                    maxPrice: bestAsk,
+                  });
+                  if (!result.success) {
+                    const certainty = result.ambiguous ? 'submission status unknown; do not resend automatically' : 'confirmed rejection';
+                    throw new Error(`${result.error || 'Order rejected'} (${certainty})`);
+                  }
+                  this.addLog(`${modeTag} LIVE ORDER ${result.status?.toUpperCase() || 'ACCEPTED'}: ${market.question.slice(0, 30)}... ${side} ${executableShares.toFixed(2)} shares ≤ ${bestAsk.toFixed(4)} [${source}] (order: ${result.orderId || 'accepted'})`, 'trade');
+                } finally {
+                  this.liveOrderBusy = false;
+                }
 
                 const tradeIds = Array.isArray(result.tradeIds) ? result.tradeIds : [];
                 if (tradeIds.length > 0) this.metrics.tradesExecuted += tradeIds.length;
@@ -2008,6 +2030,7 @@ export class UnifiedNeuralBot {
                 this.addLog(`⚠️ RPC unhealthy – skipping live execution (paper simulation fallback)`, 'warning');
               }
               this.addLog(`${modeTag} PAPER TRADE: ${market.question.slice(0, 30)}... ${side} ${size} shares @ ${market.outcomePrices[0].toFixed(3)} [${source}]`, 'trade');
+              logPaperOrder({ marketLabel: market.question, side: String(side), price: Number(market.outcomePrices[0]) || 0, size: Number(size) || 0 });
               const pnl = (Math.random() - 0.45) * size * 0.05;
               this.metrics.totalPnL += pnl;
               this.metrics.dailyPnL += pnl;

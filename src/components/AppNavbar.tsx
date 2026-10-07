@@ -28,6 +28,8 @@ import SettingsAuditPanel from './SettingsAuditPanel';
 import RansPanel from './RansPanel';
 import ArbSwarmPanel from './ArbSwarmPanel';
 import DefensePanel from './DefensePanel';
+import RejectionExplainerPanel from './RejectionExplainerPanel';
+import LiveOrdersPanel from './LiveOrdersPanel';
 import type { ArbitrageSignal } from '@/lib/multi-market-arbitrage';
 import type { SwarmPrediction, LatencyArbEvent } from '@/lib/polyswarm-integrator';
 import type {
@@ -233,6 +235,16 @@ const AppNavbar: React.FC<Props> = ({
                 <li role="none">
                   <Link
                     role="menuitem"
+                    to="/wallet-guide"
+                    onClick={() => setMobileOpen(false)}
+                    className="flex h-9 w-full items-center rounded-md px-3 text-xs font-display tracking-wide text-foreground hover:bg-accent"
+                  >
+                    <ShieldCheck className="mr-2 h-3.5 w-3.5" /> EOA Wallet Guide
+                  </Link>
+                </li>
+                <li role="none">
+                  <Link
+                    role="menuitem"
                     to="/trade-history"
                     onClick={() => setMobileOpen(false)}
                     className="flex h-9 w-full items-center rounded-md px-3 text-xs font-display tracking-wide text-foreground hover:bg-accent"
@@ -327,6 +339,12 @@ const AppNavbar: React.FC<Props> = ({
               className="inline-flex h-8 items-center rounded-md px-2.5 text-xs font-display tracking-wide text-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <History className="mr-1.5 h-3.5 w-3.5" /> Trade History
+            </Link>
+            <Link
+              to="/wallet-guide"
+              className="inline-flex h-8 items-center rounded-md px-2.5 text-xs font-display tracking-wide text-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> EOA Wallet Guide
             </Link>
             {NAV_ITEMS.map(n => navButton(n.key, n.label, n.Icon))}
             {StrategiesMenu}
@@ -463,6 +481,20 @@ const AppNavbar: React.FC<Props> = ({
           </SheetHeader>
           <div className="mt-4">
             <DefensePanel />
+          </div>
+          <div className="mt-8 border-t border-border pt-4">
+            <h3 className="font-display tracking-wide mb-1">Live Orders</h3>
+            <p className="text-xs text-muted-foreground mb-3">
+              Every real order with Polymarket's exact response. Explain a failure before retrying.
+            </p>
+            <LiveOrdersPanel />
+          </div>
+          <div className="mt-8 border-t border-border pt-4">
+            <h3 className="font-display tracking-wide mb-1">Order Rejection Explainer</h3>
+            <p className="text-xs text-muted-foreground mb-3">
+              Paste a Polymarket rejection and order details; AI explains the likely cause and a safe next step.
+            </p>
+            <RejectionExplainerPanel />
           </div>
         </SheetContent>
       </Sheet>

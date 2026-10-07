@@ -1,3 +1,4 @@
+import { getMaxOrderUsd } from '@/lib/wallet-trading';
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { UnifiedNeuralBot, getEnvStatus, ENV, CONFIG } from '@/lib/neural-bot-engine';
@@ -87,7 +88,7 @@ const NeuralBotDashboard: React.FC = () => {
   const [modeError, setModeError] = useState<string | null>(null);
   const toggleTradingMode = useCallback(async () => {
     const next = tradingMode === 'PAPER' ? 'LIVE' : 'PAPER';
-    if (next === 'LIVE' && !window.confirm('Enable LIVE trading? Real orders will be signed and sent to Polymarket with real funds.')) return;
+    if (next === 'LIVE' && !window.confirm(`Enable automated LIVE trading through the configured Polymarket Deposit Wallet Session Key? Orders are capped at $${getMaxOrderUsd()} and sent by the server-side Session Key. The separate EOA wallet flow is available for manually confirmed orders.`)) return;
     setModeBusy(true);
     setModeError(null);
     try {
