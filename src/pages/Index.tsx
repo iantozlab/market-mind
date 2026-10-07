@@ -60,7 +60,17 @@ const NeuralBotDashboard: React.FC = () => {
   const [apiStatus, setApiStatus] = useState<APIStatus>({ polymarket: false, polygon: false, dataSource: 'simulated', lastFetch: 0, marketsLoaded: 0 });
   const [psychologyHealth, setPsychologyHealth] = useState<PsychologyHealthRow[]>([]);
   const [mlInsights, setMlInsights] = useState<MLInsights | null>(null);
-  const [tradeSettings, setTradeSettings] = useState<TradeSettings | null>(null);
+  const getCurrentTradeSettings = useCallback((): TradeSettings => ({
+    entryWindowMs: CONFIG.STRATEGIES.BOT_EXHAUSTION.ENTRY_WINDOW_MS,
+    exitWindowMs: CONFIG.STRATEGIES.BOT_EXHAUSTION.EXIT_WINDOW_MS,
+    kellyFraction: CONFIG.RISK.KELLY_FRACTION,
+    maxPositionPct: CONFIG.RISK.MAX_POSITION_PCT,
+    stopLossPct: CONFIG.EXITS.STOP_LOSS_PCT,
+    takeProfitPct: CONFIG.EXITS.TAKE_PROFIT_PCT,
+    maxDailyLoss: CONFIG.RISK.MAX_DAILY_LOSS,
+    maxDrawdown: CONFIG.RISK.MAX_DRAWDOWN,
+  }), []);
+  const [tradeSettings, setTradeSettings] = useState<TradeSettings | null>(getCurrentTradeSettings());
   const [auditTick, setAuditTick] = useState(0);
   const [strategies, setStrategies] = useState<StrategyStatus[]>([]);
   const [signalRoutes, setSignalRoutes] = useState<SignalRoute[]>([]);
@@ -147,6 +157,8 @@ const NeuralBotDashboard: React.FC = () => {
   }, []);
 
   const startBot = useCallback(() => {
+    const snapshot = getCurrentTradeSettings();
+    setTradeSettings(snapshot);
     const bot = new UnifiedNeuralBot(true);
     bot.setOnUpdate(updateState);
     bot.setAlertSink((a) => alerts.push(a));
@@ -155,7 +167,7 @@ const NeuralBotDashboard: React.FC = () => {
     setTradeSettings(bot.getTradeSettings());
     setStrategies(bot.getStrategies());
     setIsRunning(true);
-  }, [updateState, alerts]);
+  }, [updateState, alerts, getCurrentTradeSettings]);
 
   const stopBot = useCallback(() => {
     botRef.current?.stop();
@@ -176,19 +188,30 @@ const NeuralBotDashboard: React.FC = () => {
   }, [isRunning]);
 
   const applyTradeSettings = useCallback((s: Partial<TradeSettings>) => {
-    const prev = botRef.current?.getTradeSettings();
-    botRef.current?.setTradeSettings(s);
-    const next = botRef.current?.getTradeSettings();
-    if (next) setTradeSettings(next);
-    if (prev) {
-      const changes = diffSettings(prev, s);
-      if (changes.length > 0) {
-        void appendAudit({ actor: 'dashboard-user', changes }).then(() =>
-          setAuditTick(t => t + 1),
-        );
-      }
+    const prev = botRef.current?.getTradeSettings() ?? getCurrentTradeSettings();
+
+    if (!botRef.current) {
+      if (s.entryWindowMs != null) CONFIG.STRATEGIES.BOT_EXHAUSTION.ENTRY_WINDOW_MS = s.entryWindowMs;
+      if (s.exitWindowMs != null) CONFIG.STRATEGIES.BOT_EXHAUSTION.EXIT_WINDOW_MS = s.exitWindowMs;
+      if (s.kellyFraction != null) CONFIG.RISK.KELLY_FRACTION = s.kellyFraction;
+      if (s.maxPositionPct != null) CONFIG.RISK.MAX_POSITION_PCT = s.maxPositionPct;
+      if (s.stopLossPct != null) CONFIG.EXITS.STOP_LOSS_PCT = s.stopLossPct;
+      if (s.takeProfitPct != null) CONFIG.EXITS.TAKE_PROFIT_PCT = s.takeProfitPct;
+      if (s.maxDailyLoss != null) CONFIG.RISK.MAX_DAILY_LOSS = s.maxDailyLoss;
+      if (s.maxDrawdown != null) { CONFIG.RISK.MAX_DRAWDOWN = s.maxDrawdown; }
+    } else {
+      botRef.current.setTradeSettings(s);
     }
-  }, []);
+
+    const next = getCurrentTradeSettings();
+    setTradeSettings(next);
+    const changes = diffSettings(prev, s);
+    if (changes.length > 0) {
+      void appendAudit({ actor: 'dashboard-user', changes }).then(() =>
+        setAuditTick(t => t + 1),
+      );
+    }
+  }, [getCurrentTradeSettings]);
 
   const applyRansThresholds = useCallback((p: Partial<RansThresholds>) => {
     botRef.current?.setRansThresholds(p);
