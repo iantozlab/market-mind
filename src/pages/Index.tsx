@@ -71,6 +71,7 @@ const NeuralBotDashboard: React.FC = () => {
     maxDrawdown: CONFIG.RISK.MAX_DRAWDOWN,
   }), []);
   const [tradeSettings, setTradeSettings] = useState<TradeSettings | null>(getCurrentTradeSettings());
+  const [settingsReadyForStartup, setSettingsReadyForStartup] = useState(false);
   const [auditTick, setAuditTick] = useState(0);
   const [strategies, setStrategies] = useState<StrategyStatus[]>([]);
   const [signalRoutes, setSignalRoutes] = useState<SignalRoute[]>([]);
@@ -159,6 +160,7 @@ const NeuralBotDashboard: React.FC = () => {
   const startBot = useCallback(() => {
     const snapshot = getCurrentTradeSettings();
     setTradeSettings(snapshot);
+    setSettingsReadyForStartup(true);
     const bot = new UnifiedNeuralBot(true);
     bot.setOnUpdate(updateState);
     bot.setAlertSink((a) => alerts.push(a));
@@ -205,6 +207,7 @@ const NeuralBotDashboard: React.FC = () => {
 
     const next = getCurrentTradeSettings();
     setTradeSettings(next);
+    setSettingsReadyForStartup(true);
     const changes = diffSettings(prev, s);
     if (changes.length > 0) {
       void appendAudit({ actor: 'dashboard-user', changes }).then(() =>
@@ -233,6 +236,15 @@ const NeuralBotDashboard: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      {!isRunning && settingsReadyForStartup && (
+        <div className="px-4 pt-3 md:px-6">
+          <div className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-3 py-1.5 text-[10px] font-display uppercase tracking-[0.2em] text-primary shadow-[0_0_12px_rgba(59,130,246,0.25)]">
+            <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+            Settings ready on startup
+          </div>
+        </div>
+      )}
+
       <AppNavbar
         isRunning={isRunning}
         onStart={startBot}
