@@ -56,6 +56,7 @@ import {
   POLYMARKET_DOMAIN,
   POLYMARKET_ORDER_TYPES,
   getSignerAddress,
+  placeOrderWithSessionKey,
   signOrderViaBackend as requestOrderSignature,
 } from './polyswarm-integrator';
 
@@ -1637,17 +1638,13 @@ export class UnifiedNeuralBot {
     try {
       const cfgRes = await proxyFetch('/__config');
       const cfg = cfgRes.ok ? await cfgRes.json() : {};
-      if (!cfg.polymarketPrivateKey) throw new Error('Signing key is not configured on the server.');
-      if (!cfg.polymarketApiKey) throw new Error('Polymarket API key is not configured on the server.');
-      const signerAddress = await getSignerAddress();
-      if (!/^0x[0-9a-fA-F]{40}$/.test(signerAddress) || /^0x0{40}$/i.test(signerAddress)) {
-        throw new Error('Signer address from server is invalid.');
-      }
+      if (!cfg.sessionKeyConfigured) throw new Error('Deposit Wallet Session Key is not configured on the server.');
+      if (!cfg.depositWalletConfigured) throw new Error('Polymarket Deposit Wallet address is not configured on the server.');
       this.lastRpcCheck = 0;
       await this.refreshRpcHealth();
       CONFIG.BOT_MODE = 'LIVE';
-      this.addLog(`🔴 LIVE mode enabled · signer ${signerAddress}`, 'warning');
-      return { ok: true, signerAddress };
+      this.addLog('🔴 LIVE mode enabled · Deposit Wallet Session Key route configured', 'warning');
+      return { ok: true };
     } catch (e) {
       CONFIG.BOT_MODE = 'PAPER';
       const error = e instanceof Error ? e.message : String(e);
@@ -1981,39 +1978,19 @@ export class UnifiedNeuralBot {
                   throw new Error(`Order size is below the market minimum of ${orderBook.min_order_size} shares.`);
                 }
 
-                const signerAddress = await getSignerAddress();
-                const salt = BigInt(`0x${crypto.randomUUID().replace(/-/g, '').slice(0, 13)}`).toString();
-                // CLOB precision: USDC amount to 2 decimals, shares as whole units.
-                const makerAmount = Math.round(size * bestAsk * 100) * 1e4;
-                const orderData = {
-                  salt,
-                  maker: signerAddress,
-                  signer: signerAddress,
-                  tokenId,
-                  makerAmount: makerAmount.toString(),
-                  takerAmount: (size * 1e6).toString(),
-                  side: 0,
-                  signatureType: 0,
-                  timestamp: Date.now().toString(),
-                  metadata: `0x${'0'.repeat(64)}`,
-                  builder: `0x${'0'.repeat(64)}`,
-                };
-                const domain = {
-                  ...POLYMARKET_DOMAIN,
-                  verifyingContract: orderBook.neg_risk
-                    ? POLYMARKET_NEG_RISK_EXCHANGE_ADDRESS
-                    : POLYMARKET_DOMAIN.verifyingContract,
-                };
+                const result = await placeOrderWithSessionKey({
+                  assetId: tokenId,
+                  amount: Math.round(size * bestAsk * 100) / 100,
+                  maxPrice: bestAsk,
+                });
+                if (!result.success) {
+                  const certainty = result.ambiguous ? 'submission status unknown; do not resend automatically' : 'confirmed rejection';
+                  throw new Error(`${result.error || 'Order rejected'} (${certainty})`);
+                }
 
-                // Execute live trade securely.
-                const result = await this.executeLiveTradeInternal(
-                  orderData,
-                  domain,
-                );
+                this.addLog(`${modeTag} LIVE ORDER ${result.status?.toUpperCase() || 'ACCEPTED'}: ${market.question.slice(0, 30)}... ${side} ${size} shares ≤ ${bestAsk.toFixed(4)} [${source}] (order: ${result.orderId || 'accepted'})`, 'trade');
 
-                this.addLog(`${modeTag} LIVE ORDER ACCEPTED: ${market.question.slice(0, 30)}... ${side} ${size} shares @ ${bestAsk.toFixed(4)} [${source}] (order: ${result.orderID || result.orderId || 'accepted'})`, 'trade');
-
-                const tradeIds = Array.isArray(result.tradeIDs) ? result.tradeIDs : [];
+                const tradeIds = Array.isArray(result.tradeIds) ? result.tradeIds : [];
                 if (tradeIds.length > 0) this.metrics.tradesExecuted += tradeIds.length;
 
               } catch (execError) {

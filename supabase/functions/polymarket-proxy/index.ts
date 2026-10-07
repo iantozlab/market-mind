@@ -182,6 +182,8 @@ Deno.serve(async (req) => {
         polygonRpcUrl: !!Deno.env.get("POLYGON_RPC_URL"),
         blocknativeApiKey: !!Deno.env.get("BLOCKNATIVE_API_KEY"),
         polymarketApiKey: !!Deno.env.get("POLYMARKET_API_KEY"),
+        sessionKeyConfigured: /^0x[0-9a-fA-F]{64}$/.test(Deno.env.get("POLYMARKET_SESSION_PRIVATE_KEY") ?? ""),
+        depositWalletConfigured: /^0x[0-9a-fA-F]{40}$/.test(Deno.env.get("POLYMARKET_DEPOSIT_WALLET") ?? ""),
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 

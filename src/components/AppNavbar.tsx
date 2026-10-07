@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Sliders, Brain, Shield, History, Layers, ChevronDown, Cpu, Menu, ShieldCheck,
+  Sliders, Brain, Shield, History, Layers, ChevronDown, Cpu, Menu, ShieldCheck, Wallet as WalletIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
+import { Link } from 'react-router-dom';
 import ThemeToggle from './ThemeToggle';
 import AlertsBell from './AlertsBell';
 import { supabase } from '@/integrations/supabase/client';
@@ -219,6 +220,26 @@ const AppNavbar: React.FC<Props> = ({
               aria-label="Primary navigation"
             >
               <ul className="flex flex-col gap-1">
+                <li role="none">
+                  <Link
+                    role="menuitem"
+                    to="/wallet"
+                    onClick={() => setMobileOpen(false)}
+                    className="flex h-9 w-full items-center rounded-md px-3 text-xs font-display tracking-wide text-foreground hover:bg-accent"
+                  >
+                    <WalletIcon className="mr-2 h-3.5 w-3.5" /> Wallet
+                  </Link>
+                </li>
+                <li role="none">
+                  <Link
+                    role="menuitem"
+                    to="/trade-history"
+                    onClick={() => setMobileOpen(false)}
+                    className="flex h-9 w-full items-center rounded-md px-3 text-xs font-display tracking-wide text-foreground hover:bg-accent"
+                  >
+                    <History className="mr-2 h-3.5 w-3.5" /> Trade History
+                  </Link>
+                </li>
                 {NAV_ITEMS.map(({ key, label, Icon }) => {
                   const active = sheet === key;
                   return (
@@ -295,6 +316,18 @@ const AppNavbar: React.FC<Props> = ({
           className="hidden md:flex items-center px-3 md:px-5 h-11 overflow-x-auto"
         >
           <div className="flex items-center gap-1 flex-wrap">
+            <Link
+              to="/wallet"
+              className="inline-flex h-8 items-center rounded-md px-2.5 text-xs font-display tracking-wide text-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <WalletIcon className="mr-1.5 h-3.5 w-3.5" /> Wallet
+            </Link>
+            <Link
+              to="/trade-history"
+              className="inline-flex h-8 items-center rounded-md px-2.5 text-xs font-display tracking-wide text-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <History className="mr-1.5 h-3.5 w-3.5" /> Trade History
+            </Link>
             {NAV_ITEMS.map(n => navButton(n.key, n.label, n.Icon))}
             {StrategiesMenu}
           </div>

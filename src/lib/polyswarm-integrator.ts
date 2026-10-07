@@ -9,6 +9,7 @@
 
 import { verifyTypedData, hashTypedData, type Address } from "viem";
 import { supabase } from "@/integrations/supabase/client";
+import { recordSessionOrderAttempt } from './session-order-queue';
 
 // ─── Polymarket on-chain constants ─────────────────────────────────────────────
 
@@ -17,6 +18,8 @@ export const POLYMARKET_STANDARD_EXCHANGE_ADDRESS = "0xE111180000d2663C0091e4f40
 export const POLYMARKET_NEG_RISK_EXCHANGE_ADDRESS = "0xe2222d279d744050d28e00520010520000310F59" as const;
 export const POLYMARKET_NEG_RISK_ADAPTER = "0xd91E80cF2E7fe2cBA6DAa4cFf49e8A6dbCb8e6A1" as const;
 export const POLYMARKET_USDC_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174" as const;
+export const POLYMARKET_PUSD_ADDRESS = "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB" as const;
+export const POLYMARKET_COLLATERAL_ONRAMP_ADDRESS = "0x93070a847efEf7F70739046A929D47a521F5B8ee" as const;
 
 // ─── EIP-712 Domain & Types (Polymarket CTF Exchange) ─────────────────────────
 
@@ -98,6 +101,65 @@ export const signOrderViaBackend = async (
     throw error;
   }
 };
+
+export interface SessionOrderRequest {
+  assetId: string;
+  amount: number;
+  maxPrice: number;
+}
+
+export interface SessionOrderResponse {
+  success: boolean;
+  retryable: boolean;
+  ambiguous?: boolean;
+  error?: string;
+  code?: string;
+  orderId?: string;
+  status?: string;
+  tradeIds?: string[];
+  transactionHashes?: string[];
+  wallet?: Address;
+}
+
+export interface SessionOrderReadiness {
+  ready: boolean;
+  balance: string;
+  amount: string;
+  missingApprovals: Address[];
+  wallet: Address;
+}
+
+export async function checkSessionOrderReadiness(amount: number): Promise<SessionOrderReadiness> {
+  const { data, error } = await supabase.functions.invoke('place-session-order', {
+    body: { action: 'readiness', amount },
+  });
+  if (error) throw new Error('Unable to verify Deposit Wallet balance and approvals.');
+  return data as SessionOrderReadiness;
+}
+
+export async function placeOrderWithSessionKey(order: SessionOrderRequest, recordHistory = true): Promise<SessionOrderResponse> {
+  const { data, error } = await supabase.functions.invoke('place-session-order', { body: order });
+  if (error) {
+    let parsed: Record<string, unknown> = {};
+    const context = (error as any).context;
+    try {
+      if (context && typeof context.json === 'function') parsed = await context.json();
+      else if (typeof context?.body === 'string') parsed = JSON.parse(context.body);
+    } catch { /* use generic error */ }
+    const result: SessionOrderResponse = {
+      success: false,
+      retryable: parsed.retryable === true,
+      ambiguous: parsed.ambiguous !== false,
+      error: typeof parsed.error === 'string' ? parsed.error : error.message,
+      code: typeof parsed.code === 'string' ? parsed.code : undefined,
+    };
+    if (recordHistory) recordSessionOrderAttempt(order, result);
+    return result;
+  }
+  const result = data as SessionOrderResponse;
+  if (recordHistory) recordSessionOrderAttempt(order, result);
+  return result;
+}
 
 // ─── Public API: Sign an order with deduplication & client-side verification ──
 

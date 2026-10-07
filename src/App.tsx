@@ -4,6 +4,8 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Index from "./pages/Index.tsx";
+import Wallet from "./pages/Wallet.tsx";
+import TradeHistory from "./pages/TradeHistory.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import AuthGate from "./components/AuthGate.tsx";
 
@@ -17,6 +19,8 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<AuthGate><Index /></AuthGate>} />
+          <Route path="/wallet" element={<AuthGate><Wallet /></AuthGate>} />
+          <Route path="/trade-history" element={<AuthGate><TradeHistory /></AuthGate>} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
