@@ -95,21 +95,23 @@ const NeuralBotDashboard: React.FC = () => {
   const alerts = useAlertsCenter();
   const botRef = useRef<UnifiedNeuralBot | null>(null);
   const [tradingMode, setTradingModeState] = useState<'PAPER' | 'LIVE'>(CONFIG.BOT_MODE);
+  const [startupCapital, setStartupCapital] = useState<number>(CONFIG.INITIAL_CAPITAL);
   const [modeBusy, setModeBusy] = useState(false);
   const [modeError, setModeError] = useState<string | null>(null);
   const toggleTradingMode = useCallback(async () => {
     const next = tradingMode === 'PAPER' ? 'LIVE' : 'PAPER';
+    if (!botRef.current) {
+      if (next === 'LIVE' && !window.confirm(`Enable automated LIVE trading through the configured Polymarket Deposit Wallet Session Key? Orders are capped at $${getMaxOrderUsd()} and sent by the server-side Session Key. The separate EOA wallet flow is available for manually confirmed orders.`)) return;
+      CONFIG.BOT_MODE = next;
+      setTradingModeState(next);
+      return;
+    }
     if (next === 'LIVE' && !window.confirm(`Enable automated LIVE trading through the configured Polymarket Deposit Wallet Session Key? Orders are capped at $${getMaxOrderUsd()} and sent by the server-side Session Key. The separate EOA wallet flow is available for manually confirmed orders.`)) return;
     setModeBusy(true);
     setModeError(null);
     try {
-      if (!botRef.current) {
-        if (next === 'LIVE') throw new Error('Start the bot first, then enable LIVE.');
-        CONFIG.BOT_MODE = 'PAPER';
-      } else {
-        const res = await botRef.current.setTradingMode(next);
-        if (!res.ok) throw new Error(res.error);
-      }
+      const res = await botRef.current.setTradingMode(next);
+      if (!res.ok) throw new Error(res.error);
       setTradingModeState(CONFIG.BOT_MODE);
     } catch (e) {
       setModeError(e instanceof Error ? e.message : String(e));
@@ -158,6 +160,10 @@ const NeuralBotDashboard: React.FC = () => {
   }, []);
 
   const startBot = useCallback(() => {
+    const nextCapital = Number.isFinite(startupCapital) && startupCapital > 0 ? startupCapital : CONFIG.INITIAL_CAPITAL;
+    CONFIG.INITIAL_CAPITAL = nextCapital;
+    CONFIG.BOT_MODE = tradingMode;
+    setTradingModeState(tradingMode);
     const snapshot = getCurrentTradeSettings();
     setTradeSettings(snapshot);
     setSettingsReadyForStartup(true);
@@ -169,7 +175,7 @@ const NeuralBotDashboard: React.FC = () => {
     setTradeSettings(bot.getTradeSettings());
     setStrategies(bot.getStrategies());
     setIsRunning(true);
-  }, [updateState, alerts, getCurrentTradeSettings]);
+  }, [updateState, alerts, getCurrentTradeSettings, startupCapital, tradingMode]);
 
   const stopBot = useCallback(() => {
     botRef.current?.stop();
@@ -236,11 +242,43 @@ const NeuralBotDashboard: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {!isRunning && settingsReadyForStartup && (
-        <div className="px-4 pt-3 md:px-6">
-          <div className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-3 py-1.5 text-[10px] font-display uppercase tracking-[0.2em] text-primary shadow-[0_0_12px_rgba(59,130,246,0.25)]">
-            <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-            Settings ready on startup
+      {!isRunning && (
+        <div className="px-4 pt-4 md:px-6">
+          <div className="flex flex-col gap-3 rounded-xl border border-border bg-card/60 p-3 shadow-sm md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
+              <label className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                Capital to trade
+                <input
+                  type="number"
+                  min={1}
+                  step={100}
+                  value={startupCapital}
+                  onChange={(e) => {
+                    const next = Number(e.target.value);
+                    if (Number.isFinite(next) && next > 0) {
+                      setStartupCapital(next);
+                      CONFIG.INITIAL_CAPITAL = next;
+                    }
+                  }}
+                  className="h-8 w-28 rounded border border-border bg-background px-2 text-xs font-mono text-foreground"
+                  aria-label="Capital to trade"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={toggleTradingMode}
+                className={`inline-flex items-center rounded border px-2 py-1 text-[10px] font-mono uppercase tracking-wider transition-colors ${tradingMode === 'LIVE' ? 'border-destructive text-destructive bg-destructive/10' : 'border-primary/50 text-primary bg-primary/10'}`}
+                aria-label="Toggle trading mode"
+              >
+                Mode: {tradingMode}
+              </button>
+            </div>
+            {settingsReadyForStartup && (
+              <div className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-3 py-1.5 text-[10px] font-display uppercase tracking-[0.2em] text-primary shadow-[0_0_12px_rgba(59,130,246,0.25)]">
+                <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+                Settings ready on startup
+              </div>
+            )}
           </div>
         </div>
       )}
