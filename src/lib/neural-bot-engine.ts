@@ -557,6 +557,9 @@ export interface APIStatus {
   marketsLoaded: number;
 }
 
+const GAMMA_BASE = 'https://gamma-api.polymarket.com';
+const CLOB_BASE = 'https://clob.polymarket.com';
+
 class RealTimeDataFetcher {
   private static instance: RealTimeDataFetcher;
   private marketsCache: Market[] = [];
@@ -583,7 +586,7 @@ class RealTimeDataFetcher {
       for (let page = 0; page < MAX_PAGES; page++) {
         const offset = page * PAGE_SIZE;
         const params = `active=true&closed=false&limit=${PAGE_SIZE}&offset=${offset}&order=volume24hr&ascending=false`;
-        const response = await proxyFetch('/gamma/markets', params);
+        const response = await fetch(`${GAMMA_BASE}/markets?${params}`);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
         const list = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
@@ -628,7 +631,7 @@ class RealTimeDataFetcher {
 
   async fetchOrderBook(marketId: string): Promise<OrderBook | null> {
     try {
-      const response = await proxyFetch('/book', `token_id=${marketId}`);
+      const response = await fetch(`${CLOB_BASE}/book?token_id=${marketId}`);
       if (!response.ok) return null;
       const data = await response.json();
       return {
@@ -648,7 +651,7 @@ class RealTimeDataFetcher {
 
   async fetchRecentTrades(marketId: string, limit = 50): Promise<Trade[]> {
     try {
-      const response = await proxyFetch('/trades', `market=${marketId}&limit=${limit}`);
+      const response = await fetch(`${CLOB_BASE}/trades?market=${marketId}&limit=${limit}`);
       if (!response.ok) return [];
       const data = await response.json();
       return (Array.isArray(data) ? data : []).map((t: any) => ({
@@ -667,7 +670,7 @@ class RealTimeDataFetcher {
 
   async checkConnection(): Promise<boolean> {
     try {
-      const response = await proxyFetch('/gamma/markets', 'limit=1&active=true');
+      const response = await fetch(`${GAMMA_BASE}/markets?limit=1&active=true`);
       this.apiStatus.polymarket = response.ok;
       return response.ok;
     } catch {
@@ -1927,7 +1930,7 @@ export class UnifiedNeuralBot {
           const liveMarkets = await this.dataFetcher.fetchMarkets();
           if (liveMarkets.length > 0) {
             markets = liveMarkets;
-            for (const m of markets.slice(0, 5)) {
+            for (const m of markets.slice(0, 20)) {
               const liveOB = await this.dataFetcher.fetchMarketOrderBook(m);
               if (liveOB && liveOB.bids.length > 0) {
                 this.orderBooks.set(m.id, liveOB);
@@ -1943,7 +1946,7 @@ export class UnifiedNeuralBot {
                 this.recentTrades.set(m.id, [...newTrades, ...existing].slice(0, 500));
               }
             }
-            for (const m of markets.slice(5)) {
+            for (const m of markets.slice(20)) {
               this.orderBooks.set(m.id, this.generateSimulatedOrderBook(m));
               const existing = this.recentTrades.get(m.id) || [];
               const newTrades = this.generateSimulatedTrades(m.id);

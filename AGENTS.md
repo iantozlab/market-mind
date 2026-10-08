@@ -12,6 +12,7 @@ Dev server runs on port 8080 inside the container, mapped to host port 3000.
 ## Key Fixes Applied
 1. **Vite host blocking**: Vite 5.4.19 has `allowedHosts` security checking that blocks the preview's proxy hostname. Fixed by adding `allowedHosts: true` to `server` config in `vite.config.ts`.
 2. **Supabase env var override**: The compose `environment:` section was passing empty host values for `VITE_SUPABASE_*` vars, overriding the defaults from `env_file` and causing `supabaseUrl is required` runtime error. Fixed by removing those vars from `environment:` — they now come only from `env_file` (defaults first, platform secrets last).
+3. **Real market data via direct Polymarket API**: The `RealTimeDataFetcher` previously routed all API calls through the Supabase edge function proxy (`polymarket-proxy`), which requires a deployed Supabase project. With placeholder credentials the proxy fails and the bot falls back to `generateSimulatedMarkets()`. Fixed by making the data fetcher call Polymarket's public APIs directly (`gamma-api.polymarket.com/markets`, `clob.polymarket.com/book`) — both are CORS-enabled with `Access-Control-Allow-Origin: *`. The proxy is still used for authenticated order submission. Also increased the number of markets that get real order books from 5 to 20 per tick.
 
 ## Environment Variables
 - `VITE_SUPABASE_URL` — Supabase project URL (placeholder in `.env.base44-defaults`, user should replace)
