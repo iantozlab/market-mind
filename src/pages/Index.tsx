@@ -96,6 +96,7 @@ const NeuralBotDashboard: React.FC = () => {
   const botRef = useRef<UnifiedNeuralBot | null>(null);
   const [tradingMode, setTradingModeState] = useState<'PAPER' | 'LIVE'>(CONFIG.BOT_MODE);
   const [startupCapital, setStartupCapital] = useState<number>(CONFIG.INITIAL_CAPITAL);
+  const [startupCapitalInput, setStartupCapitalInput] = useState(String(CONFIG.INITIAL_CAPITAL));
   const [modeBusy, setModeBusy] = useState(false);
   const [modeError, setModeError] = useState<string | null>(null);
   const toggleTradingMode = useCallback(async () => {
@@ -251,13 +252,22 @@ const NeuralBotDashboard: React.FC = () => {
                 <input
                   type="number"
                   min={1}
-                  step={100}
-                  value={startupCapital}
+                  step="any"
+                  inputMode="decimal"
+                  value={startupCapitalInput}
                   onChange={(e) => {
-                    const next = Number(e.target.value);
-                    if (Number.isFinite(next) && next > 0) {
+                    const raw = e.target.value;
+                    setStartupCapitalInput(raw);
+                    if (/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw)) {
+                      const next = Number(raw);
+                      if (!Number.isFinite(next) || next <= 0) return;
                       setStartupCapital(next);
                       CONFIG.INITIAL_CAPITAL = next;
+                    }
+                  }}
+                  onBlur={() => {
+                    if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(startupCapitalInput) || Number(startupCapitalInput) <= 0) {
+                      setStartupCapitalInput(String(startupCapital));
                     }
                   }}
                   className="h-8 w-28 rounded border border-border bg-background px-2 text-xs font-mono text-foreground"
