@@ -13,6 +13,8 @@ import MetricCard from '@/components/MetricCard';
 import TerminalLog from '@/components/TerminalLog';
 import MarketList from '@/components/MarketList';
 import MarketDetailPanel from '@/components/MarketDetailPanel';
+import PriceChartsPanel from '@/components/PriceChartsPanel';
+import type { Position, MarketPriceHistory } from '@/lib/position-manager';
 import PsychologyHealthPanel, { type PsychologyHealthRow } from '@/components/PsychologyHealthPanel';
 import PsychologyDiagnosticsPanel from '@/components/PsychologyDiagnosticsPanel';
 import RiskAlertsPanel from '@/components/RiskAlertsPanel';
@@ -91,6 +93,8 @@ const NeuralBotDashboard: React.FC = () => {
   const [swarmSignals, setSwarmSignals] = useState<SwarmPrediction[]>([]);
   const [swarmEvents, setSwarmEvents] = useState<LatencyArbEvent[]>([]);
   const [swarmAgentCount, setSwarmAgentCount] = useState(0);
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [priceHistories, setPriceHistories] = useState<MarketPriceHistory[]>([]);
 
   const alerts = useAlertsCenter();
   const botRef = useRef<UnifiedNeuralBot | null>(null);
@@ -150,6 +154,8 @@ const NeuralBotDashboard: React.FC = () => {
     setSwarmSignals(botRef.current.getSwarmSignals());
     setSwarmEvents(botRef.current.getSwarmEvents());
     setSwarmAgentCount(botRef.current.getSwarmAgentCount());
+    setPositions(botRef.current.getPositions());
+    setPriceHistories(botRef.current.getPriceHistory());
     setAnomalyHistory(prev => {
       const next = [...prev, { time: new Date().toLocaleTimeString(), score: m.anomalyScore * 100, threshold: 70 }];
       return next.slice(-30);
@@ -181,6 +187,11 @@ const NeuralBotDashboard: React.FC = () => {
   const stopBot = useCallback(() => {
     botRef.current?.stop();
     setIsRunning(false);
+    // Keep positions and price history updating even when stopped
+    if (botRef.current) {
+      setPositions(botRef.current.getPositions());
+      setPriceHistories(botRef.current.getPriceHistory());
+    }
   }, []);
 
   useEffect(() => {
@@ -518,6 +529,55 @@ const NeuralBotDashboard: React.FC = () => {
           onEmergencyStop={stopBot}
         />
 
+        {/* Live Price Charts */}
+        <PriceChartsPanel priceHistories={priceHistories} />
+
+        {/* Open Positions */}
+        {positions.filter(p => p.status === 'OPEN').length > 0 && (
+          <div className="rounded-lg border border-border bg-card p-4">
+            <h2 className="font-display text-sm font-semibold text-foreground mb-3 tracking-wide">
+              Open Positions ({positions.filter(p => p.status === 'OPEN').length})
+            </h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs font-mono">
+                <thead>
+                  <tr className="text-muted-foreground border-b border-border">
+                    <th className="text-left py-1 pr-3">Market</th>
+                    <th className="text-right py-1 px-2">Side</th>
+                    <th className="text-right py-1 px-2">Entry</th>
+                    <th className="text-right py-1 px-2">Current</th>
+                    <th className="text-right py-1 px-2">Size</th>
+                    <th className="text-right py-1 px-2">Cost</th>
+                    <th className="text-right py-1 px-2">U/PnL</th>
+                    <th className="text-right py-1 pl-2">SL/TP</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {positions.filter(p => p.status === 'OPEN').map(pos => {
+                    const pnlPct = ((pos.currentPrice - pos.entryPrice) / pos.entryPrice) * 100;
+                    return (
+                      <tr key={pos.id} className="border-b border-border/50">
+                        <td className="py-1.5 pr-3 truncate max-w-[200px]">{pos.marketQuestion.slice(0, 30)}</td>
+                        <td className="text-right py-1.5 px-2">{pos.side}</td>
+                        <td className="text-right py-1.5 px-2">{(pos.entryPrice * 100).toFixed(1)}¢</td>
+                        <td className="text-right py-1.5 px-2">{(pos.currentPrice * 100).toFixed(1)}¢</td>
+                        <td className="text-right py-1.5 px-2">{pos.size}</td>
+                        <td className="text-right py-1.5 px-2">${pos.cost.toFixed(2)}</td>
+                        <td className={`text-right py-1.5 px-2 ${pos.unrealizedPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                          {pos.unrealizedPnl >= 0 ? '+' : ''}${pos.unrealizedPnl.toFixed(2)} ({pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%)
+                        </td>
+                        <td className="text-right py-1.5 pl-2 text-muted-foreground">
+                          -{((botRef.current?.getTradeSettings().stopLossPct ?? 0.10) * 100).toFixed(0)}%/+{((botRef.current?.getTradeSettings().takeProfitPct ?? 0.30) * 100).toFixed(0)}%
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {/* Charts + Markets */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2 space-y-4">
@@ -646,6 +706,45 @@ const NeuralBotDashboard: React.FC = () => {
         <p className="text-center text-[10px] text-muted-foreground tracking-widest uppercase">
           Exclusive Architecture · Evolved Parameters (50k Gen) · 12 Exploit Strategies · Anti-Detection Active · Paper Trading Mode
         </p>
+
+        {/* Closed Positions History */}
+        {positions.filter(p => p.status === 'CLOSED').length > 0 && (
+          <div className="rounded-lg border border-border bg-card p-4">
+            <h2 className="font-display text-sm font-semibold text-foreground mb-3 tracking-wide">
+              Trade History ({positions.filter(p => p.status === 'CLOSED').length} closed)
+            </h2>
+            <div className="overflow-x-auto max-h-64 overflow-y-auto">
+              <table className="w-full text-xs font-mono">
+                <thead className="sticky top-0 bg-card">
+                  <tr className="text-muted-foreground border-b border-border">
+                    <th className="text-left py-1 pr-3">Market</th>
+                    <th className="text-right py-1 px-2">Side</th>
+                    <th className="text-right py-1 px-2">Entry</th>
+                    <th className="text-right py-1 px-2">Exit</th>
+                    <th className="text-right py-1 px-2">Size</th>
+                    <th className="text-right py-1 px-2">P&L</th>
+                    <th className="text-right py-1 pl-2">Reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {positions.filter(p => p.status === 'CLOSED').slice(0, 50).map(pos => (
+                    <tr key={pos.id} className="border-b border-border/50">
+                      <td className="py-1.5 pr-3 truncate max-w-[200px]">{pos.marketQuestion.slice(0, 30)}</td>
+                      <td className="text-right py-1.5 px-2">{pos.side}</td>
+                      <td className="text-right py-1.5 px-2">{(pos.entryPrice * 100).toFixed(1)}¢</td>
+                      <td className="text-right py-1.5 px-2">{(pos.closePrice! * 100).toFixed(1)}¢</td>
+                      <td className="text-right py-1.5 px-2">{pos.size}</td>
+                      <td className={`text-right py-1.5 px-2 ${(pos.realizedPnl ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                        {(pos.realizedPnl ?? 0) >= 0 ? '+' : ''}${(pos.realizedPnl ?? 0).toFixed(2)}
+                      </td>
+                      <td className="text-right py-1.5 pl-2 text-muted-foreground">{pos.closeReason}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         <MarketDetailPanel
           market={selectedMarket}
