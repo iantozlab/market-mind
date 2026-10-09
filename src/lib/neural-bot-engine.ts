@@ -9,6 +9,7 @@
 
 import { getMaxOrderUsd } from '@/lib/wallet-trading';
 import { logPaperOrder } from './order-audit';
+import { PositionManager, type Position, type MarketPriceHistory, type PositionSettings } from './position-manager';
 import { supabase } from '@/integrations/supabase/client';
 import { PhantomLiquidityHarvester } from './phantom-liquidity-harvester';
 import { MarketPsychologyEngine } from './market-psychology-engine';
@@ -557,6 +558,9 @@ export interface APIStatus {
   marketsLoaded: number;
 }
 
+const GAMMA_BASE = 'https://gamma-api.polymarket.com';
+const CLOB_BASE = 'https://clob.polymarket.com';
+
 class RealTimeDataFetcher {
   private static instance: RealTimeDataFetcher;
   private marketsCache: Market[] = [];
@@ -583,7 +587,7 @@ class RealTimeDataFetcher {
       for (let page = 0; page < MAX_PAGES; page++) {
         const offset = page * PAGE_SIZE;
         const params = `active=true&closed=false&limit=${PAGE_SIZE}&offset=${offset}&order=volume24hr&ascending=false`;
-        const response = await proxyFetch('/gamma/markets', params);
+        const response = await fetch(`${GAMMA_BASE}/markets?${params}`);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
         const list = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
@@ -628,7 +632,7 @@ class RealTimeDataFetcher {
 
   async fetchOrderBook(marketId: string): Promise<OrderBook | null> {
     try {
-      const response = await proxyFetch('/book', `token_id=${marketId}`);
+      const response = await fetch(`${CLOB_BASE}/book?token_id=${marketId}`);
       if (!response.ok) return null;
       const data = await response.json();
       return {
@@ -648,7 +652,7 @@ class RealTimeDataFetcher {
 
   async fetchRecentTrades(marketId: string, limit = 50): Promise<Trade[]> {
     try {
-      const response = await proxyFetch('/trades', `market=${marketId}&limit=${limit}`);
+      const response = await fetch(`${CLOB_BASE}/trades?market=${marketId}&limit=${limit}`);
       if (!response.ok) return [];
       const data = await response.json();
       return (Array.isArray(data) ? data : []).map((t: any) => ({
@@ -667,7 +671,7 @@ class RealTimeDataFetcher {
 
   async checkConnection(): Promise<boolean> {
     try {
-      const response = await proxyFetch('/gamma/markets', 'limit=1&active=true');
+      const response = await fetch(`${GAMMA_BASE}/markets?limit=1&active=true`);
       this.apiStatus.polymarket = response.ok;
       return response.ok;
     } catch {
@@ -1194,12 +1198,14 @@ export class UnifiedNeuralBot {
   };
 
   private simInterval: ReturnType<typeof setInterval> | null = null;
+  private positionInterval: ReturnType<typeof setInterval> | null = null;
   private tickCount = 0;
   private lastMarkets: Market[] = [];
   private pnlHistory: number[] = [];
   private peakPnL = 0;
   private peakEquity = 0;
   private currentDrawdown = 0;
+  private positionManager: PositionManager;
 
   constructor(paperMode = true) {
     this.isPaperMode = paperMode;
@@ -1216,6 +1222,17 @@ export class UnifiedNeuralBot {
     this.psychology = new MarketPsychologyEngine();
     this.rans = new RANSExecutionEngine(CONFIG.INITIAL_CAPITAL);
     this.enhancedRans = new EnhancedRANSExecutionEngine(CONFIG.INITIAL_CAPITAL);
+    this.positionManager = new PositionManager(CONFIG.INITIAL_CAPITAL, {
+      stopLossPct: CONFIG.EXITS.STOP_LOSS_PCT,
+      takeProfitPct: CONFIG.EXITS.TAKE_PROFIT_PCT,
+      trailingStopPct: CONFIG.EXITS.TRAILING_STOP_PCT,
+      timeBasedExitMs: CONFIG.EXITS.TIME_BASED_EXIT_HOURS * 3600 * 1000,
+      maxPositionPct: CONFIG.RISK.MAX_POSITION_PCT,
+      kellyFraction: CONFIG.RISK.KELLY_FRACTION,
+      minTradeSize: CONFIG.RISK.MIN_TRADE_SIZE_USDC,
+      maxTradeSize: CONFIG.RISK.MAX_TRADE_SIZE_USDC,
+      maxTotalExposurePct: CONFIG.RISK.MAX_TOTAL_EXPOSURE_PCT,
+    });
 
     // --- Multi-market arbitrage + 50-agent swarm ---
     buildDefaultSwarm(this.swarmIntegrator, 50);
@@ -1927,7 +1944,7 @@ export class UnifiedNeuralBot {
           const liveMarkets = await this.dataFetcher.fetchMarkets();
           if (liveMarkets.length > 0) {
             markets = liveMarkets;
-            for (const m of markets.slice(0, 5)) {
+            for (const m of markets.slice(0, 20)) {
               const liveOB = await this.dataFetcher.fetchMarketOrderBook(m);
               if (liveOB && liveOB.bids.length > 0) {
                 this.orderBooks.set(m.id, liveOB);
@@ -1943,7 +1960,7 @@ export class UnifiedNeuralBot {
                 this.recentTrades.set(m.id, [...newTrades, ...existing].slice(0, 500));
               }
             }
-            for (const m of markets.slice(5)) {
+            for (const m of markets.slice(20)) {
               this.orderBooks.set(m.id, this.generateSimulatedOrderBook(m));
               const existing = this.recentTrades.get(m.id) || [];
               const newTrades = this.generateSimulatedTrades(m.id);
@@ -1970,6 +1987,15 @@ export class UnifiedNeuralBot {
 
         this.lastMarkets = markets;
         this.metrics.marketsMonitored = markets.length;
+
+        // === Record price history for charting ===
+        for (const m of markets.slice(0, 20)) {
+          const ob = this.orderBooks.get(m.id);
+          const yesPrice = ob && ob.bids.length > 0 && ob.asks.length > 0
+            ? (ob.bids[0].price + ob.asks[0].price) / 2
+            : m.outcomePrices[0] ?? 0.5;
+          this.positionManager.recordPrice(m.id, m.question, m.slug, yesPrice);
+        }
 
         // === PHANTOM LIQUIDITY HARVESTER ===
         try {
@@ -2215,14 +2241,40 @@ export class UnifiedNeuralBot {
               if (CONFIG.BOT_MODE === 'LIVE' && !rpcOk) {
                 this.addLog(`⚠️ RPC unhealthy – skipping live execution (paper simulation fallback)`, 'warning');
               }
-              this.addLog(`${modeTag} PAPER TRADE: ${market.question.slice(0, 30)}... ${side} ${size} shares @ ${market.outcomePrices[0].toFixed(3)} [${source}]`, 'trade');
-              logPaperOrder({ marketLabel: market.question, side: String(side), price: Number(market.outcomePrices[0]) || 0, size: Number(size) || 0 });
-              const pnl = (Math.random() - 0.45) * size * 0.05;
-              this.metrics.totalPnL += pnl;
-              this.metrics.dailyPnL += pnl;
-              this.metrics.tradesExecuted++;
-              this.recordTradeOutcome(pnl);
-              this.enhancedRans.recordTrade(pnl, market.id);
+              // ─── REALISTIC PAPER TRADING with real market prices ──────────────
+              const outcomeIdx = direction >= 0 ? 0 : 1;
+              const ob = this.orderBooks.get(market.id);
+              const entryPrice = ob && ob.asks.length > 0
+                ? Math.min(0.99, Math.max(0.01, ob.asks[0].price))
+                : Math.min(0.99, Math.max(0.01, market.outcomePrices[outcomeIdx] ?? 0.5));
+              const kellySize = Math.floor(size * CONFIG.RISK.KELLY_FRACTION / EVOLVED.kelly_fraction);
+              const finalSize = Math.max(1, Math.min(kellySize, size));
+              const modeTag2 = CONFIG.BOT_MODE === 'PAPER' ? '📄' : '🔴';
+              this.addLog(`${modeTag2} TRADE: ${market.question.slice(0, 30)}... ${side} ${finalSize} shares @ ${(entryPrice * 100).toFixed(1)}¢ [${source}]`, 'trade');
+              logPaperOrder({ marketLabel: market.question, side: String(side), price: entryPrice, size: finalSize });
+
+              // Open a tracked position using real market price
+              const pos = this.positionManager.openPosition({
+                marketId: market.id,
+                marketQuestion: market.question,
+                slug: market.slug,
+                side: outcomeIdx === 0 ? 'YES' : 'NO',
+                outcomeIndex: outcomeIdx,
+                entryPrice,
+                size: finalSize,
+                mode: 'PAPER',
+              });
+
+              if (pos) {
+                this.metrics.tradesExecuted++;
+                this.metrics.activePositions = this.positionManager.getOpenCount();
+                this.addLog(`  ↳ Position opened: ${pos.id.slice(0, 12)} cost $${pos.cost.toFixed(2)} · SL ${(this.tradeOverrides.stopLossPct * 100).toFixed(0)}% TP ${(this.tradeOverrides.takeProfitPct * 100).toFixed(0)}%`, 'info');
+              } else {
+                // Position rejected by risk limits — log why
+                const exposure = this.positionManager.getOpenExposure();
+                const maxExp = CONFIG.INITIAL_CAPITAL * CONFIG.RISK.MAX_TOTAL_EXPOSURE_PCT;
+                this.addLog(`  ↳ Trade skipped — exposure $${exposure.toFixed(0)}/${maxExp.toFixed(0)} or position cap`, 'warning');
+              }
               this.pnlHistory.push(this.metrics.totalPnL);
               this.updateDrawdown();
 
@@ -2452,17 +2504,80 @@ export class UnifiedNeuralBot {
         this.addLog(`Error: ${err}`, 'error');
       }
     }, 2000);
+
+    // === Position management interval — runs independently so open trades
+    //    continue to be managed even when the bot is stopped (no new entries). ===
+    this.positionInterval = setInterval(() => {
+      // Build current market prices from order books
+      const marketPrices = new Map<string, { yesPrice: number; noPrice: number }>();
+      for (const m of this.lastMarkets) {
+        const ob = this.orderBooks.get(m.id);
+        if (ob && ob.bids.length > 0 && ob.asks.length > 0) {
+          const mid = (ob.bids[0].price + ob.asks[0].price) / 2;
+          marketPrices.set(m.id, { yesPrice: mid, noPrice: 1 - mid });
+        } else {
+          marketPrices.set(m.id, {
+            yesPrice: m.outcomePrices[0] ?? 0.5,
+            noPrice: m.outcomePrices[1] ?? 0.5,
+          });
+        }
+      }
+
+      // Refresh order books for markets with open positions (even when stopped)
+      if (!this.isRunning) {
+        for (const pos of this.positionManager.getOpenPositions()) {
+          const m = this.lastMarkets.find(x => x.id === pos.marketId);
+          if (m && m.tokenIds?.[0]) {
+            this.dataFetcher.fetchOrderBook(m.tokenIds[0]).then(liveOB => {
+              if (liveOB && liveOB.bids.length > 0) {
+                this.orderBooks.set(m.id, liveOB);
+                const mid = (liveOB.bids[0].price + liveOB.asks[0].price) / 2;
+                marketPrices.set(m.id, { yesPrice: mid, noPrice: 1 - mid });
+              }
+            }).catch(() => {});
+          }
+        }
+      }
+
+      const { closed, updated } = this.positionManager.managePositions(marketPrices);
+
+      // Realize P&L from closed positions
+      for (const pos of closed) {
+        const pnl = pos.realizedPnl ?? 0;
+        this.metrics.totalPnL += pnl;
+        this.metrics.dailyPnL += pnl;
+        this.recordTradeOutcome(pnl);
+        this.enhancedRans.recordTrade(pnl, pos.marketId);
+        this.addLog(
+          `  ↳ Position ${pos.id.slice(0, 12)} CLOSED: ${pos.closeReason} @ ${(pos.closePrice! * 100).toFixed(1)}¢ → ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}`,
+          pnl >= 0 ? 'trade' : 'warning',
+        );
+      }
+
+      // Update active positions count and unrealized P&L in metrics
+      this.metrics.activePositions = this.positionManager.getOpenCount();
+      this.positionManager.pruneOldClosed();
+      this.onUpdate?.();
+    }, 3000);
   }
 
   stop() {
     this.isRunning = false;
     if (this.simInterval) clearInterval(this.simInterval);
-    this.addLog('🛑 Neural Bot Stopped', 'warning');
+    this.simInterval = null;
+    const openCount = this.positionManager.getOpenCount();
+    if (openCount > 0) {
+      this.addLog(`🛑 Neural Bot Stopped — ${openCount} open positions continue managing until they close`, 'warning');
+    } else {
+      this.addLog('🛑 Neural Bot Stopped', 'warning');
+    }
     this.onUpdate?.();
   }
 
   dispose() {
     this.stop();
+    if (this.positionInterval) clearInterval(this.positionInterval);
+    this.positionInterval = null;
     this.defenseDisposers.forEach(off => { try { off(); } catch { /* ignore */ } });
     this.defenseDisposers = [];
   }
@@ -2476,6 +2591,10 @@ export class UnifiedNeuralBot {
   getStrategies(): StrategyStatus[] { return [...this.strategies]; }
   getAPIStatus(): APIStatus { return this.dataFetcher.getStatus(); }
   isUsingLiveData(): boolean { return this.useLiveData; }
+  getPositions(): Position[] { return this.positionManager.getAllPositions(); }
+  getOpenPositions(): Position[] { return this.positionManager.getOpenPositions(); }
+  getPriceHistory(marketId?: string): MarketPriceHistory[] { return this.positionManager.getPriceHistory(marketId); }
+  getPositionManager(): PositionManager { return this.positionManager; }
   getPhantomStats() { return this.phantom.getStats(); }
   getPhantomActive() { return this.phantom.getActive(); }
   getPsychologyHealth() { return this.psychology.getStrategyHealth(); }
@@ -2638,7 +2757,19 @@ export class UnifiedNeuralBot {
     if (s.maxDrawdown != null) { CONFIG.RISK.MAX_DRAWDOWN = s.maxDrawdown; setDrawdownGuard({ maxDrawdownPct: s.maxDrawdown }); }
     if (s.stopLossPct != null) this.tradeOverrides.stopLossPct = s.stopLossPct;
     if (s.takeProfitPct != null) this.tradeOverrides.takeProfitPct = s.takeProfitPct;
-    this.addLog(`⚙️ Trade settings updated`, 'info');
+    // Sync position manager with updated settings
+    this.positionManager.setSettings({
+      stopLossPct: this.tradeOverrides.stopLossPct,
+      takeProfitPct: this.tradeOverrides.takeProfitPct,
+      trailingStopPct: CONFIG.EXITS.TRAILING_STOP_PCT,
+      timeBasedExitMs: CONFIG.EXITS.TIME_BASED_EXIT_HOURS * 3600 * 1000,
+      maxPositionPct: CONFIG.RISK.MAX_POSITION_PCT,
+      kellyFraction: CONFIG.RISK.KELLY_FRACTION,
+      minTradeSize: CONFIG.RISK.MIN_TRADE_SIZE_USDC,
+      maxTradeSize: CONFIG.RISK.MAX_TRADE_SIZE_USDC,
+      maxTotalExposurePct: CONFIG.RISK.MAX_TOTAL_EXPOSURE_PCT,
+    });
+    this.addLog(`⚙️ Trade settings updated — SL ${(this.tradeOverrides.stopLossPct * 100).toFixed(0)}% TP ${(this.tradeOverrides.takeProfitPct * 100).toFixed(0)}% Kelly ${(CONFIG.RISK.KELLY_FRACTION * 100).toFixed(1)}% MaxPos ${(CONFIG.RISK.MAX_POSITION_PCT * 100).toFixed(1)}%`, 'info');
   }
   private tradeOverrides: { stopLossPct: number; takeProfitPct: number } = { stopLossPct: 0.10, takeProfitPct: 0.30 };
 
